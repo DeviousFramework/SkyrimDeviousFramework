@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<HTML>
+<Head>
+<Title>Devious Framework - Mod Description</Title>
+
+<!- Include support libraries for working with lists and DOM objects. -->
+<Script Type=Text/JavaScript Src=/JavaScript/List.js></Script>
+<Script Type=Text/JavaScript Src=/JavaScript/DomObjects.js></Script>
+<Script Type=Text/JavaScript Src=/JavaScript/DomTables.js></Script>
+<Script Type=Text/JavaScript Src=/JavaScript/DomForms.js></Script>
+
+<!- The Cascade Style Sheet (CSS) for the page. -->
+<Style>
+Body
+{
+   Font-Size:120%
+}
+
+Span.PageHeading
+{
+   Font-Weight:bold;
+   Font-Size:200%
+}
+
+Span.SectionHeading
+{
+   Font-Weight:bold;
+   Text-Decoration:Underline;
+   Font-Size:150%
+}
+
+Span.ItemHeading
+{
+   Font-Weight:bold
+}
+
+Span.Highlight
+{
+   Font-Weight:bold
+}
+
+Span.FontWarning
+{
+   Font-Weight:bold
+}
+
+Div.ApiConstant
+{
+   Margin-Bottom:20px
+}
+
+Div.ApiFunction
+{
+   Margin-Bottom:20px
+}
+
+Div.ApiFunctionSample
+{
+   Margin-Bottom:20px
+}
+
+Div.ApiEvent
+{
+   Margin-Bottom:20px
+}
+
+Div.ApiFunctionDefinition
+{
+   Border:1px Dotted Black
+}
+
+Pre.SampleCode
+{
+   Border:1px Dotted Black
+}
+
+Table
+{
+   Border-Collapse:Collapse
+}
+
+Td
+{
+   Border:1px Solid Black
+}
+
+Tr.ApiConstant
+{
+   Padding-Left:20px;
+   Padding-Right:20px
+}
+
+
+Td.ApiConstantName
+{
+   Border:1px Solid Black;
+   Padding-Left:5px;
+   Padding-Right:10px
+}
+
+Td.ApiConstantValue
+{
+   Padding-Left:10px;
+   Padding-Right:10px
+}
+
+Td.ApiConstantDescription
+{
+   Padding-Left:10px;
+   Padding-Right:5px
+}
+
+</Style>
+
+<Script Type=Text/JavaScript>
+   var g_TableOfContents = new Array();
+
+   function AddToTableOfContents(szName, szAnchor, szDescription)
+   {
+      var oEntry = new Object();
+      oEntry.szName = szName;
+      oEntry.szAnchor = szAnchor;
+      oEntry.szDescription = szDescription;
+
+      g_TableOfContents[g_TableOfContents.length] = oEntry;
+   }
+
+   function PrintTableOfContents()
+   {
+      var oTableOfContents = document.getElementById("TableOfContents");
+      oTableOfContents.write("<Span Class=SectionHeading>Table of Contents:</Span>");
+
+      var iTotalEntries = g_TableOfContents.length;
+      var iIndex;
+      for (iIndex=0; iIndex < iTotalEntries; iIndex++)
+      {
+         var oEntry = g_TableOfContents[iIndex];
+         oTableOfContents.appendText("<A HREF=#" + oEntry.szAnchor + ">" + oEntry.szName + "</A> - " + oEntry.szDescription);
+      }
+   }
+
+   function initDivElements()
+   {
+      var oTableOfContents = document.getElementById("TableOfContents");
+      initDiv(oTableOfContents, null, null, 0);
+
+      AddToTableOfContents("Description",   "TocDescription", "Mod description, purpose, and reasons");
+      AddToTableOfContents("Main Features", "TocFeatureList", "A list of features available");
+      AddToTableOfContents("Mod Content",   "TocModContent",  "The content of the mod as seen in the Creation Kit");
+      AddToTableOfContents("Support Mod",   "TocSupportMod",  "An accopanying support mod with some neat but not essential features");
+      AddToTableOfContents("API: General",  "TocApiGeneral",  "The API for general purpose functions");
+      AddToTableOfContents("API: Masters",  "TocApiMasters",  "The API for keeping track of the how the player is controlled");
+      AddToTableOfContents("API: Player Status",   "TocApiPlayerStatus",   "The API for checking the player's vulnerability status");
+      AddToTableOfContents("API: Nearby Actors",   "TocApiNearbyActors",   "The API for getting nearby actors");
+      AddToTableOfContents("API: Leash",    "TocApiLeash",    "The API for making use of the leash");
+      AddToTableOfContents("API: Outgoing Events", "TocApiOutgoingEvents", "The API for events sent out by this mod");
+      AddToTableOfContents("Samples: General",  "TocSamplesGeneral", "Samples for general purpose functions");
+      AddToTableOfContents("Samples: Masters",  "TocSamplesMasters", "Samples for keeping track of the how the player is controlled");
+      AddToTableOfContents("Samples: Player Status",   "TocSamplesPlayerStatus",   "Samples for checking the player's vulnerability status");
+      AddToTableOfContents("Samples: Nearby Actors",   "TocSamplesNearbyActors",   "Samples for getting nearby actors");
+      AddToTableOfContents("Samples: Leash",    "TocSamplesLeash",   "Samples for making use of the leash");
+      AddToTableOfContents("Samples: Outgoing Events", "TocSamplesOutgoingEvents", "Samples for events sent out by this mod");
+      AddToTableOfContents("Mod Compatibility", "TocModCompatibility", "Tips for staying compatible with other mods");
+
+      PrintTableOfContents();
+   }
+</Script>
+</Head>
+
+
+<Body onLoad=initDivElements()>
+<P>
+   <Span Class=PageHeading>
+      Devious Framework
+   </Span>
+</P>
+
+<Div Id=TableOfContents></Div>
+
+<P Id=TocDescription>
+   <Span Class=SectionHeading>
+      Mod Description<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      This mod is intended to support other mods that want to make use of devious devices and help them co-ordinate between each other.<Br>
+      Additionally it is intended to help mod developers understand good processes for developing mods and writing papyrus scripts.<Br>
+      Because there is such a vast number of features involved in writing scripts and implementing a mod this mod and it's documentation
+      will also cover a great deal of topics.  As such the documentation will be separated into quite a few sections.  Many
+      "features of the mod" will exist only in the documentation, such as "things I've learned" and examples of how to write scripts.<Br>
+      This mod was built specifically to work with the Deviously Enslaved Continued mod; however, I hope that many mod developers will find it useful.<Br>
+   </Span>
+   <Span Class=ItemHeading>
+      Reasons:
+   </Span><Br>
+   <Span Class=Highlight>1</Span>. While looking into the Deviously Enslaved mod I found it was checking IsPlayerEnslaved(DCUR_SLUT_COLLAR) & IsPlayerEnslaved(SD+) &
+   IsPlayerEnslaved(MARIA_EDEN) & IsPlayerEnslaved(DARKWIND_SLAVE_FACTION) ...  There are well over <Span Class=Highlight>a dozen such checks</Span> that need to be made.
+   And there are <Span Class=Highlight>dozens of other mods</Span> that would also need to make all of these same checks.  Each time a new slavery mod is created all such mods
+   would need to be updated to work with it.  And the Deviously Enslaved mod only needs to check a few things: Is the player enslaveable? Can the
+   mod use the player for sex? and Will adding restraints cause trouble for other mods?  Using a generic "IsPlayerEnslaved()" function doesn't
+   specifically answer these questions as well as it should.<Br>
+   <Span Class=Highlight>2.</Span> ZAZ Animation Pack has done a fair bit of work in this area.  It has faction to identify if the player is enslaved.  If all of the mods
+   (Devious Cursed Loot, SD+, Maria Eden, Darkwind Island) set this flag properly, Deviously Enslaved would only need to make one check.
+   IsPlayerInZazSlaveryFaction().  I don't know the reason many of the mods don't use the ZAZ Animation Pack interface.  Perhaps it is not documented
+   well enough or its existence is not know widely enough.  While use of the interfaces provided by ZAZ would improve things greatly, <Span Class=Highlight>it still has
+   some shortcomings</Span>.<Br>
+   2a. It <Span Class=Highlight>only keeps track of player slavery</Span>.  Just because the player is enslaved doesn't mean she is not available for further
+   slavery (purchased for example).  And the player being a slave doesn't tell us if they are off limits for sex.<Br>
+   2b. Additionally with the ZAZ interface you can take an actor and determin if they are a slave, a slave owner, a slaver, or none of the above.
+   But what you <Span Class=Highlight>can't determine is which slave they own or who owns them</Span>.  Yes, you can find out the player is enslaved.  But it is much more
+   difficult to determine who is controlling the player.  It is not unreasonable to need to know if the player's controller is nearby.  For instance
+   a brigand can harass the player if the player's controler is nowhere to be found.  At home, perhapse allowing the player to wander on her own.<Br>
+   3. The Deviously Enslaved mod also checks how "vulnerable" the player is.  Based on restraints she is wearing, clothing, whether it is night or
+   not.  It seems to me that <Span Class=Highlight>a great number of mods could be interested in this</Span> information and having a readily accessible, centralized,
+   standardized vulnerability value could help a number of mods and reduce the overhead for each mod keeping track of such things.<Br>
+   4. The <Span Class=Highlight>clothing information options are rather limited</Span>, complex, and scattered.  Creating an API that allows for more detailed clothing
+   information seems like it could have a lot of potential.  The player can't dress herself in a top when she is locked in an arm binder or yoke
+   but maybe she can wriggle into a skirt or leggings.  Similarly the player can't put on greaves, full body armour, or leggins when her legs are
+   locked with a hobble.  This mod strives to enhance this game play by providing better information on what is a chest piece, a waist piece, or a
+   full body outfit.  It even has a hobble exception list that skirts and dresses can be added to.<Br>
+   6. NPC dispositions (whether they want to help the player, see her in more bondage, or take advantage of her helplessness) has always been <Span Class=Highlight>a
+   random reaction</Span>.  You could ask the NPC for help once and get a very aggressive reaction and ask him again a few seconds late and get a very
+   helpful reaction.  While this is not really implemented yet I want to keep track of the NPC dispositions for actors that have been interracted
+   with recently or often.<Br>
+   7. A lot of information was difficult for me to come by.  I wanted a module that would <Span Class=Highlight>provide me with some of this information</Span> on demand: What
+   factions an actor is in, what slots an article of clothing has, what keywords the clothing has, etc.<Br>
+   8. In addition to the main module, I am working on an accompanying support module that can <Span Class=Highlight>help bridge the gap between some modules</Span>.  For example
+   it can detect when SD+ slavery has begun and register the player as a slave in the ZAZ Animation Pack inerface.  Whether things like this are
+   useful is still to be determined but it is something I am looking into.<Br>
+   9. While this was not a reason for my developing the mod, I created a periodic <Span Class=Highlight>spell to keep track of nearby actors</Span>.  I don't know whether this is
+   a fast enough process to really be usable mainstream; however, I have not had any trouble with it and it may turn out to be quite useful.<Br>
+   10. While this was not a reason for my developing the mod, I created <Span Class=Highlight>a leash interface</Span> as a bit of an experiment.  I know there are other leash
+   system out there (Devious Integration, Prison Overhaul) but I have yet to find one I am happy with.  Some of the problems I've found is the leash
+   holder will follow the player (rather than the other way around).  The player is "compelled" into walkwing toward the leash holder.  And there is
+   no visible indication of the leash.  I have tried to address these issues with my leash but more than that, it would be nice to cenralize leash
+   functions into one place.  The MCM could allow the player to select what style of leash they like, Devious Integration, Prison Overhaul, basic
+   teleport, or drag and jerk.  And this style could be used by most of the features in other mods.
+</P>
+
+<P Id=TocFeatureList>
+   <Span Class=SectionHeading>
+      Main Features<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Span Class=ItemHeading>
+         Masters:
+      </Span>
+      This mod allows other mods to keep track of two "Masters" or actors controlling the player, nearby and distant Masters.
+      Hopefully this will prevent mods from acting spontaneously on the player when they are already involved in a separate quest or scene.<Br>
+      <Span Class=ItemHeading>
+         Allowed Sex/Enslavement:
+      </Span>
+      In addition to keeping track of Masters this mod allows other mods to keep track of whether sex or enslavement is allowed.<Br>
+      <Span Class=ItemHeading>
+         Nearby Actors:
+      </Span>
+      This mod keeps track of nearby actors and some basic information about their status (slaves, slavers, etc.)<Br>
+      <Span Class=ItemHeading>
+         Behaviour Persistence:
+      </Span>
+      If this mod is used to keep track of an actor's disposition toward the player this disposition will be kept (for at least a while).
+      This will help prevent an actor from having no interest in helping the player and then choosing to be completely helpful when asked
+      the same question again.<Br>
+      <Span Class=ItemHeading>
+         Player Vulnerability:
+      </Span>
+      This mod keeps track of what clothes and restraints the player is wearing, whether it is night and reports a "vulnerability status" for the
+      player based on this information.  All of these vulnerabilities can be independently configured in the MCM menu allowing each player to
+      select what makes her more vulnerable and keeps vulnerability consistent across mods.<Br>
+      <Span Class=ItemHeading>
+         Leash:
+      </Span>
+      I am working on creating a leash that can be used by other mods.  This has been tried before so I might run into problems but so far it
+      has been working well.<Br>
+      <Span Class=ItemHeading>
+         Status:
+      </Span>
+      The MCM menu has a status page that provides information about worn item slots, keywords, actor factions, and nearby actors.<Br>
+      <Span Class=ItemHeading>
+         Utility Scripts:
+      </Span>
+      There is a utility script with general purpose functions: Data mutexes, Hex/String conversion, Array utilities.<Br>
+      <Span Class=ItemHeading>
+         Individual Feature Use:
+      </Span>
+      Since a lot of these features are new, experimental, and possibly controversial, I've tried to set them up such that every feature can
+      be enabled or disabled individually in the MCM menu.<Br>
+      <Span Class=ItemHeading>
+         Script Advice:
+      </Span>
+      For those who are not experienced in software development this is a collection of things I have learned, recommended scripting practices,
+      and example scripts.<Br>
+   </Span>
+</P>
+
+<P Id=TocModContent>
+   <Span Class=SectionHeading>
+      Mod Content<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Span Class=ItemHeading>
+         Quest _dfwDeviousFramework:
+      </Span>
+      There is only one quest for this mod.  Other than the player alias the quest only exists to run the scripts.<Br>
+      <Span Class=ItemHeading>
+         Player Alias:
+      </Span>
+      In the quest is a player alias.  This is needed for the MCM menu to work, but it also catches events that are triggered by the player.
+      This includes equipment changes, loading the game, and bleedout.  Loading the game is important to make sure all of the scripts are
+      up to date each time.<Br>
+      <Span Class=ItemHeading>
+         Script dfwDeviousFramework.psc:
+      </Span>
+      This is the main script for the mod.  It has a polling interval (an OnUpdate() event) which: updates the player's status on equipment
+      changes; manages the leash; casts the nearby actor detection spell; and cleans up the nearby actor list.  This script is also the main
+      API for the features of the module.  If you want to use this module see the features related to this script.<Br>
+      <Span Class=ItemHeading>
+         Script dfwMcm.psc:
+      </Span>
+      The script to create and manage the MCM menu with features like last page and script upgrading.<Br>
+      <Span Class=ItemHeading>
+         Script dfwUtil.psc:
+      </Span>
+      A utility script with general purpose functions: Data mutexes, Hex/String conversion, Array utilities, Teleporting the player, clothing
+      classification.  This mod has a notion of full body armour, chest wear, and clothing worn around the waist/legs.<Br>
+      <Span Class=ItemHeading>
+         Script dfwPlayerEvents.psc:
+      </Span>
+      This script is attached to the player alias of the quest.  It catches equipment changes, loading the game, and bleedout events for the player and
+      simply passes them on to the mod's main script.<Br>
+      <Span Class=ItemHeading>
+         Magic Effect _dfwNearbyDetectorEffect:
+      </Span>
+      This is an invisible area effect spell that triggers the dfwMagicEffectDetectNearby script on each actor it hits.  It is setup to only hit
+      each actor once every five game minutes unless he is cleared from the nearby actor list.  It does not trigger on creatures, hostile actors,
+      or dead bodies.<Br>
+      <Span Class=ItemHeading>
+         Script dfwMagicEffectDetectNearby.psc:
+      </Span>
+      This simply catches the event when an actor is hit by the nearby actor detector spell and reports it to the mod's main script.<Br>
+      <Span Class=ItemHeading>
+         Spell _dfwNearbyDetectorSpell:
+      </Span>
+      This is an invisible area effect spell that triggers the _dfwNearbyDetectorEffect script on each actor it hits.  The range of this spell is
+      configured in the MCM menu (and subsequently changed via the mod's main script).<Br>
+      <Span Class=ItemHeading>
+         Magic Effect _dfwLeashEffect:
+      </Span>
+      This is a visual representation of the leash.  Cast every second or so, it projects a small red mystical looking blob from the leash point
+      to the player.  It uses a custom _dfwLeashProjectile projectile.<Br>
+      <Span Class=ItemHeading>
+         Projectile _dwfLeashProjectile:
+      </Span>
+      This is a visual representation of the leash sent from the leash point to the player.  This could be improved to look like a rope or chain
+      but since I don't know how to do that I play to leave it as a rudamentary small red blob based on the AuraWhisperProjectile.nif.  Some other
+      existing projectiles have been considered but there are certainly many that haven't been tried.  The speed, range, and other options can also
+      be adjusted for a better look but for now it is not too bad.<Br>
+      <Span Class=ItemHeading>
+         Spell _dfwLeashSpell:
+      </Span>
+      This spell casts the leash from the leash point to the player.  It is cast from the mod's main script every poll.  It must be cast from the
+      leash point to the player since the same spell cast by the player would travel in the direction the player is facing and cannot be directed
+      otherwise.<Br>
+   </Span>
+</P>
+
+<P Id=TocSupportMod>
+   <Span Class=SectionHeading>
+      Support Mod<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      There is a support mod that accompanies this mod.<Br>
+      For now it is just a way to test the leash feature and has some example code in it.  While this leash test works with any actor properly
+      identified as a "Slaver" it has only been tested with slavers from the Hydra Slave Girls mod.<Br>
+   </Span>
+</P>
+
+<P Id=TocApiGeneral>
+   <Span Class=SectionHeading>
+      API General Functions<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetModVersion()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            String GetModVersion()
+         </Div>
+         Returns the version string for the mod.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetPlayerTalkingTo()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Actor GetPlayerTalkingTo()<Br>
+            Returns None if no actor is speaking with the player.
+         </Div>
+         Returns the actor the player is speaking with.  This has always been a bit of a problem because there is only an interface to check if
+         an NPC is speaking with the player.  All nearby actors are checked.  Some implementations check all actors in the same area as the
+         player.  Some also check all actors in all surrounding areas.  This implementation checks all actors in the nearby actor list.  Only
+         time and extensive use will tell if this implementation is effective.<Br>
+         Be wary.  This feature is likely to be faster than most but it may not be accurate 100% of the time.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsPlayerCriticallyBusy()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Bool IsPlayerCriticallyBusy(Bool bIncludeBleedout)<Br>
+            bIncludeBleedout: Optional.  Default to true.  If false the player will not be considered busy during the bleedout time regardless of
+            whether other conditions are met.
+         </Div>
+         Note: Detecting that the player is in bleedout is a bit of a best guess right now so use with caution.<Br>
+         This checks if the player is involved in something that should not be interrupted.  Primarily it checks if the player is involved in any
+         scene and it does so by checking if the player's controls are locked.  This will include sex, dialog scenes, and bleedout.
+      </Div>
+      <Div Class=ApiFunction Id=BlockFunctionApi>
+         <Span Class=ItemHeading>
+            BlockHealthRegen()<Br>
+            BlockMagicaRegen()<Br>
+            BlockStaminaRegen()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            These functions require no paramenters.
+         </Div>
+         When a player is enslaved sometimes it is unrealistic and detrimental to the enslavement for her to regenerate health, magica, and stamina
+         at their normal (out of combat) rate.  What good is it to punish a player with a whipping if they fully recover in a few seconds?  Calling
+         these functions will significantly inhibit the player's regeneration of their stats, while not preventing the regeneration entirely.<Br>
+         Each stat will be inhibited until the corresponding "<A HRef=#RestoreFunctionApi>Restore</A>" function is called.  The restore function
+         must be called once for each time the block function is called.  Thus, if two mods have health blocked it will not be restored until both
+         mods call the restore function.
+      </Div>
+      <Div Class=ApiFunction Id=BlockFunctionApi>
+         <Span Class=ItemHeading>
+            DisableMagicka()<Br>
+            DisableStamina()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            DisableMagicka(Bool bDisable)<Br>
+            DisableStamina(Bool bDisable)<Br>
+         </Div>
+         These functions are similar to to BlockMagickaRegen() and BlockStaminaRegen() except that they take away all of the player's Magicka or
+         Stamina and reduce all regeneration of that stat.
+      </Div>
+      <Div Class=ApiFunction Id=RestoreFunctionApi>
+         <Span Class=ItemHeading>
+            RestoreHealthRegen()<Br>
+            RestoreMagicaRegen()<Br>
+            RestoreStaminaRegen()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            These functions require no paramenters.
+         </Div>
+         Restores the player to their normal regeneration rates.  These functions must be called once for each time the corresponding
+         "<A HRef=#BlockFunctionApi>Block</A>" function is called.<Br>
+         See the "<A HRef=#BlockFunctionApi>Block</A>" function description for further details.
+      </Div>
+   </Span>
+</P>
+
+<P Id=TocApiMasters>
+   <Span Class=SectionHeading>
+      API Master Functions<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiConstant>
+         <Span Class=ItemHeading>
+            Constants: Master distances (MD_)<Br>
+         </Span>
+         <Table Class=ApiConstant>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  MD_NONE    </Td>
+               <Td Class=ApiConstantValue> 0x00000000 </Td>
+               <Td Class=ApiConstantDescription>
+                  Specifies no Master distance is applicable.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  MD_ANY     </Td>
+               <Td Class=ApiConstantValue> 0x00000001 </Td>
+               <Td Class=ApiConstantDescription>
+                  Specifies any Master distance is acceptable.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  MD_ALL     </Td>
+               <Td Class=ApiConstantValue> 0x00000002 </Td>
+               <Td Class=ApiConstantDescription>
+                  Specifies the Master is both close and far.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  MD_CLOSE   </Td>
+               <Td Class=ApiConstantValue> 0x00000004 </Td>
+               <Td Class=ApiConstantDescription>
+                  Specifies the Master is nearby to the player.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  MD_DISTANT </Td>
+               <Td Class=ApiConstantValue> 0x00000008 </Td>
+               <Td Class=ApiConstantDescription>
+                  Specifies the Master controls the player but is normally not near the player.
+               </Td>
+            </Tr>
+         </Table>
+      </Div>
+      <Div Class=ApiConstant>
+         <Span Class=ItemHeading>
+            Constants: Action Permissions (AP_) <Br>
+         </Span>
+         <Table Class=ApiConstant>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_NONE    </Td>
+               <Td Class=ApiConstantValue> 0x00000000 </Td>
+               <Td Class=ApiConstantDescription>
+                  No permissions are allowed.  All permissions are blocked.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_SEX     </Td>
+               <Td Class=ApiConstantValue> 0x00000001 </Td>
+               <Td Class=ApiConstantDescription>
+                  NPCs may randomly stop the player for sexual encounters.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_ENSLAVE </Td>
+               <Td Class=ApiConstantValue> 0x00000002 </Td>
+               <Td Class=ApiConstantDescription>
+                  Mods may initiate encounters that will result in the player being enslaved or a transfer of ownership of the player.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_RESTRAIN </Td>
+               <Td Class=ApiConstantValue> 0x00000004  </Td>
+               <Td Class=ApiConstantDescription>
+                  Mods may add various restraints to the player provided they do not interfere with restraints the player is already wearing.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_DRESSING_ALONE </Td>
+               <Td Class=ApiConstantValue> 0x00000010        </Td>
+               <Td Class=ApiConstantDescription>
+                  Any mod may change the non-restrictive items the player is wearing.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_DRESSING_ASSISTED </Td>
+               <Td Class=ApiConstantValue> 0x00000020           </Td>
+               <Td Class=ApiConstantDescription>
+                  When this is set a nearby Master is considered to be helping the player dress, thus overriding restrictions such as wearing
+                  leggings over a hobble or getting body armour over a leash.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_DRESSING </Td>
+               <Td Class=ApiConstantValue> 0x00000030  </Td>
+               <Td Class=ApiConstantDescription>
+                  This is a mask that includes both dressing related permissions, AP_DRESSING_ALONE and AP_DRESSING.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_NO_SEX  </Td>
+               <Td Class=ApiConstantValue> 0xFFFFFFFE </Td>
+               <Td Class=ApiConstantDescription>
+                  This is a mask that includes everything except AP_SEX.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_NO_BDSM </Td>
+               <Td Class=ApiConstantValue> 0xFFFFFFF9 </Td>
+               <Td Class=ApiConstantDescription>
+                  This is a mask that includes everything except BDSM related permissions (Enslavement and restraints).
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AP_ALL     </Td>
+               <Td Class=ApiConstantValue> 0xFFFFFFFF </Td>
+               <Td Class=ApiConstantDescription>
+                  All permissions are allowed.  No permissions are blocked.
+               </Td>
+            </Tr>
+         </Table>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetMaster()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Actor GetMaster(Int iMasterDistance, Int iInstance)<Br>
+            iMasterDistance: Optional.  Default to MD_ANY.  Whether a nearby or distant Master should be considered.  Currently only MD_DISTANT is
+            supported.  Anything else (including the default) is considered to be MD_CLOSE.<Br>
+            iInstance: Optional.  Default to 1.  Can be used in subsequent calls to get different Masters if the function could return more than
+            one.  This parameter is not yet supported.<Br>
+            Returns None if no mod has registered that the player has a Master.
+         </Div>
+         Returns the actor that has been registered as controlling the player.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetMasterMod()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            String GetMasterMod(Int iMasterDistance, Int iInstance)<Br>
+            iMasterDistance: Optional.  Default to MD_ANY.  Whether a nearby or distant Master should be considered.  Currently only MD_DISTANT is
+            supported.  Anything else (including the default) is considered to be MD_CLOSE.<Br>
+            iInstance: Optional.  Default to 1.  Can be used in subsequent calls to get different Masters if the function could return more than
+            one.  This parameter is not yet supported.<Br>
+            Returns "" if no mod has registered that the player has a Master.
+         </Div>
+         Upon registering an actor as the player's Master the registering mod is required to provide a string to identify itself, "DFW" for example.
+         This is the string returned.  The purpose of this is for a mod to check if one of it's features is controlling the player.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            SetMaster()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Int SetMaster(Actor aNewMaster, String szMod, Int iPermissions, Int iMasterDistance, Bool bOverride)<Br>
+            aNewMaster: The actor who should be registered as controlling the player.<Br>
+            szMod: A unique string identify which mod or feature is managing this Master.<Br>
+            iPermissions: A set of actionis permitted by this Master.
+            iMasterDistance: Optional.  Default MD_CLOSE.  Whether this Master is near the player or not.  Supports: MD_CLOSE and MD_DISTANT.<Br>
+            bOverride: Optional.  Default False.  Whether any previous Master should be cleared prior to registerring the new Master.<Br>
+            Returns FAIL(-1) if a previous Master existed and bOverride is set to False.  If this happens the registering mod should not continue
+            controlling the player.<Br>
+            Returns WARNING(1) if a previous Master existed but the new Master was successfully registered.<Br>
+            Returns SUCCESS(0) if no previous Master existed and the new Master was successfully registered.
+         </Div>
+         This function should be called when a mod is attempting to take control of the player.  It registers a new actor as the player's Master,
+         controlling the player.  Two different types of Masters can control the player.  Nearby Masters typically represent someone keeping the
+         player on a leash or actively watching the player.  Distant Masters typically represent someone who has a collar or chastity belt locked on
+         the player but has allowed the player to wander and explore on their own.  If bOverride is set, any existing Master will be cleared.  Note
+         that nearby Masters only clear existing nearby Masters and distant Masters only clear distant Masters.<Br>
+         If a Master is cleared this way, a <A HRef=#NewMasterEventApi>New Master Event</A> will be generated to notify the old mod that their
+         control of the player has been taken over.<Br>
+         <Span Class=FontWarning>Warning:</Span> Some mods may not handle this New Master Event so check that enslavement is allowed before
+         overriding a current Master.<Br>
+         If the permissions include AP_SEX the player may be stopped at any time for sex from other mods.  Make sure your Master's behaviour
+         accounts for this.<Br>
+         If the permissions include AP_ENSLAVE enslavement by your mod may be terminated by another mod taking control of the the player.  Make sure
+         your mod accounts for this by handling the <A HRef=#NewMasterEventApi>New Master Event</A>.<Br>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            ClearMaster()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Int ClearMaster(Actor aMaster, Bool bEscaped=False)<Br>
+            aMaster: The actor to be cleared as the player's Master.<Br>
+            bEscaped: Whether the player has escaped or was released.  This affects the ZAZ Animation Pack mod.<Br>
+            Returns WARNING(1) if the actor is not registered as the player's Master.<Br>
+            Returns SUCCESS(0) if the actor was registered as the player's Master and has been cleared.
+         </Div>
+         Clears the specified actor indicating he is no longer controlling the player.  The actor must be specified to help prevent mods from
+         clearing Masters registered by other mods without authorization.<Br>
+         Note: No event is genreated when a Master is cleared this way.<Br>
+         Note: When clearing a Master make sure to also clear the actor as the player's Master in the ZAZ Animation Pack mod.  See the
+         <A HRef=#TocModCompatibility>Mod Compatibility</A> section for further details.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            ChangeMasterDistance()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Int ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant, Bool bOverride)<Br>
+            aMaster: The Master who is being changed.<Br>
+            bMoveToDistant: Optional.  Default True.  Whether the Master should now be considered Distant.  Will be considered close otherwise.<Br>
+            bOverride: Optional.  Default False.  Whether any previous Master should be cleared prior to moving the new Master.<Br>
+            Returns FAIL(-1) if the specified Master is not registered at the proper distance to be moved.  E.g. if the Master is not registered
+            as nearby we cannot move him to a distant Master.<Br>
+            Returns FAIL(-1) if a previous Master existed at the specified distance and bOverride is set to False.
+            Returns WARNING(1) if the Master is already registered at the specified distance.
+            Returns WARNING(1) if a previous Master existed at the specified distance but the new Master was successfully registered.<Br>
+            Returns SUCCESS(0) if the Master can be moved to the new distance.
+         </Div>
+         Updates the distance associated with the Master.  For example, if a Master is keeping the player on a leash (a nearby Master) and he
+         unlocks the leash allowing the player to wander off and explore (a distant Master) the Master should be changed from nearby to distant.<Br>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            AddPermission()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            AddPermission(Actor aMaster, Int iPermissionMask)<Br>
+            aMaster: The master whose permissions are being changed.<Br>
+            iPermissionMask: The actions that will now be allowed by the Master.
+         </Div>
+         Changes the set of actions permitted by the specified Master to now allow the specified actions.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            RemovePermission()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            RemovePermission(Actor aMaster, Int iPermissionMask)<Br>
+            aMaster: The master whose permissions are being changed.<Br>
+            iPermissionMask: The actions that will no longer be allowed by the Master.
+         </Div>
+         Changes the set of actions permitted by the specified Master to no longer allow the specified actions.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsAllowed()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Bool IsAllowed(Int iAction)<Br>
+            iAction: The AP_ constant mask of the action(s) in question.
+         </Div>
+         Returns False if a nearby or distant Master has been registered indicating that the requested action is not allowed.<Br>
+         Returns True if no such registration has been made.<Br>
+         If multiple actions are specified in the action mask it will return False if any of the actions are forbidden.
+      </Div>
+   </Span>
+</P>
+
+<P Id=TocApiPlayerStatus>
+   <Span Class=SectionHeading>
+      API Player Status Functions<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiConstant>
+         <Span Class=ItemHeading>
+            Constants: Naked Status (NS_)<Br>
+         </Span>
+         <Table Class=ApiConstant>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_NAKED   </Td>
+               <Td Class=ApiConstantValue> 0x00000000 </Td>
+               <Td Class=ApiConstantDescription>
+                  The player is not wearing any body, chest, or waist clothing or armour.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_WAIST_PARTIAL </Td>
+               <Td Class=ApiConstantValue> 0x00000001       </Td>
+               <Td Class=ApiConstantDescription>
+                  The player is wearing waist coverings and it is considered naked by SexLab aroused.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_WAIST_COVERED </Td>
+               <Td Class=ApiConstantValue> 0x00000002       </Td>
+               <Td Class=ApiConstantDescription>
+                  The player is wearing waist coverings.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_CHEST_PARTIAL </Td>
+               <Td Class=ApiConstantValue> 0x00000004       </Td>
+               <Td Class=ApiConstantDescription>
+                  The player is wearing chest coverings and it is considered naked by SexLab aroused.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_CHEST_COVERED </Td>
+               <Td Class=ApiConstantValue> 0x00000008       </Td>
+               <Td Class=ApiConstantDescription>
+                  The player is wearing chest coverings.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_BOTH_PARTIAL </Td>
+               <Td Class=ApiConstantValue> 0x00000010      </Td>
+               <Td Class=ApiConstantDescription>
+                  Wearing body clothing/armour considered naked by SexLab aroused or both waist and chest coverings, at least one of which is considered naked.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_BOTH_COVERED </Td>
+               <Td Class=ApiConstantValue> 0x00000020      </Td>
+               <Td Class=ApiConstantDescription>
+                  Wearing body clothing/armour or both waist and chest coverings.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_WAIST_PROTECTED </Td>
+               <Td Class=ApiConstantValue> 0x00000032         </Td>
+               <Td Class=ApiConstantDescription>
+                  A mask for all permutations that cover the waist above, not including naked clothing.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  NS_CHEST_PROTECTED </Td>
+               <Td Class=ApiConstantValue> 0x00000038         </Td>
+               <Td Class=ApiConstantDescription>
+                  A mask for all permutations that cover the chest above, not including naked clothing.
+               </Td>
+            </Tr>
+         </Table>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetNakedLevel()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Int GetNakedLevel()<Br>
+            Returns a Naked Status (NS_) constant indicating the player's current naked level.
+         </Div>
+         Note: This mod has the concept of chest and waist coverings.  These concepts are based on information from the following web page which
+         attempts to to standardize clothing worn on specific slots: 46 & 56 for chest and 49 & 52 for waist.  These slots conflict a little with
+         devious devices; however, they only apply to clothing, which shouldn't have the devious keyword.  These slots can also be adjusted in the
+         MCM menu if the player frequently wears clothing from a mod that doesn't follow these standards.<Br>
+         <A HRef=http://www.creationkit.com/index.php?title=Biped_Object>http://www.creationkit.com/index.php?title=Biped_Object</A><Br>
+         The following web page is a good instruction manual for how to change the body slot of clothing in a mod you are making or using.  In
+         summary it must be changed in three places:<Br>
+         1. In one of the .NIF files (note there are two.  If you chose the wrong one you will notice)
+         under NiNode => NiTriShapeData => BSDismemberSkinInstance => Partitions => Partitions => Body Part<Br>
+         2. In the Creation Kit's "Armor" section under Items<Br>
+         3. In the Creation Kit's "ArmorAddon" section under Items<Br>
+         <A HRef=http://wiki.tesnexus.com/index.php/Skyrim_bodyparts_number>http://wiki.tesnexus.com/index.php/Skyrim_bodyparts_number</A>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsPlayerBound()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Bool IsPlayerBound(Bool bIncludeHidden, Bool bOnlyLocked)<Br>
+            bIncludeHidden: Optional.  Default False.  Whether or not to include restraints that are covered by clothing.<Br>
+            bOnlyLocked: Optional.  Default False.  Whether or not to exclude restraints that are not locked.  Not yet supported.<Br>
+            Returns True if the player is wearing any restraints that match the specified conditions.  False otherwise.
+         </Div>
+         Note: Keeping track of what restraints are worn and/or hidden is not 100% yet.  Some improvements are still needed.<Br>
+         Trigger Keywords: All keywords from the individual functions below + zad_DeviousArmCuffs, zad_DeviousGloves, zad_DeviousPiercingsVaginal,
+         zad_DeviousBlindfold, zad_DeviousHood, zbfWornBlindfold, zbfWornHood, zad_DeviousBra, zbfWornBra, zad_DeviousClamps,
+         zad_DeviousPiercingsNipple, zad_DeviousCorset, zad_DeviousHarness, zbfWornWrist (without the movement restrictions of a hobble),
+         zad_DeviousLegCuffs (without the movement restrictions of a hobble), zad_DeviousSuit<Br>
+         Hidden by chest coverings: Chastity Bra, Nipple Clamps, Nipple Piercings<Br>
+         Hidden by waist coverings: Chastity Belt, Vaginal Piercings<Br>
+         Hidden by full body coverings: All above + Corset, Harness
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsPlayerArmLocked()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Bool IsPlayerArmLocked()
+         </Div>
+         Are the player's arms locked in such a way as to be restrictive?  Simply wearing cuffs that are not locked together should not register
+         as being arm locked.<Br>
+         Trigger Keywords: zad_DeviousArmbinder, zad_DeviousYoke, zbfWornYoke, zbfWornWrist
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsPlayerBelted()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Bool IsPlayerBelted()
+         </Div>
+         Is the player wearing a chastity belt?<Br>
+         Trigger Keywords: zad_DeviousBelt, zbfWornBelt
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsPlayerCollared()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Bool IsPlayerCollared()
+         </Div>
+         Is the player wearing a collar?<Br>
+         Trigger Keywords: zad_DeviousCollar, zbfWornCollar
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsPlayerGagged()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Bool IsPlayerGagged()
+         </Div>
+         Is the player wearing a gag?<Br>
+         Trigger Keywords: zad_DeviousGag, zbfWornGag
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsPlayerHobbled()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Bool IsPlayerHobbled()
+         </Div>
+         Are the player's feet locked in such a way as to be restrictive?  Simply wearing cuffs that are not locked together should not register
+         as being hobbled.<Br>
+         Trigger Keywords: zad_DeviousBoots, zbfWornWrist (with zbfEffectNoMove or zbfEffectSlowMove),
+         zad_DeviousLegCuffs (with zbfEffectNoMove or zbfEffectNoSprint or zbfEffectSlowMove)
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetVulnerability()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Int GetVulnerability(Actor aActor)<Br>
+            aActor: Option.  Default player.  Only checking vulnerability of the player is supported.<Br>
+            Returns a value (0 - 100) of how vulnerable the player is.
+         </Div>
+         This is determined by adding a vulnerability for a number of individual items based on how much they are configured in the MCM menu.<Br>
+         Naked/Partially Covered, Collared, Arms Locked, Gagged, Other Restraints, Leashed, Night Time<Br>
+         Other Restraints include: Hobble/Boots/Leg Cuffs, Arm Cuffs/Gloves, Visible Belt/Vaginal Piercings, Blindfold/Hood, Visible Bra/Nipple
+         Clamps/Piercings, Visible Corset/Harness, Full Bondage Suit
+      </Div>
+   </Span>
+</P>
+
+<P Id=TocApiNearbyActors>
+   <Span Class=SectionHeading>
+      API Nearby Actor Functions<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiConstant>
+         <Span Class=ItemHeading>
+            Constants: Naked Status (NS_)<Br>
+         </Span>
+         <Table Class=ApiConstant>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_ESTIMATE </Td>
+               <Td Class=ApiConstantValue> 0x00000001  </Td>
+               <Td Class=ApiConstantDescription>
+                  The information about the actor is based on a first look at the actor.  No mod or story event has provided decisive information
+                  about the actor's status.  For now all information is estimated.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_IMPORTANT </Td>
+               <Td Class=ApiConstantValue> 0x00000002   </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is considered important based on the SexLab Aroused definition (Unique, essential, invulnerable, protected).
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_CHILD   </Td>
+               <Td Class=ApiConstantValue> 0x00000004 </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is a child.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_GUARDS  </Td>
+               <Td Class=ApiConstantValue> 0x00000008 </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is a guard.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_MERCHANTS </Td>
+               <Td Class=ApiConstantValue> 0x00000010   </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is a merchant.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_HOSTILE </Td>
+               <Td Class=ApiConstantValue> 0x00000020 </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is hostile to the player.  Note: This shouldn't be used as hostile actors aren't detected by the spell.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_ANIMAL  </Td>
+               <Td Class=ApiConstantValue> 0x00000040 </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is an animal.  Note: This shouldn't be used as animals aren't detected by the spell.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_DOMINANT </Td>
+               <Td Class=ApiConstantValue> 0x00000080  </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is considered dominant.  For now everyone who is not wearing restraints is considered dominant.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_SUBMISSIVE </Td>
+               <Td Class=ApiConstantValue> 0x00000100    </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is is wearing restraints but is not identified as a slave.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_SLAVE   </Td>
+               <Td Class=ApiConstantValue> 0x00000200 </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is registered as a slave according to the
+                  <A HRef=http://www.loverslab.com/files/file/156-zaz-animation-pack-2016-03-31>ZAZ Animation Pack</A>
+                  (in the faction zbfFactionSlave)<Br>
+                  Or this actor is wearing a Collar, Corset, Harness, Arm Binder, Yoke, or Bondage Suit.
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_OWNER   </Td>
+               <Td Class=ApiConstantValue> 0x00000400 </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is a owns at least one slave.  I.e. he is registered as a Master according to the
+                  <A HRef=http://www.loverslab.com/files/file/156-zaz-animation-pack-2016-03-31>ZAZ Animation Pack</A>
+                  (in the faction zbfFactionMaster)<Br>
+                  Or this actor is a slave trader (AF_SLAVE_TRADER).
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_SLAVE_TRADER </Td>
+               <Td Class=ApiConstantValue> 0x00000800      </Td>
+               <Td Class=ApiConstantDescription>
+                  This actor is in the business of selling slaves.  I.e. he is a
+                  <A HRef=http://www.loverslab.com/files/file/828-slave-girls-by-hydragorgon>Hydra Slavegirls</A> slaver or is registered as a
+                  slaver with the <A HRef=http://www.loverslab.com/files/file/156-zaz-animation-pack-2016-03-31>ZAZ Animation Pack</A>
+                  (in the faction zbfFactionSlaver)<Br>
+               </Td>
+            </Tr>
+            <Tr Class=ApiConstant>
+               <Td Class=ApiConstantName>  AF_BDSM_AWARE </Td>
+               <Td Class=ApiConstantValue> 0x00000F00    </Td>
+               <Td Class=ApiConstantDescription>
+                  A flag to encompass all types of actors (submissive and dominant) that are involved in BDSM in some way: subs, slaves, Masters,
+                  and slave traders.
+               </Td>
+            </Tr>
+         </Table>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetNearbyActorList()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Form[] GetNearbyActorList(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)<Br>
+            fMaxDistance: Optional.  Default 0-Any Distance.  The maximum distance from the player to return actors for.  Note distance is already
+            limited by the nearby actor list which has an MCM configurable scan radius.<Br>
+            iIncludeFlags: Optional.  Default 0-All Flags.  Only return actors whose AF_ flags match the specified flags.<Br>
+            iIncludeFlags: Optional.  Default 0-No Flags.  Only return actors whose AF_ flags do not match the specified flags.
+         </Div>
+         This returns an array of forms, each of which is an actor in the nearby actors list whose flags match the specified conditions.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetNearbyActorFlags()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Int[] GetNearbyActorFlags()<Br>
+            Returns an array of actor flags matching actors returned from the last call to GetNearbyActorList()
+         </Div>
+         For any call to get a nearby actor list the set of flags for all actors returned is saved.  Calling this function returns a list of actor
+         flags matching the actors returned in the most recent call to get the nearby actor list.<Br>
+         <Span Class=FontWarning>Warning:</Span> There can easily be a race condition where another mod makes a call to get a nearby actor list
+         before your mod gets a chance to get the nearby actor flags.  This mechanism needs to be improved.  For now, at least make sure the two
+         lists are the same size.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetRandomActor()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Actor GetRandomActor(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)<Br>
+            fMaxDistance: Optional.  Default 0-Any Distance.  The maximum distance from the player to return an actor for.  Note distance is
+            already limited by the nearby actor list which has an MCM configurable scan radius.<Br>
+            iIncludeFlags: Optional.  Default 0-All Flags.  Only return an actor whose AF_ flags match the specified flags.<Br>
+            iIncludeFlags: Optional.  Default 0-No Flags.  Only return an actor whose AF_ flags do not match the specified flags.
+         </Div>
+         Return a random actor from the nearby actor list whose flags match the specified conditions.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetNearestActor()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            Actor GetNearestActor(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)<Br>
+            fMaxDistance: Optional.  Default 0-Any Distance.  The maximum distance from the player to return an actor for.  Note distance is
+            already limited by the nearby actor list which has an MCM configurable scan radius.<Br>
+            iIncludeFlags: Optional.  Default 0-All Flags.  Only return an actor whose AF_ flags match the specified flags.<Br>
+            iIncludeFlags: Optional.  Default 0-No Flags.  Only return an actor whose AF_ flags do not match the specified flags.
+         </Div>
+         Return the actor from the nearby actor list who is nearest to the player and whose flags match the specified conditions.
+      </Div>
+   </Span>
+</P>
+
+<P Id=TocApiLeash>
+   <Span Class=SectionHeading>
+      API Leash Functions<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            SetLeashTarget()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            SetLeashTarget(ObjectReference oLeashTarget)
+            oLeashTarget: The actor or object to leash the player to.<Br>
+            oLeashTarget: Set this to None to unleash the player.
+         </Div>
+         Starts the Devious Framework leash feature keeping the player leashed to the specified actor or object.<Br>
+         If being leashed to a nearby actor the actor should probably be registered as the player's Master prior to doing so.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            SetLeashLength()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            SetLeashLength(Int iLength)
+            iLength: The distance the player can move from the leash target before she is jerked back.
+         </Div>
+         Sets the distance the player can move from the leash target before she is jerked back.
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            YankLeash()<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            YankLeash()
+         </Div>
+         Jerks the player toward the leash target.  This will damage the player and cause them some disorientation.<Br>
+         It can be used as a form of punishment, to rough up the player a little, or to gain an advantage in combat.
+      </Div>
+   </Span>
+</P>
+
+<P Id=TocApiOutgoingEvents>
+   <Span Class=SectionHeading>
+      API Outgoing Events<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiEvent Id=NewMasterEventApi>
+         <Span Class=ItemHeading>
+            DFW_NewMaster<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            ModEvent DFW_NewMaster(String szOldMod, Actor aOldMaster)
+            szOldMod: The old mod that managed the Master who used to control the player.<Br>
+            aOldMaster: The Master who used to control the player but has been replaced.
+         </Div>
+         This event is sent out when a mod registers a new Master (nearby or distant) in a place where there was already an existing Master.  It is
+         sent to identify the old Master has been replaced.  Any mod that registers a Master allowing the AP_ENSLAVE permission must handle this
+         event.
+      </Div>
+      <Div Class=ApiEvent>
+         <Span Class=ItemHeading>
+            DFW_NearbyActor<Br>
+         </Span>
+         <Div Class=ApiFunctionDefinition>
+            ModEvent DFW_NearbyActor(Int iFlags, Actor aActor)
+            iFlags: These are the AF_ flags that describe the new nearby actor.<Br>
+            aActor: This is the new actor that has been detected nearby.
+         </Div>
+         This event is sent when a new NPC is detected nearby to the player.<Br>
+         <Span Class=FontWarning>Warning:</Span> This event will be sent out quite frequently.  Handling it should be performed very fast and
+         efficiently.  It has not been thoroughly tested so it is unknow whether sending this event out for each new actor is even a reasonable
+         thing to do.
+      </Div>
+   </Span>
+</P>
+
+<P Id=TocSamplesGeneral>
+   <Span Class=SectionHeading>
+      Samples: General<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            Accessing Quest Scripts<Br>
+         </Span>
+         A lot of places will tell you to setup a quest property of type <Code>dfwDeviousFramework</Code> and give it a name, e.g.
+         <Code>_qDfw</Code>.  When selecting a value only the Devious Framework quest will be available for selection.  Once this is done any of
+         the interfaces from this mod can be accessed in the following way: <Code>_Dfw.GetMaster(_Dfw.MD_CLOSE)</Code><Br>
+         This method has some benefits and some drawbacks.  If you do not know what you are doing this is the best way to access the framework.<Br>
+         However, doing so creates a dependency on the Devious Framework mod.<Br>
+         To access this API without creating a dependency on the DFW mod use the following:<Br>
+<Pre Class=SampleCode>
+; A reference to the main framework quest script.
+dfwDeviousFramework _qDfw
+
+Function UpdateScript()
+   If (0.01 > _fCurrVer)
+      _qDfw = Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework
+   EndIf
+EndFunction
+
+Function SomeFunction()
+   Actor aCurrentMaster = _Dfw.GetMaster(_Dfw.MD_CLOSE)
+   ... Do something ...
+EndFunction
+</Pre>
+         The problem with this method is the _qDfw variable should be set once and once only.  <Code>GetQuest()</Code> is slow and it should not be
+         called too many times.  The best way to manage this is to set the _qDfw variable when the script is updated.  This process can be a little
+         complicated if you don't know what you are doing.<Br>
+      </Div>
+
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            Updating Your Script<Br>
+         </Span>
+         So you want to learn a good way to update your script, do you?<Br>
+         The best time to update a script is when the game loads during the <Code>Event OnPlayerLoadGame()</Code> event.  The trouble with this is
+         quests do not receive <Code>OnPlayerLoadGame()</Code> events.  In order for a quest to receive this event you must create a player alias
+         for the quest, attach a script to it and have that script catch the event.<br>
+         The devious framework does this with the <Code>dfwPlayerEvents.psc</Code> attached to it's player alias.  Inside this script you will find
+         the following code:
+<Pre Class=SampleCode>
+Scriptname dfwPlayerEvents extends ReferenceAlias
+dfwDeviousFramework _qMainQuestScript
+
+Event OnPlayerLoadGame()
+   ; Make sure we have a valid reference to the main devious framework script.
+   If (!_qMainQuestScript)
+      _qMainQuestScript = Self.GetOwningQuest() As dfwDeviousFramework
+   EndIf
+
+   ; Forward this event to the main devious framework script.
+   _qMainQuestScript.UpdateScript()
+EndEvent
+</Pre>
+         Since the player alias and the main quest script are part of the same quest we can use <Code>Self.GetOwningQuest()</Code> instead of
+         the slower <Code>GetQuest()</Code>.  This would only be called once each time the game is loaded and only if the
+         <Code>_qMainQuestScript</Code> variable hasn't been set yet.<Br>
+         Inside the main script we have a <Code>_fCurrVer</Code> variable that keeps track of which version of script is stored with the game.<Br>
+<Pre Class=SampleCode>
+; A local variable to store a reference to the player for faster access.
+Actor _aPlayer
+
+Float _fCurrVer = 0.00
+
+; A reference to the ZAZ Animation Pack quests.
+zbfSlaveControl _qZbfSlaveControl
+
+; A reference to the main framework quest script.
+dfwDeviousFramework _qDfw
+
+Function UpdateScript()
+   Float fLatestVer = 0.03
+   If (fLatestVer == _fCurrVer)
+      ; The game is up to date.  Return.
+      Return
+   EndIf
+   Debug.Notification("[DFW] Updating Script: " + _fCurrVer + " => " + fLatestVer)
+
+   If (0.01 > _fCurrVer)
+      _aPlayer = Game.GetPlayer()
+      _qZbfSlaveControl = Quest.GetQuest("zbfSlaveControl") As zbfSlaveControl
+      ... Initialize some variables created in version 1 ...
+   EndIf
+
+   If (0.02 > _fCurrVer)
+      _qDfw = Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework
+   EndIf
+
+   If (0.03 > _fCurrVer)
+      ... Initialize some variables created in version 3 ...
+   EndIf
+   _fCurrVer = fLatestVer
+EndFunction
+</Pre>
+         In this example the <Code>_qDfw</Code> variable was added to the script in version 2.  It is initialized when a game is loaded that isn't
+         running the latest version of the script.  It can be iniailized without changing any variables that were already set in version 1.<Br>
+         If your script registers for an <Code>OnUpdate()</Code> event it can check the version number from that event rather than creating a
+         player alias to catch the <Code>OnPlayerLoadGame()</Code> event.  <Code>GetCurrentRealTime()</Code> is reset to zero each time "the game
+         is launched".  I'm not sure if launched means the current game is loaded or Skyrim is started from Windows.  If the latter there may be
+         some odd behaviour loading the game multiple times in a session without saving it but in general this may be a good way to detect if the
+         game is loaded.
+      </Div>
+
+      <Div Class=ApiFunctionSample>
+         <Span Class=ItemHeading>
+            GetModVersion()<Br>
+         </Span>
+<Pre Class=SampleCode>
+Function SomeFunction()
+   Debug.Notification("The Devious Framework mod is version: " + _qDfw.GetModVersion())
+EndFunction
+</Pre>
+      </Div>
+      <Div Class=ApiFunctionSample>
+         <Span Class=ItemHeading>
+            GetPlayerTalkingTo()<Br>
+         </Span>
+         The Devious Framework uses this function to end the conversation if the player's leash is being yanked.
+<Pre Class=SampleCode>
+Function YankLeash()
+   If (_qDfw.GetPlayerTalkingTo())
+      ; Moving the player to her own location will end the conversation.
+      _aPlayer.MoveTo(_aPlayer)
+   EndIf
+   ...
+EndFunction
+</Pre>
+      </Div>
+      <Div Class=ApiFunctionSample>
+         <Span Class=ItemHeading>
+            IsPlayerCriticallyBusy()<Br>
+         </Span>
+<Pre Class=SampleCode>
+Function SomeFunction()
+   If (!_qDfw.IsPlayerCriticallyBusy(False))
+      ; Do something only if the player is not in a scene.
+      ; This will happen even if the player is in bleedout since bIncludeBleedout is False.
+      ...
+   EndIf
+EndFunction
+</Pre>
+      </Div>
+      <Div Class=ApiFunctionSample>
+         <Span Class=ItemHeading>
+            BlockHealthRegen()<Br>
+            BlockMagicaRegen()<Br>
+            BlockStaminaRegen()<Br>
+         </Span>
+<Pre Class=SampleCode>
+Function EnslavePlayer(Actor aNewMaster)
+   If (_qDfw.IsAllowed(_qDfw.AP_ENSLAVE))
+      If (SUCCESS <= _qDfw.SetMaster(aNewMaster, "MyMod", _qDfw.AP_ALL - _qDfw.AP_ENSLAVE))
+         ; Block the player's stat regeneration while she is enslaved.
+         _qDfw.BlockHealthRegen()
+         _qDfw.BlockMagicaRegen()
+         _qDfw.BlockStaminaRegen()
+         ...
+      EndIf
+   EndIf
+EndFunction
+</Pre>
+      </Div>
+      <Div Class=ApiFunctionSample>
+         <Span Class=ItemHeading>
+            RestoreHealthRegen()<Br>
+            RestoreMagicaRegen()<Br>
+            RestoreStaminaRegen()<Br>
+         </Span>
+<Pre Class=SampleCode>
+Function ReleasePlayer(Actor aCurrMaster)
+   ; Restore the player's stat regeneration after the enslavement has ended.
+   _qDfw.RestoreHealthRegen()
+   _qDfw.RestoreMagicaRegen()
+   _qDfw.RestoreStaminaRegen()
+   ...
+   _qDfw.ClearMaster(aCurrMaster)
+EndFunction
+</Pre>
+      </Div>
+   </Span>
+   </Span>
+</P>
+
+<P Id=TocSamplesMasters>
+   <Span Class=SectionHeading>
+      Samples: Masters<Br>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetMaster()<Br>
+         </Span>
+<Pre Class=SampleCode>
+Function HarassThePlayer()
+   ; We don't want to harass the player if there she has a Master nearby.
+   Actor aMaster = _qDfw.GetMaster(_qDfw.MD_CLOSE)
+   If (!aMaster || (2000 < aMaster.GetDistance(_aPlayer)))
+      ; Harass the player here.
+      ...
+   EndIf
+EndFunction
+</Pre>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            GetMasterMod()<Br>
+         </Span>
+<Pre Class=SampleCode>
+Function Safeword()
+   ; Something is not working.  Clean up the mod.
+   ; If we have a Master registered clean him up now.
+   If ("MyMod" == _qDfw.GetMasterMod(_qDfw.MD_CLOSE))
+      Actor aMaster = _qDfw.GetMaster(_qDfw.MD_CLOSE)
+      _qDfw.ClearMaster(aMaster)
+
+      ; Clean up our own mod.
+      ...
+   EndIf
+
+   ; The MD_ANY feature is not supported yet so we need to clean up distant masters separately.
+   If ("MyMod" == _qDfw.GetMasterMod(_qDfw.MD_DISTANT))
+      Actor aMaster = _qDfw.GetMaster(_qDfw.MD_DISTANT)
+      _qDfw.ClearMaster(aMaster)
+
+      ; Clean up our own mod.
+      ...
+   EndIf
+EndFunction
+</Pre>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            SetMaster()<Br>
+         </Span>
+<Pre Class=SampleCode>
+Function EnslavePlayer(Actor aNewMaster)
+   If (_qDfw.IsAllowed(_qDfw.AP_ENSLAVE))
+      If (SUCCESS <= _qDfw.SetMaster(aNewMaster, "MyMod", _qDfw.AP_SEX + _qDfw.AP_RESTRAIN + _qDfw.AP_DRESSING_ALONE))
+         ; Block the player's stat regeneration while she is enslaved.
+         _qDfw.BlockHealthRegen()
+         _qDfw.BlockMagicaRegen()
+         _qDfw.BlockStaminaRegen()
+         ...
+      EndIf
+   EndIf
+EndFunction
+</Pre>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            ClearMaster()<Br>
+         </Span>
+<Pre Class=SampleCode>
+; The player has escaped from a nearby Master.
+Function PlayerEscaped(Actor aNearbyMaster)
+   _qDfw.ClearMaster(aNearbyMaster, True)
+   ...
+EndFunction
+</Pre>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            ChangeMasterDistance()<Br>
+         </Span>
+      </Div>
+      <Div Class=ApiFunction>
+         <Span Class=ItemHeading>
+            IsAllowed()
+         </Span>
+      </Div>
+   </Span>
+</P>
+
+<P Id=TocSamplesPlayerStatus>
+   <Span Class=SectionHeading>
+      Samples: Player Status<Br>
+   </Span>
+</P>
+
+<P Id=TocSamplesNearbyActors>
+   <Span Class=SectionHeading>
+      Samples: Nearby Actors<Br>
+   </Span>
+</P>
+
+<P Id=TocSamplesLeash>
+   <Span Class=SectionHeading>
+      Samples: Leash<Br>
+   </Span>
+</P>
+
+<P Id=TocSamplesOutgoingEvents>
+   <Span Class=SectionHeading>
+      Samples: Outgoing Events<Br>
+   </Span>
+</P>
+
+<P Id=TocModCompatibility>
+   <Span Class=SectionHeading>
+      Mod Compatibility<Br>
+   </Span>
+   The purpose of this section is to help modders ensure their mods work with other mods in addition to the Devious Framework mod.
+
+   <Span Class=Collapsable>
+      <Div Class=ApiEvent>
+         <Span Class=ItemHeading>
+            ZAZ Animation Pack<Br>
+         </Span>
+      </Div>
+   </Span>
+
+   <Span Class=Collapsable>
+      <Div Class=ApiEvent>
+         <Span Class=ItemHeading>
+            Clothing Considerations<Br>
+         </Span>
+      </Div>
+   </Span>
+</P>
+
+</Body>
+</HTML>
+
