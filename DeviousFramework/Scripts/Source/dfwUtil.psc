@@ -9,8 +9,6 @@ Scriptname dfwUtil extends Quest
 ; A collection of general utility functions made public with the expectation of backward
 ; compatability.
 ;
-; Created by legume
-;
 ; Functions made available by this script:
 ;   String ConvertHexToString(Int iHexValue, Int iMinLength)
 ;      Int ConvertStringToHex(String szHexString)
@@ -31,6 +29,20 @@ Scriptname dfwUtil extends Quest
 ;      Int iMutexCreate(String szName, Int iTimeoutMs)
 ;     Bool MutexLock(Int iMutex, Int iTimeoutMs)
 ;          MutexRelease(Int iMutex)
+;
+; © Copyright 2016 legume-Vancouver of GitHub
+; This file is part of the Devious Framework Skyrim mod.
+;
+; The Devious Framework Skyrim mod is free software: you can redistribute it and/or modify it
+; under the terms of the GNU General Public License as published by the Free Software
+; Foundation, either version 3 of the License, or (at your option) any later version.
+;
+; The Devious Framework Skyrim mod is distributed in the hope that it will be useful, but
+; WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+; PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+;
+; You should have received a copy of the GNU General Public License along with The Devious
+; Framework Skyrim mod.  If not, see <http://www.gnu.org/licenses/>.
 ;
 ; History:
 ; 1.0 2016-06-07 by legume
