@@ -61,5 +61,29 @@ Event OnPlayerLoadGame()
 EndEvent
 
 Event OnEnterBleedout()
+   ; Make sure we have a valid reference to the main devious framework script.
+   If (!_qFramework)
+      _qFramework = Self.GetOwningQuest() As dfwDeviousFramework
+   EndIf
+
    _qFramework.EnteredBleedout()
 EndEvent
+
+Event OnSit(ObjectReference oFurniture)
+   ; Make sure we have a valid reference to the main devious framework script.
+   If (!_qFramework)
+      _qFramework = Self.GetOwningQuest() As dfwDeviousFramework
+   EndIf
+
+   _qFramework.OnSit(oFurniture)
+EndEvent
+
+Event OnGetUp(ObjectReference oFurniture)
+   ; Make sure we have a valid reference to the main devious framework script.
+   If (!_qFramework)
+      _qFramework = Self.GetOwningQuest() As dfwDeviousFramework
+   EndIf
+
+   _qFramework.OnGetUp(oFurniture)
+EndEvent
+
