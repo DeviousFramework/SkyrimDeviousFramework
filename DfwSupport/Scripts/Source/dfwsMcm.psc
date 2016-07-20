@@ -44,6 +44,9 @@ Scriptname dfwsMcm extends SKI_ConfigBase
 ; A local variable to store a reference to the player for faster access.
 Actor _aPlayer
 
+; Keeps track of the last page the user viewed.
+String _szLastPage
+
 ; *** Private Options ***
 Bool _bSecureHardcore
 
@@ -52,10 +55,10 @@ Bool _bIncludeOwners
 Bool _bCatchZazEvents
 Bool _bCatchSdPlus
 Bool _bLeashSdPlus
-Bool Property bIncludeOwners Auto
+Bool Property bIncludeOwners  Auto
 Bool Property bCatchZazEvents Auto
-Bool Property bCatchSdPlus Auto
-Bool Property bLeashSdPlus Auto
+Bool Property bCatchSdPlus    Auto
+Bool Property bLeashSdPlus    Auto
 
 ; *** Float Slider Options ***
 Float _fPollTimeDef
@@ -66,13 +69,25 @@ Int _iLeashGameChanceDef
 Int _iIncreaseWhenVulnerable
 Int _iLeashLength
 Int _iSecurityLevel
+Int _iBlockTravel
 Int _iLogLevelDef
 Int _iLogLevelScreenDef
-Int Property iLeashGameChance        Auto
-Int Property iIncreaseWhenVulnerable Auto
-Int Property iLeashLength            Auto
-Int Property iLogLevel               Auto
-Int Property iLogLevelScreen         Auto
+Int _iDurationMin
+Int _iDurationMax
+Int _iChanceOfRelease
+Int _iDominanceAffectsRelease
+Int _iMaxAngerForRelease
+Int Property iLeashGameChance         Auto
+Int Property iIncreaseWhenVulnerable  Auto
+Int Property iLeashLength             Auto
+Int Property iBlockTravel             Auto
+Int Property iLogLevel                Auto
+Int Property iLogLevelScreen          Auto
+Int Property iDurationMin             Auto
+Int Property iDurationMax             Auto
+Int Property iChanceOfRelease         Auto
+Int Property iDominanceAffectsRelease Auto
+Int Property iMaxAngerForRelease      Auto
 
 ; *** Enumeration Options ***
 
@@ -108,51 +123,56 @@ Function InitScript()
    ; Very basic initialization.
    If (1 > CurrentVersion)
       _aPlayer = Game.GetPlayer()
-      _qDfwSupport = (Self As Quest) As dfwsDfwSupport
-      _qFramework = Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework
-      _qDfwUtil = Quest.GetQuest("_dfwDeviousFramework") As dfwUtil
-      _qDfwMcm = Quest.GetQuest("_dfwDeviousFramework") As dfwMcm
+      _qDfwSupport = ((Self As Quest) As dfwsDfwSupport)
+      _qFramework = (Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework)
+      _qDfwUtil = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
+      _qDfwMcm = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
-      Pages = New String[1]
+      Pages = New String[2]
       Pages[0] = "DFW Support"
+      Pages[1] = "Leash Game"
    EndIf
 
    ; Historical configuration...
    If (2 > CurrentVersion)
       ; Initialize all default values.
-      _fPollTimeDef        = 3.0
-      _iLeashGameChanceDef = 3
-      _iLogLevelDef        = 5
-      _iLogLevelScreenDef  = 4
+      _bIncludeOwners           = False
+      _bCatchZazEvents          = True
+      _bCatchSdPlus             = True
+      _bLeashSdPlus             = False
+      _fPollTimeDef             =   3.0
+      _iLeashGameChanceDef      =   3
+      _iIncreaseWhenVulnerable  =  10
+      _iLeashLength             = 700
+      _iBlockTravel             =   1
+      _iLogLevelDef             =   5
+      _iLogLevelScreenDef       =   4
+      _iDurationMin             =   5
+      _iDurationMax             =  15
+      _iChanceOfRelease         =  50
+      _iDominanceAffectsRelease =  45
+      _iMaxAngerForRelease      =  50
 
-      fPollTime = _fPollTimeDef
-      iLeashGameChance = _iLeashGameChanceDef
+      bIncludeOwners           = _bIncludeOwners
+      bCatchZazEvents          = _bCatchZazEvents
+      bCatchSdPlus             = _bCatchSdPlus
+      bLeashSdPlus             = _bLeashSdPlus
+      fPollTime                = _fPollTimeDef
+      iLeashGameChance         = _iLeashGameChanceDef
+      iIncreaseWhenVulnerable  = _iIncreaseWhenVulnerable
+      iLeashLength             = _iLeashLength
+      iBlockTravel             = _iBlockTravel
+      iLogLevel                = _iLogLevelDef
+      iLogLevelScreen          = _iLogLevelScreenDef
+      iDurationMin             = _iDurationMin
+      iDurationMax             = _iDurationMax
+      iChanceOfRelease         = _iChanceOfRelease
+      iDominanceAffectsRelease = _iDominanceAffectsRelease
+      iMaxAngerForRelease      = _iMaxAngerForRelease
 
       ; Set the Security level to the level of night vulnerability.
       ; The primary purpose of the security level is to allow changing settings at night.
       _iSecurityLevel = _qDfwMcm.iVulnerabilityNight
-
-      iLogLevel       = _iLogLevelDef
-      iLogLevelScreen = _iLogLevelScreenDef
-
-      ; Make sure the main mod is also initialized.
-      ; Note: This needs to be done after all basic configuration is done.
-      _qDfwSupport .UpdateScript()
-   EndIf
-
-   If (3 > CurrentVersion)
-      _iIncreaseWhenVulnerable = 10
-      _bIncludeOwners          = False
-      _iLeashLength            = 700
-      _bCatchZazEvents         = True
-      _bCatchSdPlus            = True
-      _bLeashSdPlus            = False
-      iIncreaseWhenVulnerable = _iIncreaseWhenVulnerable
-      bIncludeOwners          = _bIncludeOwners
-      iLeashLength            = _iLeashLength
-      bCatchZazEvents         = _bCatchZazEvents
-      bCatchSdPlus            = _bCatchSdPlus
-      bLeashSdPlus            = _bLeashSdPlus
    EndIf
 EndFunction
 
@@ -167,7 +187,7 @@ Int Function GetVersion()
    ; Reset the version number.
    ; CurrentVersion = 0
 
-   Return 3
+   Return 2
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -216,7 +236,7 @@ EndFunction
 ;***********************************************************************************************
 ;***                                    DISPLAY PAGES                                        ***
 ;***********************************************************************************************
-Event OnPageReset(String szPage)
+Event OnPageReset(String szRequestedPage)
    {Called when a new page is selected, including the initial empty page}
 
    ; On the menu being opened reset the debug mechanism.
@@ -228,8 +248,21 @@ Event OnPageReset(String szPage)
    ; Unless overridden by each page fill mode is top to bottom.
    SetCursorFillMode(TOP_TO_BOTTOM)
 
+   ; If no page is requested (the menu is just opened) default to the last page opened.
+   String szPage = szRequestedPage
+   If ("" == szPage)
+      szPage = _szLastPage
+   Else
+      _szLastPage = szRequestedPage
+   EndIf
+
    ; For now there is only one page, "DFW Support"
-   DisplayDfwSupportPage(bSecure)
+   If ("Leash Game" == szPage)
+      DisplayLeashGamePage(bSecure)
+   Else
+      ; Load this page if nothing else is set.  Initial page and "DFW Support".
+      DisplayDfwSupportPage(bSecure)
+   EndIf
 EndEvent
 
 Function DisplayDfwSupportPage(Bool bSecure)
@@ -241,35 +274,20 @@ Function DisplayDfwSupportPage(Bool bSecure)
    AddTextOption("DFW Support Version", _qDfwSupport.GetModVersion(), a_flags=OPTION_FLAG_DISABLED)
 
    AddEmptyOption()
-   AddSliderOptionST("ST_FWK_SECURE",         "Security Level",           _iSecurityLevel, a_flags=iFlags)
-   AddToggleOptionST("ST_FWK_HARDCORE",       "...Hardcore (Caution)",    _bSecureHardcore, a_flags=iFlags)
-   AddEmptyOption()
-   AddSliderOptionST("ST_FWK_POLL_TIME",      "Poll Time",                fPollTime, "{1}")
-   AddSliderOptionST("ST_MOD_LEASH_GAME",     "Leash Game Chance",        iLeashGameChance, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_INC_VULNERABLE", "Increase When Vulnerable", iIncreaseWhenVulnerable, a_flags=iFlags)
-   AddToggleOptionST("ST_LGM_INCLUD_OWNERS",  "Include Owners",           bIncludeOwners, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_LEASH_LENGTH",   "Leash Length",             iLeashLength, a_flags=iFlags)
-   AddEmptyOption()
+   AddSliderOptionST("ST_FWK_SECURE",         "Security Level",        _iSecurityLevel, a_flags=iFlags)
+   AddToggleOptionST("ST_FWK_HARDCORE",       "...Hardcore (Caution)", _bSecureHardcore, a_flags=iFlags)
 
-   String szActive = "Not On"
-   If (_qDfwSupport.IsGameOn())
-      szActive = "Active"
-   EndIf
-   AddTextOption("Leash Game", szActive, a_flags=OPTION_FLAG_DISABLED)
-
-   Actor aNearest = _qFramework.GetNearestActor()
-   If ((!_qDfwSupport.IsGameOn()) && aNearest)
-      AddTextOptionST("ST_LEASH_TO", "Start Leash Game:", aNearest.GetDisplayName())
-   EndIf
+   AddEmptyOption()
+   AddSliderOptionST("ST_FWK_POLL_TIME",      "Poll Time",             fPollTime, "{1}")
+   AddSliderOptionST("ST_MOD_BLOCK_TRAVEL",   "Block Travel",          iBlockTravel, a_flags=iFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
 
-   AddToggleOptionST("ST_MOD_ZAZ_EVENTS", "Catch ZAZ Events",      bCatchZazEvents, a_flags=iFlags)
-   AddToggleOptionST("ST_MOD_SDP_EVENTS", "Catch SD+ Enslavement", bCatchSdPlus, a_flags=iFlags)
-   AddToggleOptionST("ST_MOD_SDP_LEASH",  "Start SD+ Leash",       bLeashSdPlus, a_flags=iFlags)
-      bCatchSdPlus            = _bCatchSdPlus
-      bLeashSdPlus            = _bLeashSdPlus
+   AddHeaderOption("Mod Compatibility")
+   AddToggleOptionST("ST_MOD_ZAZ_EVENTS", "Catch ZAZ Events",          bCatchZazEvents, a_flags=iFlags)
+   AddToggleOptionST("ST_MOD_SDP_EVENTS", "Catch SD+ Enslavement",     bCatchSdPlus, a_flags=iFlags)
+   AddToggleOptionST("ST_MOD_SDP_LEASH",  "Start SD+ Leash",           bLeashSdPlus, a_flags=iFlags)
 
    ; Make sure the poll function is updating as expected.
    Float fDelta = Utility.GetCurrentRealTime() - _qDfwSupport.GetLastUpdateTime()
@@ -285,6 +303,43 @@ Function DisplayDfwSupportPage(Bool bSecure)
    AddSliderOptionST("ST_DBG_SCREEN", "Log Level Screen", iLogLevelScreen)
 EndFunction
 
+Function DisplayLeashGamePage(Bool bSecure)
+   Int iFlags = OPTION_FLAG_NONE
+   If (bSecure)
+      iFlags = OPTION_FLAG_DISABLED
+   EndIf
+
+   AddHeaderOption("Chance to Play")
+   AddSliderOptionST("ST_MOD_LEASH_GAME",     "Leash Game Chance",         iLeashGameChance, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_INC_VULNERABLE", "Increase When Vulnerable",  iIncreaseWhenVulnerable, a_flags=iFlags)
+   AddToggleOptionST("ST_LGM_INCLUD_OWNERS",  "Include Owners",            bIncludeOwners, a_flags=iFlags)
+
+   AddEmptyOption()
+   AddSliderOptionST("ST_LGM_LEASH_LENGTH",   "Leash Length",              iLeashLength, a_flags=iFlags)
+
+   AddEmptyOption()
+   AddHeaderOption("Duration")
+   AddSliderOptionST("ST_LGM_DURATION_MIN",   "Minimum Duration",          iDurationMin, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_DURATION_MAX",   "Maximum Duration",          iDurationMax, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_RELEASE", "Chance of Release",         iChanceOfRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_RELEASE_DOM",    "Dominance Affects Release", iDominanceAffectsRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_RELEASE_ANGER",  "Maximum Anger for Release", iMaxAngerForRelease, a_flags=iFlags)
+
+   ; Start on the second column.
+   SetCursorPosition(1)
+
+   String szActive = "Not On"
+   If (_qDfwSupport.IsGameOn())
+      szActive = "Active"
+   EndIf
+   AddTextOption("Leash Game", szActive, a_flags=OPTION_FLAG_DISABLED)
+
+   Actor aNearest = _qFramework.GetNearestActor()
+   If ((!_qDfwSupport.IsGameOn()) && aNearest)
+      AddTextOptionST("ST_LEASH_TO", "Start Leash Game:", aNearest.GetDisplayName())
+   EndIf
+EndFunction
+
 
 ;***********************************************************************************************
 ;***                                        STATES                                           ***
@@ -298,7 +353,7 @@ State ST_FWK_SECURE
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      _iSecurityLevel = fValue As Int
+      _iSecurityLevel = (fValue As Int)
       SetSliderOptionValueST(_iSecurityLevel)
    EndEvent
 
@@ -357,6 +412,33 @@ State ST_FWK_POLL_TIME
    EndEvent
 EndState
 
+State ST_MOD_BLOCK_TRAVEL
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iBlockTravel)
+      SetSliderDialogDefaultValue(_iBlockTravel)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      If (iBlockTravel != fValue)
+         _qDfwSupport.UpdatePollingInterval(fValue)
+      EndIf
+      iBlockTravel = (fValue As Int)
+      SetSliderOptionValueST(iBlockTravel)
+   EndEvent
+
+   Event OnDefaultST()
+      iBlockTravel = _iBlockTravel
+      SetSliderOptionValueST(iBlockTravel)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Block fast travel when at least this vulnerable.\n" +\
+                  "0 = Always block.  1 = Always block when vulnerable.  100 = Never block.")
+   EndEvent
+EndState
+
 
 ;***********************************************************************************************
 ;***                                STATES: VULNERABILITY                                    ***
@@ -374,7 +456,7 @@ State ST_MOD_LEASH_GAME
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLeashGameChance = fValue As Int
+      iLeashGameChance = (fValue As Int)
       SetSliderOptionValueST(iLeashGameChance)
    EndEvent
 
@@ -399,7 +481,7 @@ State ST_LGM_INC_VULNERABLE
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iIncreaseWhenVulnerable = fValue As Int
+      iIncreaseWhenVulnerable = (fValue As Int)
       SetSliderOptionValueST(iIncreaseWhenVulnerable)
    EndEvent
 
@@ -440,7 +522,7 @@ State ST_LGM_LEASH_LENGTH
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLeashLength = fValue As Int
+      iLeashLength = (fValue As Int)
       SetSliderOptionValueST(iLeashLength)
    EndEvent
 
@@ -453,6 +535,130 @@ State ST_LGM_LEASH_LENGTH
       SetInfoText("The length of the player's leash.\n" +\
                   "Only set at the start of the leash game.\n" +\
                   "Warning: Many values are untested.  If unsure leave at " + _iLeashLength + ".")
+   EndEvent
+EndState
+
+State ST_LGM_DURATION_MIN
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iDurationMin)
+      SetSliderDialogDefaultValue(_iDurationMin)
+      SetSliderDialogRange(1, iDurationMax)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iDurationMin = (fValue As Int)
+      SetSliderOptionValueST(iDurationMin)
+   EndEvent
+
+   Event OnDefaultST()
+      iDurationMin = _iDurationMin
+      SetSliderOptionValueST(iDurationMin)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The minimum length of time in real game minutes to play the leash game.\n" +\
+                  "When the game is started a random time between min and max is selected for the game duration.")
+   EndEvent
+EndState
+
+State ST_LGM_DURATION_MAX
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iDurationMax)
+      SetSliderDialogDefaultValue(_iDurationMax)
+      SetSliderDialogRange(iDurationMin, 600)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iDurationMax = (fValue As Int)
+      SetSliderOptionValueST(iDurationMax)
+   EndEvent
+
+   Event OnDefaultST()
+      iDurationMax = _iDurationMax
+      SetSliderOptionValueST(iDurationMax)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The minimum length of time in real game minutes to play the leash game.\n" +\
+                  "When the game is started a random time between min and max is selected for the game duration.\n" +\
+                  "Note: The game can be played for longer if the player is not released (See below).")
+   EndEvent
+EndState
+
+State ST_LGM_CHANCE_RELEASE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iChanceOfRelease)
+      SetSliderDialogDefaultValue(_iChanceOfRelease)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iChanceOfRelease = (fValue As Int)
+      SetSliderOptionValueST(iChanceOfRelease)
+   EndEvent
+
+   Event OnDefaultST()
+      iChanceOfRelease = _iChanceOfRelease
+      SetSliderOptionValueST(iChanceOfRelease)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The chance the player will be released at the end of the leash game.\n" +\
+                  "If the player is not released the the timer will start again with a new random duration.\n" +\
+                  "Note: The slaver's DFW dominance value also affects the player's chance of release (See below).")
+   EndEvent
+EndState
+
+State ST_LGM_RELEASE_DOM
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iDominanceAffectsRelease)
+      SetSliderDialogDefaultValue(_iDominanceAffectsRelease)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iDominanceAffectsRelease = (fValue As Int)
+      SetSliderOptionValueST(iDominanceAffectsRelease)
+   EndEvent
+
+   Event OnDefaultST()
+      iDominanceAffectsRelease = _iDominanceAffectsRelease
+      SetSliderOptionValueST(iDominanceAffectsRelease)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The maximum amount the slaver's dominance value affects the player's chance of release.\n" +\
+                  "Total Chance of Release = Base Chance above - ((Slaver Dominance - 50) / 50 * This).\n" +\
+                  "Warning: If this is more than the base chance the player will never be freed by a dominant slaver.")
+   EndEvent
+EndState
+
+State ST_LGM_RELEASE_ANGER
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iMaxAngerForRelease)
+      SetSliderDialogDefaultValue(_iMaxAngerForRelease)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iMaxAngerForRelease = (fValue As Int)
+      SetSliderOptionValueST(iMaxAngerForRelease)
+   EndEvent
+
+   Event OnDefaultST()
+      iMaxAngerForRelease = _iMaxAngerForRelease
+      SetSliderOptionValueST(iMaxAngerForRelease)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The maximum amount of DFW anger the slaver can have toward the player in order for him to release her.\n" +\
+                  "If the slaver is more angry than this at the end of the game the game's release timer will be reset.\n" +\
+                  "Warning: The slaver's anger can't naturally be reduced to zero so it is not recommended to set this low.")
    EndEvent
 EndState
 
@@ -539,7 +745,7 @@ State ST_DBG_LEVEL
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevel = fValue As Int
+      iLogLevel = (fValue As Int)
       SetSliderOptionValueST(iLogLevel)
    EndEvent
 
@@ -564,7 +770,7 @@ State ST_DBG_SCREEN
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreen = fValue As Int
+      iLogLevelScreen = (fValue As Int)
       SetSliderOptionValueST(iLogLevelScreen)
    EndEvent
 

@@ -158,9 +158,10 @@ Int Property LS_DRAG     = 1 Auto
 Int Property LS_TELEPORT = 2 Auto
 
 ; Properties from the script properties window in the creation kit.
-Spell Property _oDfwLeashSpell          Auto
-Spell Property _oDfwNearbyDetectorSpell Auto
-Faction Property _oFactionMerchants     Auto
+Spell   Property _oDfwLeashSpell          Auto
+Spell   Property _oDfwNearbyDetectorSpell Auto
+Faction Property _oFactionMerchants       Auto
+Idle    Property _oIdleStop_Loose         Auto
 
 
 ;***********************************************************************************************
@@ -187,6 +188,12 @@ Bool _bIsHobbled    = False
 Bool _bIsBelted     = False
 Int _iNumOtherRestraints
 Bool _bHiddenRestraints = False
+Bool _bInventoryLocked = False
+
+; BDSM furniture related flags.  What furniture the player is sitting on and if it is locked.
+; Note that if the furniture is locked the player should be locked back up after sex.
+ObjectReference _oBdsmFurniture = None
+Bool _bIsFurnitureLocked
 
 ; Flags to tell the poll function to update information.
 Bool _bFlagSet            = True
@@ -248,6 +255,7 @@ Keyword _oKeywordZbfWornYoke
 Keyword _oKeywordZbfEffectNoMove
 Keyword _oKeywordZbfEffectNoSprint
 Keyword _oKeywordZbfEffectSlowMove
+Keyword _oKeywordZbfFurniture
 
 ; A reference to the MCM quest script.
 dfwMcm _qMcm
@@ -263,8 +271,9 @@ slaMainScr      _qSexLabArousedMain
 ; A reference to the Devious Devices quest, Zadlibs.
 Zadlibs _qZadLibs
 
-; A reference to the ZAZ Animation Pack (ZBF) slave control API.
+; A reference to the ZAZ Animation Pack (ZBF) slave control APIs.
 zbfSlaveControl _qZbfSlave
+zbfSlaveActions _qZbfSlaveActions
 
 ; A list of nearby actors.
 ; The first is a list of known actors we have at least estimated some information about.
@@ -273,6 +282,16 @@ zbfSlaveControl _qZbfSlave
 Int _iNearbyMutex
 Form[] _aoNearby
 Int[] _aiNearbyFlags
+
+; Some information about recently seen actors
+Int _iKnownMutex
+Form[] _aoKnown
+Float[] _afKnownLastSeen
+Int[] _aiKnownSeenCount
+Int[] _aiKnownAnger
+Int[] _aiKnownConfidence
+Int[] _aiKnownDominance
+Int[] _aiKnownInterest
 
 ; A list of Masters who are controlling the player.
 Actor _aMasterClose
@@ -303,6 +322,7 @@ Float _iBleedoutTime
 ; An actor the player is to be leashed to.
 ObjectReference _oLeashTarget
 Int _iLeashLength
+Bool _bYankingLeash
 
 ; Counts for how many mods have blocked stat regeneration.
 Int _iBlockHealthRegen
@@ -311,15 +331,25 @@ Int _iBlockStaminaRegen
 Int _iDisableMagicka
 Int _iDisableStamina
 
+; A count for how many times various game features have been blocked.
+Int _iBlockFastTravel
+Int _iBlockMovement
+Int _iBlockFighting
+Int _iBlockCameraSwitch
+Int _iBlockLooking
+Int _iBlockSneaking
+Int _iBlockMenu
+Int _iBlockActivate
+Int _iBlockJournal
+
 ; Mechanisms to identify slavers.
 Faction _oFactionHydraSlaver
 Faction _oFactionHydraSlaverMisc
 
-; A mutext to proect global data access.
-; I suspect that simulaneous data writes from two different mods can crash the game.
-Int _iGeneralDataMutex
-; Use a separate mutex for the player status flags to reduce the amount of data on one mutex.
-Int _iFlagsDataMutex
+; A set of variables to manage mutexes.
+Int[] _aiMutex
+String[] _aszMutexName
+Int _iMutexNext
 
 
 ;***********************************************************************************************
@@ -331,18 +361,17 @@ Function OnPlayerLoadGame()
    ; Reset the version number.
    ; To make sure the Utility script is loaded.
    ; _fCurrVer = 0.00
-   _fCurrVer = 0.03
+
+   Float fCurrTime = Utility.GetCurrentRealTime()
+   Log("Game Loaded: " + fCurrTime, DL_TRACE, S_MOD)
 
    ; If any real time timers are active reset them to the current time because the real time
    ; clock is reset each time the game is loaded.
    If (_iBleedoutTime)
-      _iBleedoutTime = Utility.GetCurrentRealTime() + 30
+      _iBleedoutTime = fCurrTime + 30
    EndIf
    ; The nearby cleanup timeout is always set.  Always reset it.
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _fNearbyCleanupTime = Utility.GetCurrentRealTime() + 3
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _fNearbyCleanupTime = fCurrTime + 3
 
    ; Very basic initialization.
    If (0.01 > _fCurrVer)
@@ -364,7 +393,7 @@ Function OnPlayerLoadGame()
    ; If the nearby actors lists are out of sync clear them completely.
    If (_aoNearby.Length != _aiNearbyFlags.Length)
       Log("Nearby Lists Out of Sync!  Cleaning.", DL_CRIT, S_MOD)
-      If (_qDfwUtil.MutexLock(_iNearbyMutex))
+      If (MutexLock(_iNearbyMutex))
          While (_aoNearby.Length)
             _aoNearby = _qDfwUtil.RemoveFormFromArray(_aoNearby, None, 0)
          EndWhile
@@ -372,7 +401,7 @@ Function OnPlayerLoadGame()
             _aiNearbyFlags = _qDfwUtil.RemoveIntFromArray(_aiNearbyFlags, 0, 0)
          EndWhile
 
-         _qDfwUtil.MutexRelease(_iNearbyMutex)
+         MutexRelease(_iNearbyMutex)
       EndIf
    EndIf
 
@@ -446,29 +475,53 @@ Function OnPlayerLoadGame()
 
    If (0.03 > _fCurrVer)
       _qZbfSlave = zbfSlaveControl.GetApi()
+
       _qSexLabArousedMain = Quest.GetQuest("sla_Main") As slaMainScr
       _qSexLabAroused = Quest.GetQuest("sla_Framework") As slaFrameworkScr
-      _iNearbyMutex = _qDfwUtil.iMutexCreate("DFW Nearby")
    EndIf
 
    If (0.04 > _fCurrVer)
       _iLeashLength = 700
-      _iGeneralDataMutex = _qDfwUtil.iMutexCreate("DFW General")
-      _iFlagsDataMutex = _qDfwUtil.iMutexCreate("DFW Flags")
+
+      ; Create an initial mutex for protecting the mutex list.
+      _aiMutex      = New Int[1]
+      _aszMutexName = New String[1]
+      _aiMutex[0]      = 0
+      _aszMutexName[0] = "Mutex List Mutex"
+      _iMutexNext      = 1
+
+      _iNearbyMutex = iMutexCreate("DFW Nearby")
+      _iKnownMutex = iMutexCreate("DFW Known")
+
+      _oKeywordZbfFurniture = \
+         Game.GetFormFromFile(0x1100762B , "ZaZAnimationPack.esm") as Keyword
+      _qZbfSlaveActions = zbfSlaveActions.GetApi()
    EndIf
 
    ; Finally update the version number.
    _fCurrVer = fScriptVer
 EndFunction
 
+; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function in
+; various situations.
+Int _iWeaponScanCount = 10
+
 Event OnUpdate()
+   Float fCurrTime = Utility.GetCurrentRealTime()
+   Log("Update Event: " + fCurrTime, DL_TRACE, S_MOD)
+
+   ; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function
+   ; in various situations.
+   _iWeaponScanCount -= 1
+   If (0 >= _iWeaponScanCount)
+      _iWeaponScanCount = 10
+      GetWeaponLevel()
+   EndIf
+
    ; If the bleedout time is past due reset it.
    If (_iBleedoutTime)
-      If (Utility.GetCurrentRealTime() >= _iBleedoutTime)
-         If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-            _iBleedoutTime = 0
-            _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-         EndIf
+      If (fCurrTime >= _iBleedoutTime)
+         _iBleedoutTime = 0
       EndIf
    EndIf
 
@@ -476,7 +529,7 @@ Event OnUpdate()
    If (_oLeashTarget)
       ; Play the leash effect to draw leash particles between the player and the leash holder.
       ; Good:   AuraWhisperProjectile
-      ; Usable: AuraWhisperProjectile AlterPosProjectile   
+      ; Usable: AuraWhisperProjectile AlterPosProjectile
       ; Not:    AbsorbBeam01
       If (_qMcm.bModLeashVisible)
          _oDfwLeashSpell.Cast(_oLeashTarget, _aPlayer)
@@ -502,8 +555,12 @@ Event OnUpdate()
                _aPlayer.MoveTo(_aPlayer)
             EndIf
 
-            Log("You feel a great tug on your leash as you are pulled along.", DL_CRIT, S_MOD)
             _aPlayer.MoveTo(_oLeashTarget, 100, 100, 100)
+            ; MoveTo enables fast travel.  Disable it again if necessary.
+            If (_iBlockFastTravel)
+               Game.EnableFastTravel(False)
+            EndIf
+            Log("You feel a great tug on your leash as you are pulled along.", DL_CRIT, S_MOD)
          EndIf
       ElseIf (_iLeashLength < fDistance)
          ; Only try to drag the player if she is not busy or we can interrupt the scene.
@@ -531,18 +588,13 @@ Event OnUpdate()
       CleanupNearbyList()
 
       ; No flags are set so return here.
+      Log("Update Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
       Return
    EndIf
-   If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-      _bFlagSet = False
-      _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-   EndIf
+   _bFlagSet = False
 
    If (_bFlagCheckNaked)
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckNaked = False
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckNaked = False
 
       Log("Checking Naked", DL_TRACE, S_MOD)
 
@@ -551,19 +603,13 @@ Event OnUpdate()
       ; Only do any processing if the dressed state has changed.
       If (iOldStatus != _iNakedStatus)
          ; Some restraints may have been (un)covered.  Make sure to re-check them.
-         If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-            _bFlagCheckLockedUp = True
-            _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-         EndIf
+         _bFlagCheckLockedUp = True
 
          ; If the player has just become (more) naked start a redress timeout.
          If ((NS_BOTH_PARTIAL > _iNakedStatus) && (_iNakedStatus < iOldStatus) && \
              _qMcm.iModNakedRedressTimeout)
-            If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-               _fNakedRedressTimeout = Utility.GetCurrentGameTime() + \
-                                       ((_qMcm.iModNakedRedressTimeout As Float) / 1440)
-               _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-            EndIf
+            _fNakedRedressTimeout = Utility.GetCurrentGameTime() + \
+                                    ((_qMcm.iModNakedRedressTimeout As Float) / 1440)
          EndIf
 
          ; Report the player's status.
@@ -580,10 +626,7 @@ Event OnUpdate()
    EndIf
 
    If (_bFlagCheckCollared)
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckCollared = False
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckCollared = False
 
       Log("Checking Collared", DL_TRACE, S_MOD)
 
@@ -604,10 +647,7 @@ Event OnUpdate()
    EndIf
 
    If (_bFlagCheckArmLocked)
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckArmLocked = False
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckArmLocked = False
 
       Log("Checking Arms Locked", DL_TRACE, S_MOD)
 
@@ -624,10 +664,7 @@ Event OnUpdate()
    EndIf
 
    If (_bFlagCheckGagged)
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckGagged = False
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckGagged = False
 
       Log("Checking Gagged", DL_TRACE, S_MOD)
 
@@ -647,10 +684,7 @@ Event OnUpdate()
    EndIf
 
    If (_bFlagCheckHobbled)
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckHobbled = False
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckHobbled = False
 
       Log("Checking Hobbled", DL_TRACE, S_MOD)
 
@@ -690,10 +724,7 @@ Event OnUpdate()
    EndIf
 
    If (_bFlagCheckLockedUp)
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckLockedUp = False
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckLockedUp = False
 
       Log("Checking Locked Up", DL_TRACE, S_MOD)
 
@@ -758,38 +789,37 @@ Event OnUpdate()
          Log(szMessage, DL_DEBUG, S_MOD)
       EndIf
    EndIf
+   Log("Update Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
 EndEvent
 
 ; This is called from the player monitor script when an item equipped event is seen.
 Function ItemEquipped(Form oItem, ObjectReference oReference)
+   Log("Equip Event: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+
    Int iType = GetItemType(oItem)
    If (!iType)
+      Log("Equip Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
       Return
    EndIf
 
    If (IT_RESTRAINT == iType)
       ; Only check each restraint if the player is not already restrained.
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsCollared,  False)
-         _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsArmLocked, False)
-         _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsGagged,    False)
-         _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsHobbled,   False)
-         ; We always have to check for various "other" restraints.
-         _bFlagSet = True
-         _bFlagCheckLockedUp  = True
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsCollared,  False)
+      _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsArmLocked, False)
+      _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsGagged,    False)
+      _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsHobbled,   False)
+      ; We always have to check for various "other" restraints.
+      _bFlagSet = True
+      _bFlagCheckLockedUp  = True
    ElseIf (IT_COVERINGS == iType)
       ; If the player's clothes have changed always recheck how naked she is.
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckNaked = True
-         _bFlagSet = True
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckNaked = True
+      _bFlagSet = True
 
       ; If we are configured to block clothing check that now.
       ; If the nearby master is assisting the player to dress allow her to dress as normal.
       If (IsAllowed(AP_DRESSING_ASSISTED))
+         Log("Equip Done (Assisted): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
          Return
       EndIf
 
@@ -800,34 +830,24 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
       If (_fRapeRedressTimeout)
          If (_fRapeRedressTimeout > Utility.GetCurrentGameTime())
             Log("You are too exhausted from being raped to dress right now.", DL_CRIT, S_MOD)
-            If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-               _fRapeRedressTimeout = Utility.GetCurrentGameTime() + \
-                                      ((_qMcm.iModRapeRedressTimeout As Float) / 1440)
-               _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-            EndIf
+            _fRapeRedressTimeout = Utility.GetCurrentGameTime() + \
+                                   ((_qMcm.iModRapeRedressTimeout As Float) / 1440)
             _aPlayer.UnequipItem(oItem, abSilent=True)
+            Log("Equip Done (Rape): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
             Return
          EndIf
-         If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-            _fRapeRedressTimeout = 0
-            _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-         EndIf
+         _fRapeRedressTimeout = 0
       EndIf
       If (_fNakedRedressTimeout)
          If (_fNakedRedressTimeout > Utility.GetCurrentGameTime())
             Log("You tried to dress too fast.  Now you have to start again.", DL_CRIT, S_MOD)
-            If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-               _fNakedRedressTimeout = Utility.GetCurrentGameTime() + \
-                                       ((_qMcm.iModNakedRedressTimeout As Float) / 1440)
-               _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-            EndIf
+            _fNakedRedressTimeout = Utility.GetCurrentGameTime() + \
+                                    ((_qMcm.iModNakedRedressTimeout As Float) / 1440)
             _aPlayer.UnequipItem(oItem, abSilent=True)
+            Log("Equip Done (Redress): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
             Return
          EndIf
-         If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-            _fNakedRedressTimeout = 0
-            _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-         EndIf
+         _fNakedRedressTimeout = 0
       EndIf
 
       Bool bUnequip = False
@@ -891,26 +911,26 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
          _aPlayer.UnequipItem(oItem, abSilent=True)
       EndIf
    EndIf
+   Log("Equip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
 EndFunction
 
 ; This is called from the player monitor script when an item unequipped event is seen.
 Function ItemUnequipped(Form oItem, ObjectReference oReference)
+   Log("Unequip Event: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    Int iType = GetItemType(oItem)
    If (!iType)
+      Log("Unequip Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
       Return
    EndIf
 
    If (IT_RESTRAINT == iType)
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsCollared,  True)
-         _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsArmLocked, True)
-         _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsGagged,    True)
-         _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsHobbled,   True)
-         If (_iNumOtherRestraints)
-            _bFlagSet = True
-            _bFlagCheckLockedUp  = True
-         EndIf
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
+      _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsCollared,  True)
+      _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsArmLocked, True)
+      _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsGagged,    True)
+      _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsHobbled,   True)
+      If (_iNumOtherRestraints)
+         _bFlagSet = True
+         _bFlagCheckLockedUp  = True
       EndIf
 
       ; Try to fix Devious Devices being unequipped by the Favourites clear armour mechanism.
@@ -943,19 +963,41 @@ Function ItemUnequipped(Form oItem, ObjectReference oReference)
       EndIf
    ElseIf (IT_COVERINGS == iType)
       ; If the player's clothes have changed always recheck how naked she is.
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagCheckNaked = True
-         _bFlagSet = True
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagCheckNaked = True
+      _bFlagSet = True
    EndIf
+   Log("Unequip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
 EndFunction
 
 ; This is called from the player monitor script when an enter bleedout event is seen.
 Function EnteredBleedout()
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iBleedoutTime = Utility.GetCurrentRealTime() + 30
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
+   _iBleedoutTime = Utility.GetCurrentRealTime() + 30
+EndFunction
+
+; This is called from the player monitor script when an on sit event is seen.
+Function OnSit(ObjectReference oFurniture)
+   If (oFurniture.hasKeyword(_oKeywordZbfFurniture))
+      _oBdsmFurniture = oFurniture
+      ; If the player's inventory is not locked lock it now.
+      If (Game.IsMenuControlsEnabled())
+         _bInventoryLocked = True
+         ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+         Game.DisablePlayerControls(False, False, False, False, False, True,  False,  False)
+      EndIf
+   EndIf
+EndFunction
+
+; This is called from the player monitor script when an on get up event is seen.
+Function OnGetUp(ObjectReference oFurniture)
+   ; TODO: Maybe check for a sex scene in addition to checking if the furniture is locked?
+   If (!_bIsFurnitureLocked)
+      _oBdsmFurniture = None
+      ; If we previously disabled the player's inventory, release it now.
+      If (_bInventoryLocked)
+         _bInventoryLocked = True
+         ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+         Game.EnablePlayerControls(False, False, False, False, False, True,  False,  False)
+      EndIf
    EndIf
 EndFunction
 
@@ -964,11 +1006,18 @@ Function NearbyActorSeen(Actor aActor)
    ; If this actor is already in the nearby actor list ignore him.
    Int iIndex = _aoNearby.Find(aActor)
    If (0 <= iIndex)
+      ; Add a log here to debug magic effect script isntances that are becoming stray.
+      Log("Nearby Not Registered 0x" + _qDfwUtil.ConvertHexToString(aActor.GetFormId(), 8) + \
+          ": " + aActor.GetDisplayName(), DL_TRACE, S_MOD)
       Return
    EndIf
 
    ; Otherwise just add the actor to the nearby actor list.
-   Log("Registering Nearby: " + aActor.GetDisplayName(), DL_TRACE, S_MOD)
+   ; Note: Converting the form ID to hex is a little bit expensive for something triggered by
+   ;       every nearby actor; however, for now it will help diagnose which magic effect script
+   ;       instances are becoming stray.
+   Log("Registering Nearby 0x" + _qDfwUtil.ConvertHexToString(aActor.GetFormId(), 8) + ": " + \
+       aActor.GetDisplayName(), DL_TRACE, S_MOD)
 
    ; Perform some basic estimations for flags of this actor.
    Int iFlags = AF_ESTIMATE
@@ -1032,16 +1081,16 @@ Function NearbyActorSeen(Actor aActor)
    EndIf
 
    ; Add the actor to the known actors lists.
-   If (_qDfwUtil.MutexLock(_iNearbyMutex))
+   If (MutexLock(_iNearbyMutex))
       _aoNearby = _qDfwUtil.AddFormToArray(_aoNearby, aActor, True)
       _aiNearbyFlags = _qDfwUtil.AddIntToArray(_aiNearbyFlags, iFlags, True)
 
-      _qDfwUtil.MutexRelease(_iNearbyMutex)
-   EndIf
+      If (_aoNearby.Length != _aiNearbyFlags.Length)
+         Log("Nearby Added Wrong: " + _aoNearby.Length + " != " + _aiNearbyFlags.Length, \
+             DL_CRIT, S_MOD)
+      EndIf
 
-   If (_aoNearby.Length != _aiNearbyFlags.Length)
-      Log("Nearby Added Wrong: " + _aoNearby.Length + " != " + _aiNearbyFlags.Length, DL_CRIT, \
-          S_MOD)
+      MutexRelease(_iNearbyMutex)
    EndIf
 
    ; Send out a mod event to notify other modules there is a new nearby actor.
@@ -1073,16 +1122,20 @@ Function NearbyActorSeen(Actor aActor)
              fNewArousal, DL_DEBUG, S_MOD)
       EndIf
    EndIf
+   Log("Nearby Seen Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
 EndFunction
 
 Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender)
+   If (_bIsFurnitureLocked)
+      Actor aNearby = GetNearestActor()
+      Log(aNearby.GetDisplayName() + " locks you back up in the device.", DL_CRIT, S_MOD)
+      _qZbfSlaveActions.RestrainInDevice(_oBdsmFurniture, aNearby, S_MOD)
+   EndIf
+
    ; If the player is the victim start a post-rape redress timeout.
    If (_qMcm.iModRapeRedressTimeout && (_aPlayer == _qSexLab.HookVictim(szArg)))
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _fRapeRedressTimeout = Utility.GetCurrentGameTime() + \
-                                ((_qMcm.iModRapeRedressTimeout As Float) / 1440)
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _fRapeRedressTimeout = Utility.GetCurrentGameTime() + \
+                             ((_qMcm.iModRapeRedressTimeout As Float) / 1440)
    EndIf
 EndEvent
 
@@ -1090,6 +1143,59 @@ EndEvent
 ;***********************************************************************************************
 ;***                                  PRIVATE FUNCTIONS                                      ***
 ;***********************************************************************************************
+Int Function iMutexCreate(String szName, Int iTimeoutMs=1000)
+   Int iIndex = -1
+
+   ; Lock the mutex protecting the mutex list to protect creating two at once.
+   ; AddXxxToArray() can unlock the thread allowing this function to run again.
+   If (MutexLock(0, iTimeoutMs))
+      iIndex = _aszMutexName.Find(szName)
+      If (0 <= iIndex)
+         ; This mutex already exists clear it.
+         _aiMutex[iIndex] = 0
+      Else
+         ; Otherwise create a new mutex entry.
+         _aiMutex      = _qDfwUtil.AddIntToArray(_aiMutex, 0)
+         _aszMutexName = _qDfwUtil.AddStringToArray(_aszMutexName, szName)
+         iIndex = _iMutexNext
+         _iMutexNext += 1
+      EndIf
+
+      ; Release the mutex protecting the mutex list.
+      MutexRelease(0)
+   EndIf
+   Return iIndex
+EndFunction
+
+Bool Function MutexLock(Int iMutex, Int iTimeoutMs=1000)
+   ; If this is not a valid mutex return a failure.
+   If ((0 > iMutex) || (_iMutexNext <= iMutex))
+      Return False
+   EndIf
+
+   Bool bUseTimeout = (iTimeoutMs As Bool)
+   While (0 < _aiMutex[iMutex])
+      Utility.Wait(0.1)
+      If (bUseTimeout)
+         iTimeoutMs -= 100
+         If (0 >= iTimeoutMs)
+            ; Locking Failed due to timeout.
+            Return False
+         EndIf
+      EndIf
+   EndWhile
+   ; Locking succeeded.  Increment the mutex and return success.
+   _aiMutex[iMutex] = _aiMutex[iMutex] + 1
+   Return True
+EndFunction
+
+Function MutexRelease(Int iMutex)
+   ; If this is a valid mutex decrement it.
+   If ((0 <= iMutex) && (_iMutexNext > iMutex))
+      _aiMutex[iMutex] = _aiMutex[iMutex] - 1
+   EndIf
+EndFunction
+
 Function ReportStatus(String szStatusType, Bool bStatus, Bool bOldStatus)
    ; If the status has changed log that information.
    If (bOldStatus && !bStatus)
@@ -1143,6 +1249,12 @@ Keyword Function GetDeviousKeyword(Armor oItem)
    Return None
 EndFunction
 
+Bool Function IsActor(Form oForm)
+   Int iType = oForm.GetType()
+   ; 43 (kNPC) 44 (kLeveledCharacter) 62 (kCharacter)
+   Return ((43 == iType) || (44 == iType) || (62 == iType))
+EndFunction
+
 Bool Function CheckLeashInterruptScene()
    ; If the player is not in a scene, nothing to worry about.
    If (!IsPlayerCriticallyBusy(False))
@@ -1167,7 +1279,7 @@ EndFunction
 ; Other functions should provide more detailed information based on the type of item.
 Int Function GetItemType(Form oItem)
    ; Make sure the item exists and is some form of "armour".
-   If (!oItem && (26 == oItem.GetType()))
+   If (!oItem || (26 != oItem.GetType()))
       Return IT_NONE
    EndIf
 
@@ -1178,7 +1290,6 @@ Int Function GetItemType(Form oItem)
    ; Check to see if it is some form of restraint.
    If (oItem.HasKeyword(_oKeywordZadLockable) || oItem.HasKeyword(_oKeywordZbfWornDevice) || \
        oItem.HasKeyword(_oKeywordZadInventoryDevice))
-      Log(szName + ": Restraint.", DL_DEBUG, S_MOD)
       Return IT_RESTRAINT
    EndIf
 
@@ -1191,11 +1302,9 @@ Int Function GetItemType(Form oItem)
    ; Otherwise check all clothing/armour keywords.
    If (oItem.HasKeyword(_oKeywordClothes) || oItem.HasKeyword(_oKeywordArmourLight) || \
        oItem.HasKeyword(_oKeywordArmourHeavy))
-      Log(szName + ": Is Clothing/Armour.", DL_TRACE, S_MOD)
       Return IT_COVERINGS
    EndIf
 
-   Log(szName + " Not Clothing.", DL_TRACE, S_MOD)
    Return IT_NONE
 EndFunction
 
@@ -1251,6 +1360,7 @@ Int Function GetClothingType(Form oItem)
 EndFunction
 
 Function CheckIsNaked(Actor aActor=None)
+   Log("Naked Check: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    If (!aActor)
       aActor = _aPlayer
    EndIf
@@ -1276,6 +1386,7 @@ Function CheckIsNaked(Actor aActor=None)
          _bChestReduced = True
          _bWaistReduced = True
       EndIf
+      Log("Naked Check Done (Covered): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
       Return
    EndIf
 
@@ -1341,9 +1452,9 @@ Function CheckIsNaked(Actor aActor=None)
    ElseIf (_bWaistCovered)
       _iNakedStatus = NS_WAIST_COVERED
    Else
-      Log("Player is Naked.", DL_TRACE, S_MOD)
       _iNakedStatus = NS_NAKED
    EndIf
+   Log("Naked Check Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
 EndFunction
 
 Function CleanupNearbyList()
@@ -1351,6 +1462,7 @@ Function CleanupNearbyList()
    If (_fNearbyCleanupTime && (Utility.GetCurrentRealTime() < _fNearbyCleanupTime))
       Return
    EndIf
+   Log("Cleaning Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
 
    Cell oPlayerCell = _aPlayer.GetParentCell()
    Int iIndex = _aoNearby.Length - 1
@@ -1360,19 +1472,25 @@ Function CleanupNearbyList()
       ; converted to the same units as GetDistance().  A rough estimate is 22.2 to 1.  Add extra
       ; so the actor is removed at a notably longer distance than he is added.
       If ((30 * _qMcm.iSettingsNearbyDistance) < aNearby.GetDistance(_aPlayer))
-         Log("Clear Nearby: " + (_aoNearby[iIndex] As Actor).GetDisplayName(), DL_TRACE, S_MOD)
+         ; Note: Converting the form ID to hex is a little bit expensive for something triggered
+         ;       by every nearby actor; however, for now it will help diagnose which magic
+         ;       effect script instances are becoming stray.
+         Log("Clear Nearby 0x" + \
+             _qDfwUtil.ConvertHexToString(_aoNearby[iIndex].GetFormId(), 8) + ": " + \
+             (_aoNearby[iIndex] As Actor).GetDisplayName(), DL_TRACE, S_MOD)
+
          ; This actor is too far from the player.  Remove him from the list.
-         If (_qDfwUtil.MutexLock(_iNearbyMutex))
+         If (MutexLock(_iNearbyMutex))
             _aoNearby = _qDfwUtil.RemoveFormFromArray(_aoNearby, None, iIndex)
             _aiNearbyFlags = _qDfwUtil.RemoveIntFromArray(_aiNearbyFlags, 0, iIndex)
 
-            _qDfwUtil.MutexRelease(_iNearbyMutex)
-         EndIf
-         If (_aoNearby.Length != _aiNearbyFlags.Length)
-            Log("Nearby Removed Wrong: " + _aoNearby.Length + " != " + _aiNearbyFlags.Length, \
-                DL_CRIT, S_MOD)
-         EndIf
+            If (_aoNearby.Length != _aiNearbyFlags.Length)
+               Log("Nearby Removed Wrong: " + _aoNearby.Length + " != " + \
+                   _aiNearbyFlags.Length, DL_CRIT, S_MOD)
+            EndIf
 
+            MutexRelease(_iNearbyMutex)
+         EndIf
          ; Dispel the current nearby detector spell so he can be detected again.
          aNearby.DispelSpell(_oDfwNearbyDetectorSpell)
       EndIf
@@ -1380,10 +1498,26 @@ Function CleanupNearbyList()
    EndWhile
 
    ; Don't try to clean up the nearby list more than every three seconds.
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _fNearbyCleanupTime = Utility.GetCurrentRealTime() + 3
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _fNearbyCleanupTime = Utility.GetCurrentRealTime() + 3
+   Log("Cleaning Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+EndFunction
+
+; This must be called internally as it requires the known list mutex to be locked!
+Function CleanupKnownList()
+   ; This should be a much more elaborate algorithm but for now just delete the first five
+   ; entries.  The oldest to be put on the list.
+   Int iCount = 5
+   Int iIndexToRemove = _aoKnown.Length - 1 - iCount
+   While (iCount)
+      _aoKnown           = _qDfwUtil.RemoveFormFromArray(_aoKnown, None, iIndexToRemove)
+      _afKnownLastSeen   = _qDfwUtil.RemoveFloatFromArray(_afKnownLastSeen, 0.0, iIndexToRemove)
+      _aiKnownSeenCount  = _qDfwUtil.RemoveIntFromArray(_aiKnownSeenCount,  0,   iIndexToRemove)
+      _aiKnownAnger      = _qDfwUtil.RemoveIntFromArray(_aiKnownAnger,      0,   iIndexToRemove)
+      _aiKnownConfidence = _qDfwUtil.RemoveIntFromArray(_aiKnownConfidence, 0,   iIndexToRemove)
+      _aiKnownDominance  = _qDfwUtil.RemoveIntFromArray(_aiKnownDominance,  0,   iIndexToRemove)
+      _aiKnownInterest   = _qDfwUtil.RemoveIntFromArray(_aiKnownInterest,   0,   iIndexToRemove)
+      iCount -= 1
+   EndWhile
 EndFunction
 
 Function Log(String szMessage, Int iLevel=0, String szClass="")
@@ -1411,14 +1545,16 @@ Bool Function SetCheckFlag(Bool bFlagToSet, Bool bCurrStatus, Bool bExpectedStat
    ; If the player's status is as expected return that we need to permform the check.
    If (bCurrStatus == bExpectedStatus)
       ; Set the flag to indicate one of the status check flags has been set.
-      If (_qDfwUtil.MutexLock(_iFlagsDataMutex))
-         _bFlagSet = True
-         _qDfwUtil.MutexRelease(_iFlagsDataMutex)
-      EndIf
+      _bFlagSet = True
       Return True
    EndIf
    ; If the player's status isn't the desired status return the current status of the flag.
    Return bFlagToSet
+EndFunction
+
+; For status purposes only to be called by the MCM status menu.
+Form[] Function GetKnownActors()
+   Return _aoKnown
 EndFunction
 
 Function UpdatePollingInterval(Float fNewInterval)
@@ -1433,12 +1569,9 @@ Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bo
    If (!_aMasterClose || bOverride)
       Actor aOldMaster = _aMasterClose
       String szOldMod = _aMasterModClose
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _aMasterClose = aNewMaster
-         _aMasterModClose = szMod
-         _iPermissionsClose = iPermissions
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _aMasterClose = aNewMaster
+      _aMasterModClose = szMod
+      _iPermissionsClose = iPermissions
       If (aOldMaster)
          Log("Overriding " + aOldMaster.GetDisplayName() + " (" + szOldMod + ")", \
              DL_CRIT, S_MOD)
@@ -1447,7 +1580,14 @@ Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bo
          If (iModEvent)
             ModEvent.PushString(iModEvent, szOldMod)
             ModEvent.PushForm(iModEvent, aOldMaster)
-            ModEvent.Send(iModEvent)
+Log("Sending Event DFW_NewMaster(" + szOldMod + ", " + aOldMaster.GetDisplayName() + ")", DL_CRIT, S_MOD)
+            If (ModEvent.Send(iModEvent))
+               ; Give the overthrown mod a little time time process the event.
+               Utility.Wait(0.1)
+            Else
+               Log("Failed to send Event DFW_NewMaster(" + szOldMod + ", " + \
+                   aOldMaster.GetDisplayName() + ")", DL_CRIT, S_MOD)
+            EndIf
          EndIf
          Return WARNING
       EndIf
@@ -1462,15 +1602,13 @@ Int Function SetMasterDistant(Actor aNewMaster, Int iPermissions, String szMod, 
    If (!_aMasterDistant || bOverride)
       Actor aOldMaster = _aMasterDistant
       String szOldMod = _aMasterModDistant
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _aMasterDistant = aNewMaster
-         _aMasterModDistant = szMod
-         _iPermissionsDistant = iPermissions
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _aMasterDistant = aNewMaster
+      _aMasterModDistant = szMod
+      _iPermissionsDistant = iPermissions
       If (aOldMaster)
          Log("Overriding " + aOldMaster.GetDisplayName() + " (" + szOldMod + ")", \
              DL_CRIT, S_MOD)
+Log("Distant Master.  No Event Sent!", DL_CRIT, S_MOD)
          Return WARNING
       EndIf
       Return SUCCESS
@@ -1486,44 +1624,55 @@ EndFunction
 ;***********************************************************************************************
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Basic API Documentation:
-;   String GetModVersion()
-;    Actor GetMaster(Int iMasterDistance, Int iInstance)
-;   String GetMasterMod(Int iMasterDistance, Int iInstance)
-;      Int SetMaster(Actor aNewMaster, String szMod, Int iPermissions,
-;                    Int iMasterDistance, Bool bOverride)
-;      Int ClearMaster(Actor aMaster, Bool bEscaped)
-;      Int ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant, Bool bOverride)
-;      Int GetNakedLevel()
-;     Bool IsPlayerBound(Bool bIncludeHidden, Bool bOnlyLocked)
-;     Bool IsPlayerArmLocked()
-;     Bool IsPlayerBelted()
-;     Bool IsPlayerCollared()
-;     Bool IsPlayerGagged()
-;     Bool IsPlayerHobbled()
-;      Int GetVulnerability(Actor aActor)
-;   Form[] GetNearbyActorList(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
-;    Int[] GetNearbyActorFlags()
-;    Actor GetRandomActor(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
-;    Actor GetNearestActor(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
-;    Actor GetPlayerTalkingTo()
-;          SetLeashTarget(ObjectReference oLeashTarget)
-;          SetLeashLength(Int iLength)
-;          YankLeash()
-;     Bool IsPlayerCriticallyBusy(Bool bIncludeBleedout)
-;          BlockHealthRegen()
-;          RestoreHealthRegen()
-;          BlockMagickaRegen()
-;          RestoreMagickaRegen()
-;          DisableMagicka(Bool bDisable)
-;          BlockStaminaRegen()
-;          RestoreStaminaRegen()
-;          DisableStamina(Bool bDisable)
-;     Bool IsAllowed(Int iAction)
-;          AddPermission(Actor aMaster, Int iPermissionMask)
-;          RemovePermission(Actor aMaster, Int iPermissionMask)
-; ModEvent DFW_NewMaster(String szOldMod, Actor aOldMaster)
-;          *** Warning: The following event is triggered often.  Handling it should be fast! ***
-; ModEvent DFW_NearbyActor(Int iFlags, Actor aActor)
+;          String GetModVersion()
+;           Actor GetMaster(Int iMasterDistance, Int iInstance)
+;          String GetMasterMod(Int iMasterDistance, Int iInstance)
+;             Int SetMaster(Actor aNewMaster, String szMod, Int iPermissions,
+;                           Int iMasterDistance, Bool bOverride)
+;             Int ClearMaster(Actor aMaster, Bool bEscaped)
+;             Int ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant, Bool bOverride)
+;             Int GetNakedLevel()
+;            Bool IsPlayerBound(Bool bIncludeHidden, Bool bOnlyLocked)
+;            Bool IsPlayerArmLocked()
+;            Bool IsPlayerBelted()
+;            Bool IsPlayerCollared()
+;            Bool IsPlayerGagged()
+;            Bool IsPlayerHobbled()
+; ObjectReference GetBdsmFurniture()
+;                 SetBdsmFurnitureLocked(Bool bLocked)
+;             Int GetVulnerability(Actor aActor)
+;          Form[] GetNearbyActorList(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
+;           Int[] GetNearbyActorFlags()
+;           Actor GetRandomActor(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
+;           Actor GetNearestActor(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
+;            Bool IsActorNearby(Actor aActor)
+;           Actor GetPlayerTalkingTo()
+;                 SetLeashTarget(ObjectReference oLeashTarget)
+;                 SetLeashLength(Int iLength)
+;                 YankLeash()
+;            Bool IsPlayerCriticallyBusy(Bool bIncludeBleedout)
+;                 BlockHealthRegen()
+;                 RestoreHealthRegen()
+;                 BlockMagickaRegen()
+;                 RestoreMagickaRegen()
+;                 DisableMagicka(Bool bDisable)
+;                 BlockStaminaRegen()
+;                 RestoreStaminaRegen()
+;                 DisableStamina(Bool bDisable)
+;            Bool IsAllowed(Int iAction)
+;                 AddPermission(Actor aMaster, Int iPermissionMask)
+;                 RemovePermission(Actor aMaster, Int iPermissionMask)
+;             Int GetActorAnger(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;             Int IncActorAnger(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;             Int GetActorConfidence(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;             Int IncActorConfidence(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;             Int GetActorDominance(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;             Int IncActorDominance(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;             Int GetActorInterest(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;             Int IncActorInterest(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;        ModEvent DFW_NewMaster(String szOldMod, Actor aOldMaster)
+;                 *** Warning: The following event is triggered often.  Handling it should be fast! ***
+;        ModEvent DFW_NearbyActor(Int iFlags, Actor aActor)
 ;
 
 String Function GetModVersion()
@@ -1553,6 +1702,7 @@ EndFunction
 ; A mod should only allow sex if it can handle the player randomly and spontaneously being taken
 ; into a sex scene.  If a mod allows enslavement, register for the mod event (to be documented)
 ; to figure our when your mod looses control of the player.
+; Set aNewMaster=None as a transition period between two Masters.
 Int Function SetMaster(Actor aNewMaster, String szMod, Int iPermissions, \
                        Int iMasterDistance=0x00000004, Bool bOverride=False)
    String szName = "None"
@@ -1568,7 +1718,7 @@ Int Function SetMaster(Actor aNewMaster, String szMod, Int iPermissions, \
    Else
       iStatus =  SetMasterClose(aNewMaster, iPermissions, szMod, bOverride)
    EndIf
-   If (SUCCESS <= iStatus)
+   If ((SUCCESS <= iStatus) && aNewMaster)
       ; Register the player enslavement with the ZAZ Animation Pack as well.
       aNewMaster.AddToFaction(_qZbfSlave.zbfFactionMaster)
       aNewMaster.AddToFaction(_qZbfSlave.zbfFactionPlayerMaster)
@@ -1591,18 +1741,12 @@ Int Function ClearMaster(Actor aMaster, Bool bEscaped=False)
    String szControllingMod
    Int iStatus = WARNING
    If (_aMasterClose == aMaster)
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _aMasterClose = None
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _aMasterClose = None
       szControllingMod = _aMasterModClose
       iStatus = SUCCESS
    EndIf
    If (_aMasterDistant == aMaster)
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _aMasterDistant = None
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _aMasterDistant = None
       szControllingMod = _aMasterModDistant
       iStatus = SUCCESS
    EndIf
@@ -1636,10 +1780,7 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
 
       Int iStatus = SetMasterDistant(aMaster, _iPermissionsClose, _aMasterModClose, bOverride)
       If (SUCCESS <= iStatus)
-         If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-            _aMasterClose = None
-            _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-         EndIf
+         _aMasterClose = None
       EndIf
       Return iStatus
    EndIf
@@ -1658,10 +1799,7 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
 
    Int iStatus = SetMasterClose(aMaster, _iPermissionsDistant, _aMasterModDistant, bOverride)
    If (SUCCESS <= iStatus)
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _aMasterDistant = None
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _aMasterDistant = None
    EndIf
    Return iStatus
 EndFunction
@@ -1700,8 +1838,25 @@ Bool Function IsPlayerHobbled()
    Return _bIsHobbled
 EndFunction
 
+ObjectReference Function GetBdsmFurniture()
+   Return _oBdsmFurniture
+EndFunction
+
+Function SetBdsmFurnitureLocked(Bool bLocked=True)
+   _bIsFurnitureLocked = bLocked
+
+   ; If we previously disabled the player's inventory, release it now.
+   ; TODO: This should check if the player is no longer on the furniture.
+   If (!_bIsFurnitureLocked && _bInventoryLocked)
+      _bInventoryLocked = False
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, False, False, False, False, True,  False, False)
+   Endif
+EndFunction
+
 ; Never returns more than 100.
 Int Function GetVulnerability(Actor aActor=None)
+   Log("Get Vulnerability: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    If (!aActor)
       aActor = _aPlayer
    EndIf
@@ -1747,6 +1902,12 @@ Int Function GetVulnerability(Actor aActor=None)
    Else
       Log("Vulnerability for NPCs not implemented.", DL_INFO, S_MOD)
    EndIf
+
+   ; Todo: Make BDSM furniture MCM configurable.
+   If (_oBdsmFurniture)
+      iVulnerability += 10
+   EndIf
+
    Log("Vulnerability: " + iVulnerability, DL_DEBUG, S_MOD)
    If (100 < iVulnerability)
       Return 100
@@ -1758,16 +1919,15 @@ EndFunction
 ; New actors are excluded by default.
 Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, \
                                    Int iExcludeFlags=0)
+   Log("Get Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    ; Clean up the actor list before we return elements from it.
    ; Note: The cleanup has it's own throttle mechanism preventing it from running all the time.
    CleanupNearbyList()
 
    ; If there is no filtering just return the known list.
    If (!iIncludeFlags && !iExcludeFlags && !fMaxDistance)
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _aiRecentFlags = _aiNearbyFlags
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _aiRecentFlags = _aiNearbyFlags
+      Log("Get Nearby Done (Simple): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
       Return _aoNearby
    EndIf
 
@@ -1784,7 +1944,7 @@ Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, 
    Int iIndex
    While (iIndex < iCount)
       Actor aNearby = (_aoNearby[iIndex] As Actor)
-      If (!iExcludeFlags || !Math.LogicalOr(_aiNearbyFlags[iIndex], iExcludeFlags))
+      If (!iExcludeFlags || !Math.LogicalAnd(_aiNearbyFlags[iIndex], iExcludeFlags))
          If (!iIncludeFlags || Math.LogicalAnd(_aiNearbyFlags[iIndex], iIncludeFlags))
             If (!fMaxDistance || (fMaxDistance > aNearby.GetDistance(_aPlayer)))
                aoSubList = _qDfwUtil.AddFormToArray(aoSubList, aNearby, True)
@@ -1796,11 +1956,9 @@ Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, 
    EndWhile
 
    ; Fill in the flags from the recent GetNearbyActorsList() before returning.  See note above.
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _aiRecentFlags = aiTempFlags
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _aiRecentFlags = aiTempFlags
 
+   Log("Get Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    Return aoSubList
 EndFunction
 
@@ -1814,19 +1972,24 @@ Int[] Function GetNearbyActorFlags()
 EndFunction
 
 Actor Function GetRandomActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
+   Log("Get Random: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
    Int iCount = aoNearbyList.Length
    If (iCount)
       Int iRandomIndex = Utility.RandomInt(0, iCount - 1)
+      Log("Get Random Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
       Return (aoNearbyList[iRandomIndex] As Actor)
    EndIf
+   Log("Get Random Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    Return None
 EndFunction
 
 Actor Function GetNearestActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
+   Log("Get Nearest: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
    Int iIndex = aoNearbyList.Length - 1
    If (0 > iIndex)
+      Log("Get Nearest Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
       Return None
    EndIf
 
@@ -1842,60 +2005,86 @@ Actor Function GetNearestActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int 
          aNearest = aCurrent
       EndIf
    EndWhile
+   Log("Get Nearest Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    Return aNearest
 EndFunction
 
+Bool Function IsActorNearby(Actor aActor)
+   CleanupNearbyList()
+   Return (-1 != _aoNearby.Find(aActor))
+EndFunction
+
 Actor Function GetPlayerTalkingTo()
+   Log("Get Talking: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    Int iIndex = _aoNearby.Length - 1
    While (0 <= iIndex)
       Actor aActor = (_aoNearby[iIndex] As Actor)
       If (aActor.IsInDialogueWithPlayer())
+         Log("Get Talking Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
          Return aActor
       EndIf
       iIndex -= 1
    EndWhile
+   Log("Get Talking Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    Return None
 EndFunction
 
 ; Leash target should be an in world object or an actor.
 Function SetLeashTarget(ObjectReference oLeashTarget)
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _oLeashTarget = oLeashTarget
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _oLeashTarget = oLeashTarget
 EndFunction
 
 Function SetLeashLength(Int iLength)
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iLeashLength = iLength
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iLeashLength = iLength
 EndFunction
 
-Function YankLeash()
-   If (GetPlayerTalkingTo())
+Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, Bool bInterruptScene=True)
+   ; Use a simplified mutex to make sure the leash isn't yanked twice at the same time.
+   If (_bYankingLeash)
+      Return
+   EndIf
+   _bYankingLeash = True
+
+   Actor aPlayerTalkingTo = GetPlayerTalkingTo()
+   If (aPlayerTalkingTo && (aPlayerTalkingTo != _oLeashTarget))
       ; Moving the player to her own location will end the conversation.
       _aPlayer.MoveTo(_aPlayer)
+      ; MoveTo enables fast travel.  Disable it again if necessary.
+      If (_iBlockFastTravel)
+         Game.EnableFastTravel(False)
+      EndIf
    EndIf
+
+   ; Keep track of whether there are movement issues with the leash (player hobbled, etc.).
+   Actor aLeashTarget = (_oLeashTarget As Actor)
+   Bool bMovementIssues = (IsActor(_oLeashTarget) && \
+                           (aLeashTarget.IsRunning() || aLeashTarget.IsSprinting() || \
+                            _aPlayer.WornHasKeyword(_oKeywordZbfEffectNoMove) || \
+                            _aPlayer.WornHasKeyword(_oKeywordZbfEffectSlowMove) || \
+                            _aPlayer.GetActorValue("CarryWeight") < \
+                               _aPlayer.GetTotalItemWeight()))
 
    ; Figure out which style of leash to use.
    Int iLeashStyle = _qMcm.iModLeashStyle
-   If (LS_AUTO == iLeashStyle)
-      ; If the player is at low health use the teleport leash (a little safer).
-      iLeashStyle = LS_DRAG
-      If (100 > _aPlayer.GetActorValue("Health"))
-         iLeashStyle = LS_TELEPORT
-      EndIf
-   ElseIf (500 > _iLeashLength)
+   If (iOverrideLeashStyle)
+      iLeashStyle = iOverrideLeashStyle
+   EndIf
+   If (500 > _iLeashLength)
       ; The dragging leash doesn't work with distances less than 500 units.
       ; By the time the player stands up she is being dragged again.
       iLeashStyle = LS_TELEPORT
+   ElseIf (LS_AUTO == iLeashStyle)
+      ; If the player is at low health use the teleport leash (a little safer).
+      iLeashStyle = LS_DRAG
+      If (bMovementIssues || (100 > _aPlayer.GetActorValue("Health")))
+         iLeashStyle = LS_TELEPORT
+      EndIf
    EndIf
 
    If (LS_DRAG == iLeashStyle)
       ; Remove ragdoll from the player.  The first time fails so do it here before
       ; doing it later.
-      _aPlayer.ForceRemoveRagdollFromWorld()
+;      _aPlayer.ForceRemoveRagdollFromWorld()
 
       ; While dragging the player via the leash make sure they are immune to damage.
       ; Otherwise getting stuck behind a rock would kill the player.
@@ -1903,31 +2092,47 @@ Function YankLeash()
       _aPlayer.ModActorValue("DamageResist", 10000)
 
       Int iLoopCount = 1
-      While (200 < _oLeashTarget.GetDistance(_aPlayer))
+      While ((1 == iLoopCount) || (200 < _oLeashTarget.GetDistance(_aPlayer)))
          _oLeashTarget.PushActorAway(_aPlayer, -2)
 
          If (!(iLoopCount))
-            _aPlayer.ForceRemoveRagdollFromWorld()
             _qDfwUtil.TeleportToward(_oLeashTarget, 30)
+;            _aPlayer.ForceRemoveRagdollFromWorld()
          EndIf
          iLoopCount -= 1
       EndWhile
+
       ; You'll notice a lot of RemoveRagdoll() calls here.  Sometimes the player gets stuck
       ; standing and having all of these help.  I'm not sure which ones are really needed.
       _aPlayer.ForceRemoveRagdollFromWorld()
-      Utility.Wait(0.25)
-      _aPlayer.ForceRemoveRagdollFromWorld()
       _qDfwUtil.TeleportToward(_oLeashTarget, 10)
-      _aPlayer.ForceRemoveRagdollFromWorld()
+      Utility.Wait(0.25)
+      _aPlayer.StopTranslation()
+      _aPlayer.SetMotionType(7)
+      _aPlayer.PlayIdle(_oIdleStop_Loose)
+;         Float fZOffset = _aPlayer.GetHeadingAngle(_oLeashTarget)
+;ToggleCollisions()
+;         _aPlayer.SetAngle(_aPlayer.X, _aPlayer.Y, _aPlayer.Z + fZOffset)
+;ToggleCollisions()
+;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
+;      _aPlayer.ForceAddRagdollToWorld()
+;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
+;      Utility.Wait(0.25)
+;      _aPlayer.ForceRemoveRagdollFromWorld()
+;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
+; Some things that appear to help:
+;_aPlayer.PlayIdle(_oIdleStop_Loose)
+; Something that doesn't seem to help:
+;Debug.SendAnimationEvent(_aPlayer, "IdleForceDefaultState")
 
       ; Reset the player's damage resistance.
       _aPlayer.ModActorValue("DamageResist", -10000)
 
-      ; If the leash holder is running the player can't keep up.  Drag her along but don't
-      ; inflict damage.
-      If (!(_oLeashTarget As Actor).IsRunning())
+      ; Do damage if there are no movement issues.  Otherwise just drag the player along.
+      If (!bMovementIssues)
          Float fDamage = ((_aPlayer.GetActorValue("Health") * _qMcm.iModLeashDamage / 100) + \
-                          _aPlayer.GetLevel())
+                          (_aPlayer.GetLevel() / 2))
+         fDamage *= fDamageMultiplier
          _aPlayer.DamageActorValue("Health", fDamage)
       EndIf
    Else ; LS_TELEPORT
@@ -1936,15 +2141,31 @@ Function YankLeash()
 
          Utility.Wait(0.5)
       EndWhile
-      ; If the leash holder is running the player can't keep up.  Drag her along but
-      ; don't inflict damage.
-      Actor aLeashTarget = (_oLeashTarget As Actor)
-      If (!aLeashTarget.IsRunning() && !aLeashTarget.IsSprinting())
+      ; Do damage if there are no movement issues.  Otherwise just drag the player along.
+      If (!bMovementIssues)
          Float fDamage = ((_aPlayer.GetActorValue("Health") * _qMcm.iModLeashDamage / \
-                           100) + _aPlayer.GetLevel())
+                           100) + (_aPlayer.GetLevel() / 2))
+         fDamage *= fDamageMultiplier
          _aPlayer.DamageActorValue("Health", fDamage)
       EndIf
    EndIf
+   _bYankingLeash = False
+EndFunction
+
+; Waits for any yank leash in progress to complete before returning.
+Int Function YankLeashWait(Int iTimeoutMs)
+   Bool bUseTimeout = (iTimeoutMs As Bool)
+
+   While (_bYankingLeash)
+      Utility.Wait(0.1)
+      If (bUseTimeout)
+         iTimeoutMs -= 100
+         If (0 >= iTimeoutMs)
+            Return FAIL
+         EndIf
+      EndIf
+   EndWhile
+   Return SUCCESS
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -1960,10 +2181,7 @@ Bool Function IsPlayerCriticallyBusy(Bool bIncludeBleedout=True)
       If (Utility.GetCurrentRealTime() < _iBleedoutTime)
          Return True
       EndIf
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _iBleedoutTime = 0
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _iBleedoutTime = 0
    EndIf
 
    If (!_aPlayer.GetPlayerControls())
@@ -1979,17 +2197,11 @@ Function BlockHealthRegen()
       _aPlayer.DamageActorValue("HealRate", _aPlayer.GetActorValue("HealRate") * 0.99)
    EndIf
 
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iBlockHealthRegen += 1
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iBlockHealthRegen += 1
 EndFunction
 
 Function RestoreHealthRegen()
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iBlockHealthRegen -= 1
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iBlockHealthRegen -= 1
 
    ; If no more mods have regeneration blocked restore it completely.
    If (0 == _iBlockHealthRegen)
@@ -2003,17 +2215,11 @@ Function BlockMagickaRegen()
       _aPlayer.DamageActorValue("MagickaRate", _aPlayer.GetActorValue("MagickaRate") * 0.99)
    EndIf
 
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iBlockMagickaRegen += 1
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iBlockMagickaRegen += 1
 EndFunction
 
 Function RestoreMagickaRegen()
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iBlockMagickaRegen -= 1
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iBlockMagickaRegen -= 1
 
    ; If no more mods have regeneration blocked restore it completely.
    If (0 == _iBlockMagickaRegen)
@@ -2029,16 +2235,10 @@ Function DisableMagicka(Bool bDisable=True)
          _aPlayer.DamageActorValue("Magicka", _aPlayer.GetActorValue("Magicka"))
       EndIf
 
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _iDisableMagicka += 1
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _iDisableMagicka += 1
       Return
    EndIf
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iDisableMagicka -= 1
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iDisableMagicka -= 1
 
    ; If no more mods have regeneration blocked restore it completely.
    If (0 == _iDisableMagicka)
@@ -2056,17 +2256,11 @@ Function BlockStaminaRegen()
       _aPlayer.DamageActorValue("StaminaRate", _aPlayer.GetActorValue("StaminaRate") * 0.99)
    EndIf
 
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iBlockStaminaRegen += 1
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iBlockStaminaRegen += 1
 EndFunction
 
 Function RestoreStaminaRegen()
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iBlockStaminaRegen -= 1
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iBlockStaminaRegen -= 1
 
    ; If no more mods have regeneration blocked restore it completely.
    If (0 == _iBlockStaminaRegen)
@@ -2082,16 +2276,10 @@ Function DisableStamina(Bool bDisable=True)
          _aPlayer.DamageActorValue("Stamina", _aPlayer.GetActorValue("Stamina"))
       EndIf
 
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _iDisableStamina += 1
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _iDisableStamina += 1
       Return
    EndIf
-   If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-      _iDisableStamina -= 1
-      _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-   EndIf
+   _iDisableStamina -= 1
 
    ; If no more mods have regeneration blocked restore it completely.
    If (0 == _iDisableStamina)
@@ -2100,6 +2288,184 @@ Function DisableStamina(Bool bDisable=True)
       If (_iBlockStaminaRegen)
          _aPlayer.DamageActorValue("StaminaRate", _aPlayer.GetActorValue("StaminaRate") * 0.99)
       EndIf
+   EndIf
+EndFunction
+
+Function BlockFastTravel()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockFastTravel)
+      Game.EnableFastTravel(False)
+   EndIf
+
+   _iBlockFastTravel += 1
+EndFunction
+
+Function RestoreFastTravel()
+   _iBlockFastTravel -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockFastTravel)
+      Game.EnableFastTravel()
+   EndIf
+EndFunction
+
+Function BlockMovement()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockMovement)
+      ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+      Game.DisablePlayerControls(True,  False, False, False, False, False, False,  False)
+   EndIf
+
+   _iBlockMovement += 1
+EndFunction
+
+Function RestoreMovement()
+   _iBlockMovement -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockMovement)
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(True,  False, False, False, False, False, False, False)
+   EndIf
+EndFunction
+
+Function BlockFighting()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockFighting)
+      ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+      Game.DisablePlayerControls(False, True,  False, False, False, False, False,  False)
+   EndIf
+
+   _iBlockFighting += 1
+EndFunction
+
+Function RestoreFighting()
+   _iBlockFighting -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockFighting)
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, True,  False, False, False, False, False, False)
+   EndIf
+EndFunction
+
+Function BlockCameraSwitch()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockCameraSwitch)
+      ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+      Game.DisablePlayerControls(False, False, True,  False, False, False, False,  False)
+   EndIf
+
+   _iBlockCameraSwitch += 1
+EndFunction
+
+Function RestoreCameraSwitch()
+   _iBlockCameraSwitch -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockCameraSwitch)
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, False, True,  False, False, False, False, False)
+   EndIf
+EndFunction
+
+Function BlockLooking()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockLooking)
+      ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+      Game.DisablePlayerControls(False, False, False, True,  False, False, False,  False)
+   EndIf
+
+   _iBlockLooking += 1
+EndFunction
+
+Function RestoreLooking()
+   _iBlockLooking -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockLooking)
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, False, False, True,  False, False, False, False)
+   EndIf
+EndFunction
+
+Function BlockSneaking()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockSneaking)
+      ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+      Game.DisablePlayerControls(False, False, False, False, True,  False, False,  False)
+   EndIf
+
+   _iBlockSneaking += 1
+EndFunction
+
+Function RestoreSneaking()
+   _iBlockSneaking -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockSneaking)
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, False, False, False, True,  False, False, False)
+   EndIf
+EndFunction
+
+Function BlockMenu()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockMenu)
+      ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+      Game.DisablePlayerControls(False, False, False, False, False, True,  False,  False)
+   EndIf
+
+   _iBlockMenu += 1
+EndFunction
+
+Function RestoreMenu()
+   _iBlockMenu -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockMenu)
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, False, False, False, False, True,  False, False)
+   EndIf
+EndFunction
+
+Function BlockActivate()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockActivate)
+      ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+      Game.DisablePlayerControls(False, False, False, False, False, False, True,   False)
+   EndIf
+
+   _iBlockActivate += 1
+EndFunction
+
+Function RestoreActivate()
+   _iBlockActivate -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockActivate)
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, False, False, False, False, False, True,  False)
+   EndIf
+EndFunction
+
+Function BlockJournal()
+   ; If this is the first mod to block fast travel block it now.
+   If (0 == _iBlockJournal)
+      ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
+      Game.DisablePlayerControls(False, False, False, False, False, False, False,  True)
+   EndIf
+
+   _iBlockJournal += 1
+EndFunction
+
+Function RestoreJournal()
+   _iBlockJournal -= 1
+
+   ; If no more mods have fast travel blocked restore it completely.
+   If (0 == _iBlockJournal)
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, False, False, False, False, False, False, True)
    EndIf
 EndFunction
 
@@ -2113,29 +2479,303 @@ EndFunction
 
 Function AddPermission(Actor aMaster, Int iPermissionMask)
    If (_aMasterClose == aMaster)
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _iPermissionsClose = Math.LogicalOr(_iPermissionsClose, iPermissionMask)
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _iPermissionsClose = Math.LogicalOr(_iPermissionsClose, iPermissionMask)
    ElseIf (_aMasterDistant == aMaster)
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _iPermissionsDistant = Math.LogicalOr(_iPermissionsDistant, iPermissionMask)
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _iPermissionsDistant = Math.LogicalOr(_iPermissionsDistant, iPermissionMask)
    EndIf
 EndFunction
 
 Function RemovePermission(Actor aMaster, Int iPermissionMask)
    If (_aMasterClose == aMaster)
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _iPermissionsClose = Math.LogicalXor(_iPermissionsClose, iPermissionMask)
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _iPermissionsClose = Math.LogicalXor(_iPermissionsClose, iPermissionMask)
    ElseIf (_aMasterDistant == aMaster)
-      If (_qDfwUtil.MutexLock(_iGeneralDataMutex))
-         _iPermissionsDistant = Math.LogicalXor(_iPermissionsDistant, iPermissionMask)
-         _qDfwUtil.MutexRelease(_iGeneralDataMutex)
-      EndIf
+      _iPermissionsDistant = Math.LogicalXor(_iPermissionsDistant, iPermissionMask)
    EndIf
+EndFunction
+
+; Includes spells.  Returns 0 - 100.  50 should be "well equipped" for the player's level.
+; Needs calibration.
+Int Function GetWeaponLevel()
+   Float fRightHand
+   Float fLeftHand
+
+   Weapon oWeaponRight = _aPlayer.GetEquippedWeapon()
+   If (oWeaponRight)
+      Float fSkill = _aPlayer.GetActorValue(oWeaponRight.GetSkill())
+;      Log("W-R: E(" + oWeaponRight.GetEnchantmentValue() + ") D(" + oWeaponRight.GetBaseDamage() + ") " + oWeaponRight.GetSkill() + "(" + fSkill + ")", DL_CRIT, S_MOD)
+      fRightHand = ((25 As Float) * (oWeaponRight.GetBaseDamage() * fSkill / 10) / (_aPlayer.GetLevel() * 2))
+   EndIf
+
+   Weapon oWeaponLeft = _aPlayer.GetEquippedWeapon(True)
+   If (oWeaponLeft)
+      Float fSkill = _aPlayer.GetActorValue(oWeaponLeft.GetSkill())
+;      Log("W-R: E(" + oWeaponLeft.GetEnchantmentValue() + ") D(" + oWeaponLeft.GetBaseDamage() + ") " + oWeaponLeft.GetSkill() + "(" + fSkill + ")", DL_CRIT, S_MOD)
+      fLeftHand = ((25 As Float) * (oWeaponLeft.GetBaseDamage() * fSkill / 10) / (_aPlayer.GetLevel() * 2))
+   EndIf
+
+   Float fTotalValue = fRightHand + fLeftHand
+
+   Armor oShield = _aPlayer.GetEquippedShield()
+   If (oShield)
+      Enchantment oEnchantment = oShield.GetEnchantment()
+      Int iTotalEffects = oEnchantment.GetNumEffects()
+      Float fTotalMagnitude
+      While (iTotalEffects)
+         fTotalMagnitude = oEnchantment.GetNthEffectMagnitude(iTotalEffects)
+         iTotalEffects -= 1
+      EndWhile
+
+;      Log("Shl: E(" + fTotalMagnitude + ") A(" + oShield.GetArmorRating() + ") S(" + _aPlayer.GetActorValue("Block") + ")", DL_CRIT, S_MOD)
+      fTotalValue += ((10 As Float) * oShield.GetArmorRating() / (_aPlayer.GetLevel() * 2))
+      fTotalValue += ((15 As Float) * _aPlayer.GetActorValue("Block") / (_aPlayer.GetLevel() * 2))
+   EndIf
+;   If (fTotalValue)
+;      Log("Weapon Level: " + fLeftHand + " + " + fRightHand + " = " + fTotalValue, DL_CRIT, S_MOD)
+;   EndIf
+   Return (fTotalValue As Int)
+EndFunction
+
+Int Function GetActorAnger(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+   Return IncActorAnger(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
+EndFunction
+
+Int Function IncActorAnger(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+   Float fCurrTime = Utility.GetCurrentGameTime()
+   Int iValue = 50
+   If (MutexLock(_iKnownMutex))
+      Int iIndex = _aoKnown.Find(aActor)
+      If (-1 == iIndex)
+         If (bCreateAsNeeded)
+            ; If there are 30 known actors, trim the list.
+            If (30 <= _aoKnown.Length)
+               CleanupKnownList()
+            EndIf
+
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+
+            _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
+            _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
+            _aiKnownSeenCount  = _qDfwUtil.AddIntToArray(_aiKnownSeenCount,  1,         True)
+            _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      iValue,    True)
+            _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, -1,        True)
+            _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  -1,        True)
+            _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   -1,        True)
+         EndIf
+      Else
+         ; Only update the last seen time if 30 game minutes have passed since the last check.
+         If (fCurrTime > _afKnownLastSeen[iIndex] + (30 / 60 / 24))
+            _aiKnownSeenCount[iIndex] = _aiKnownSeenCount[iIndex] + 1
+            ; Only update the last seen time if 30 minutes have passed to avoid constantly
+            ; updating the last seen time and never updating the last seen count.
+            _afKnownLastSeen[iIndex]  = fCurrTime
+         EndIf
+
+         ; Keep track of the disposition value to be returned.
+         iValue = _aiKnownAnger[iIndex]
+
+         If (-1 != iValue)
+            ; Only try to modify the value if it starts within the min/max range.
+            If ((iMinValue < iValue) && (iMaxValue > iValue))
+               iValue += iDelta
+               If (iMinValue > iValue)
+                  iValue = iMinValue
+               ElseIf (iMaxValue < iValue)
+                  iValue = iMaxValue
+               EndIf
+               _aiKnownAnger[iIndex] = iValue
+            EndIf
+         ElseIf (-1 != iMinValue)
+            ; If we have not evaluated the actor's disposition yet do so now.
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+            _aiKnownAnger[iIndex] = iValue
+         EndIf
+      EndIf
+
+      MutexRelease(_iKnownMutex)
+   EndIf
+   Return iValue
+EndFunction
+
+Int Function GetActorConfidence(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+   Return IncActorConfidence(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
+EndFunction
+
+Int Function IncActorConfidence(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+   Float fCurrTime = Utility.GetCurrentGameTime()
+   Int iValue = 50
+   If (MutexLock(_iKnownMutex))
+      Int iIndex = _aoKnown.Find(aActor)
+      If (-1 == iIndex)
+         If (bCreateAsNeeded)
+            ; If there are 30 known actors, trim the list.
+            If (30 <= _aoKnown.Length)
+               CleanupKnownList()
+            EndIf
+
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+
+            _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
+            _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
+            _aiKnownSeenCount  = _qDfwUtil.AddIntToArray(_aiKnownSeenCount,  1,         True)
+            _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      -1,        True)
+            _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, iValue,    True)
+            _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  -1,        True)
+            _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   -1,        True)
+         EndIf
+      Else
+         ; Only update the last seen time if 30 game minutes have passed since the last check.
+         If (fCurrTime > _afKnownLastSeen[iIndex] + (30 / 60 / 24))
+            _aiKnownSeenCount[iIndex] = _aiKnownSeenCount[iIndex] + 1
+            ; Only update the last seen time if 30 minutes have passed to avoid constantly
+            ; updating the last seen time and never updating the last seen count.
+            _afKnownLastSeen[iIndex]  = fCurrTime
+         EndIf
+
+         ; Keep track of the disposition value to be returned.
+         iValue = _aiKnownConfidence[iIndex]
+
+         If (-1 != iValue)
+            ; Only try to modify the value if it starts within the min/max range.
+            If ((iMinValue < iValue) && (iMaxValue > iValue))
+               iValue += iDelta
+               If (iMinValue > iValue)
+                  iValue = iMinValue
+               ElseIf (iMaxValue < iValue)
+                  iValue = iMaxValue
+               EndIf
+               _aiKnownConfidence[iIndex] = iValue
+            EndIf
+         ElseIf (-1 != iMinValue)
+            ; If we have not evaluated the actor's disposition yet do so now.
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+            _aiKnownConfidence[iIndex] = iValue
+         EndIf
+      EndIf
+
+      MutexRelease(_iKnownMutex)
+   EndIf
+   Return iValue
+EndFunction
+
+Int Function GetActorDominance(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+   Return IncActorDominance(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
+EndFunction
+
+Int Function IncActorDominance(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+   Float fCurrTime = Utility.GetCurrentGameTime()
+   Int iValue = 50
+   If (MutexLock(_iKnownMutex))
+      Int iIndex = _aoKnown.Find(aActor)
+      If (-1 == iIndex)
+         If (bCreateAsNeeded)
+            ; If there are 30 known actors, trim the list.
+            If (30 <= _aoKnown.Length)
+               CleanupKnownList()
+            EndIf
+
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+
+            _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
+            _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
+            _aiKnownSeenCount  = _qDfwUtil.AddIntToArray(_aiKnownSeenCount,  1,         True)
+            _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      -1,        True)
+            _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, -1,        True)
+            _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  iValue,    True)
+            _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   -1,        True)
+         EndIf
+      Else
+         ; Only update the last seen time if 30 game minutes have passed since the last check.
+         If (fCurrTime > _afKnownLastSeen[iIndex] + (30 / 60 / 24))
+            _aiKnownSeenCount[iIndex] = _aiKnownSeenCount[iIndex] + 1
+            ; Only update the last seen time if 30 minutes have passed to avoid constantly
+            ; updating the last seen time and never updating the last seen count.
+            _afKnownLastSeen[iIndex]  = fCurrTime
+         EndIf
+
+         ; Keep track of the disposition value to be returned.
+         iValue = _aiKnownDominance[iIndex]
+
+         If (-1 != iValue)
+            ; Only try to modify the value if it starts within the min/max range.
+            If ((iMinValue < iValue) && (iMaxValue > iValue))
+               iValue += iDelta
+               If (iMinValue > iValue)
+                  iValue = iMinValue
+               ElseIf (iMaxValue < iValue)
+                  iValue = iMaxValue
+               EndIf
+               _aiKnownDominance[iIndex] = iValue
+            EndIf
+         ElseIf (-1 != iMinValue)
+            ; If we have not evaluated the actor's disposition yet do so now.
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+            _aiKnownDominance[iIndex] = iValue
+         EndIf
+      EndIf
+
+      MutexRelease(_iKnownMutex)
+   EndIf
+   Return iValue
+EndFunction
+
+Int Function GetActorInterest(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+   Return IncActorInterest(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
+EndFunction
+
+Int Function IncActorInterest(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+   Float fCurrTime = Utility.GetCurrentGameTime()
+   Int iValue = 50
+   If (MutexLock(_iKnownMutex))
+      Int iIndex = _aoKnown.Find(aActor)
+      If (-1 == iIndex)
+         If (bCreateAsNeeded)
+            ; If there are 30 known actors, trim the list.
+            If (30 <= _aoKnown.Length)
+               CleanupKnownList()
+            EndIf
+
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+
+            _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
+            _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
+            _aiKnownSeenCount  = _qDfwUtil.AddIntToArray(_aiKnownSeenCount,  1,         True)
+            _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      -1,        True)
+            _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, -1,        True)
+            _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  -1,        True)
+            _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   iValue,    True)
+         EndIf
+      Else
+         ; Only update the last seen time if 30 game minutes have passed since the last check.
+         If (fCurrTime > _afKnownLastSeen[iIndex] + (30 / 60 / 24))
+            _aiKnownSeenCount[iIndex] = _aiKnownSeenCount[iIndex] + 1
+            ; Only update the last seen time if 30 minutes have passed to avoid constantly
+            ; updating the last seen time and never updating the last seen count.
+            _afKnownLastSeen[iIndex]  = fCurrTime
+         EndIf
+
+         ; Keep track of the disposition value to be returned.
+         iValue = _aiKnownInterest[iIndex]
+
+         If (-1 != iValue)
+            ; Only try to modify the value if it starts within the min/max range.
+            If ((iMinValue < iValue) && (iMaxValue > iValue))
+               iValue += iDelta
+               If (iMinValue > iValue)
+                  iValue = iMinValue
+               ElseIf (iMaxValue < iValue)
+                  iValue = iMaxValue
+               EndIf
+               _aiKnownInterest[iIndex] = iValue
+            EndIf
+         ElseIf (-1 != iMinValue)
+            ; If we have not evaluated the actor's disposition yet do so now.
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+            _aiKnownInterest[iIndex] = iValue
+         EndIf
+      EndIf
+
+      MutexRelease(_iKnownMutex)
+   EndIf
+   Return iValue
 EndFunction
 

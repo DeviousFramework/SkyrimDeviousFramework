@@ -614,6 +614,7 @@ Function DisplayModFeaturesPage(Bool bSecure)
    AddHeaderOption("Redress Timeouts")
    AddSliderOptionST("ST_MOD_NAKED_REDRESS",   "Post Rape Redress Timeout", iModNakedRedressTimeout, a_flags=iFlags)
    AddSliderOptionST("ST_MOD_RAPE_REDRESS",    "Naked Redress Timeout",     iModRapeRedressTimeout,  a_flags=iFlags)
+   AddHeaderOption("Leash Configuration")
    AddTextOptionST("ST_MOD_LEASH_STYLE",       "Leash Style", LeashStyleToString(iModLeashStyle))
    AddToggleOptionST("ST_MOD_LEASH_VISIBLE",   "Leash Visible", bModLeashVisible)
    AddToggleOptionST("ST_MOD_LEASH_INTERRUPT", "Leash Interrupt", bModLeashInterrupt)
@@ -633,9 +634,9 @@ Function DisplayModFeaturesPage(Bool bSecure)
    AddHeaderOption("Armour Blocking")
    AddToggleOptionST("ST_MOD_NIPPLE", "Blocking Nipple Piercing", bBlockNipple, a_flags=iFlags)
    AddToggleOptionST("ST_MOD_VAGINA", "Blocking Vagina Piercing", bBlockVagina, a_flags=iFlags)
+   AddToggleOptionST("ST_MOD_ARMOUR", "Also Block Body Armour",   bBlockArmour, a_flags=iFlags)
    AddToggleOptionST("ST_MOD_HOBBLE", "Blocking Hobble/Boots",    bBlockHobble, a_flags=iFlags)
    AddToggleOptionST("ST_MOD_SHOES",  "Hobble/Boots Also Block Shoes", bBlockShoes, a_flags=iFlags)
-   AddToggleOptionST("ST_MOD_ARMOUR", "Also Block Body Armour",   bBlockArmour, a_flags=iFlags)
    AddToggleOptionST("ST_MOD_ARMS",   "Blocking Locked Arms",     bBlockArms,   a_flags=iFlags)
    AddToggleOptionST("ST_MOD_BLOCK_LEASH",   "Blocking Leash",    bBlockLeash,  a_flags=iFlags)
 
@@ -654,6 +655,7 @@ Function DisplayStatusPage(Bool bSecure)
    AddToggleOptionST("ST_INFO_FOR_PLAYER", "Use Player for Info",    _bInfoForPlayer)
    AddToggleOptionST("ST_INFO_FACTIONS",   "Show Player Factions",   False)
    AddToggleOptionST("ST_INFO_NEARBY",     "Show Nearby Actors",     False)
+   AddToggleOptionST("ST_INFO_KNOWN",      "Show Known Actors",      False)
    AddToggleOptionST("ST_INFO_DEBUG",      "Show Debug Information", False)
 
    AddEmptyOption()
@@ -661,6 +663,7 @@ Function DisplayStatusPage(Bool bSecure)
    String szNakedLevel = "0x" + _qDfwUtil.ConvertHexToString(_qFramework.GetNakedLevel(), 8)
    AddTextOption("Vulnerability", _qFramework.GetVulnerability(), a_flags=OPTION_FLAG_DISABLED)
    AddTextOption("Naked",         szNakedLevel,                   a_flags=OPTION_FLAG_DISABLED)
+   AddTextOption("Weapon Level",  _qFramework.GetWeaponLevel(),   a_flags=OPTION_FLAG_DISABLED)
 
    AddEmptyOption()
    AddHeaderOption("Current Masters")
@@ -1399,7 +1402,7 @@ State ST_MOD_LEASH_DAMAGE
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("The percent of the player's total health as damage to the player when she is dragged via her leash.")
+      SetInfoText("The percent of the player's current health as damage to the player when she is dragged via her leash.")
    EndEvent
 EndState
 
@@ -1423,7 +1426,7 @@ State ST_MOD_SLA_THRESHOLD
 
    Event OnHighlightST()
       SetInfoText("Tired of people wandering around Skyrim unaroused?  With this feature\n" +\
-                  "anyone you meet with an arousal below this threshold will be randomly increased." +\
+                  "anyone you meet with an arousal below this threshold will be randomly increased.\n" +\
                   "0 turns off this feature.  Most arousal will be 0 so this can be a very low number.")
    EndEvent
 EndState
@@ -1508,6 +1511,22 @@ State ST_MOD_VAGINA
    EndEvent
 EndState
 
+State ST_MOD_ARMOUR
+   Event OnSelectST()
+      bBlockArmour = !bBlockArmour
+      SetToggleOptionValueST(bBlockArmour)
+   EndEvent
+
+   Event OnDefaultST()
+      bBlockArmour = _bDefBlockArmour
+      SetToggleOptionValueST(bBlockArmour)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Also block body armour on slot 0x00000004 when either piercings are worn.")
+   EndEvent
+EndState
+
 State ST_MOD_HOBBLE
    Event OnSelectST()
       bBlockHobble = !bBlockHobble
@@ -1521,6 +1540,22 @@ State ST_MOD_HOBBLE
 
    Event OnHighlightST()
       SetInfoText("Block equipping clothing to waist slots when hobbled.")
+   EndEvent
+EndState
+
+State ST_MOD_SHOES
+   Event OnSelectST()
+      bBlockShoes = !bBlockShoes
+      SetToggleOptionValueST(bBlockShoes)
+   EndEvent
+
+   Event OnDefaultST()
+      bBlockShoes = _bDefBlockShoes
+      SetToggleOptionValueST(bBlockShoes)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Wearing a hobble/boots also prevents wearing armour/clothing footwear.")
    EndEvent
 EndState
 
@@ -1554,38 +1589,6 @@ State ST_MOD_BLOCK_LEASH
 
    Event OnHighlightST()
       SetInfoText("Block chest clothing and armour when you are leashed.")
-   EndEvent
-EndState
-
-State ST_MOD_SHOES
-   Event OnSelectST()
-      bBlockShoes = !bBlockShoes
-      SetToggleOptionValueST(bBlockShoes)
-   EndEvent
-
-   Event OnDefaultST()
-      bBlockShoes = _bDefBlockShoes
-      SetToggleOptionValueST(bBlockShoes)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Wearing a hobble/boots also prevents wearing armour/clothing footwear.")
-   EndEvent
-EndState
-
-State ST_MOD_ARMOUR
-   Event OnSelectST()
-      bBlockArmour = !bBlockArmour
-      SetToggleOptionValueST(bBlockArmour)
-   EndEvent
-
-   Event OnDefaultST()
-      bBlockArmour = _bDefBlockArmour
-      SetToggleOptionValueST(bBlockArmour)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Also block body armour on slot 0x00000004 when either piercings are worn.")
    EndEvent
 EndState
 
@@ -1775,23 +1778,23 @@ State ST_INFO_NEARBY
       String[] aszInfo
 
       ; Create a list of information to present to the user.
-      Form[] laNearby = _qFramework.GetNearbyActorList(0)
+      Form[] aaNearby = _qFramework.GetNearbyActorList(0)
       Int[] aiFlags =  _qFramework.GetNearbyActorFlags()
       Int iSafety = 5
-      While (iSafety && (laNearby.Length != aiFlags.Length))
+      While (iSafety && (aaNearby.Length != aiFlags.Length))
          ; The lists change between getting the actors and the flags.  Try again.
          iSafety -= 1
-         laNearby = _qFramework.GetNearbyActorList(0)
+         aaNearby = _qFramework.GetNearbyActorList(0)
          aiFlags =  _qFramework.GetNearbyActorFlags()
       EndWhile
 
       If (!iSafety)
-         aszInfo = _qDfwUtil.AddStringToArray(aszInfo, "Error Getting Nearby List: " + laNearby.Length + "-" + aiFlags.Length + "!")
+         aszInfo = _qDfwUtil.AddStringToArray(aszInfo, "Error Getting Nearby List: " + aaNearby.Length + "-" + aiFlags.Length + "!")
       Else
          Int iCount = aiFlags.Length
          Int iIndex
          While (iIndex < iCount)
-            Actor aActor = (laNearby[iIndex] As Actor)
+            Actor aActor = (aaNearby[iIndex] As Actor)
             aszInfo = _qDfwUtil.AddStringToArray(aszInfo, "0x" + _qDfwUtil.ConvertHexToString(aiFlags[iIndex], 8) + " " + aActor.GetDisplayName())
             iIndex += 1
          EndWhile
@@ -1802,7 +1805,38 @@ State ST_INFO_NEARBY
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Display Actors in the nearby actor's list the factions the player is in.")
+      SetInfoText("Display Actors in the nearby actor's list and their actor flags:\n" +\
+                  "0x001 Estimate  0x002 Important   0x004 Child  0x008 Guard  0x010 Merchant\n" +\
+                  "0x080 Dominant  0x100 submissive  0x200 slave  0x400 Owner  0x800 Trader\n")
+   EndEvent
+EndState
+
+State ST_INFO_KNOWN
+   Event OnSelectST()
+      String[] aszInfo
+
+      ; Create a list of information to present to the user.
+      Form[] aaKnown = _qFramework.GetKnownActors()
+
+      Int iCount = aaKnown.Length
+      Int iIndex
+      While (iIndex < iCount)
+         Actor aActor = (aaKnown[iIndex] As Actor)
+         aszInfo = _qDfwUtil.AddStringToArray(aszInfo, iIndex + ": " + \
+            aActor.GetDisplayName() + " A(" + _qFramework.GetActorAnger(aActor, -1) + \
+                                     ") C(" + _qFramework.GetActorConfidence(aActor, -1) + \
+                                     ") D(" + _qFramework.GetActorDominance(aActor, -1) + \
+                                     ") I(" + _qFramework.GetActorInterest(aActor, -1) + ")")
+         iIndex += 1
+      EndWhile
+
+      ; Display the information for the user.
+      PresentInformation(aszInfo, "Known Actors")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Display disposition of actors who have recently been in contact with the player.\n" +\
+                  "A: Anger  C: Confidence  D: Dominance  I: Interest")
    EndEvent
 EndState
 
