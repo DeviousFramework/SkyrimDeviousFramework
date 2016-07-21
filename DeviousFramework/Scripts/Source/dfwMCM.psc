@@ -335,6 +335,10 @@ EndFunction
 
 Event OnConfigInit()
    InitScript()
+
+   ; Make sure the Devious Framework main script is initialized.
+   ; Do this here so the main script can rely on our data having been initialized first.
+   _qFramework.OnPlayerLoadGame()
 EndEvent
 
 ; Version of the MCM script.

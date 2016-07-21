@@ -494,7 +494,7 @@ Function OnPlayerLoadGame()
       _iKnownMutex = iMutexCreate("DFW Known")
 
       _oKeywordZbfFurniture = \
-         Game.GetFormFromFile(0x1100762B , "ZaZAnimationPack.esm") as Keyword
+         Game.GetFormFromFile(0x0000762B, "ZaZAnimationPack.esm") as Keyword
       _qZbfSlaveActions = zbfSlaveActions.GetApi()
    EndIf
 
@@ -1675,497 +1675,10 @@ EndFunction
 ;        ModEvent DFW_NearbyActor(Int iFlags, Actor aActor)
 ;
 
+;----------------------------------------------------------------------------------------------
+; API: General Functions
 String Function GetModVersion()
    Return "0.0001"
-EndFunction
-
-; TODO: Support any and all distances.
-Actor Function GetMaster(Int iMasterDistance=0x00000001, Int iInstance=1)
-   If (MD_DISTANT == iMasterDistance)
-      Return _aMasterDistant
-   EndIf
-   Return _aMasterClose
-EndFunction
-
-String Function GetMasterMod(Int iMasterDistance=0x00000001, Int iInstance=1)
-   If (MD_DISTANT == iMasterDistance)
-      If (_aMasterDistant)
-         Return _aMasterModDistant
-      EndIf
-   ElseIf (_aMasterClose)
-      Return _aMasterModClose
-   EndIf
-   Return ""
-EndFunction
-
-; szMod: Only used to display which Mod controls the Master.  Can be any short string.
-; A mod should only allow sex if it can handle the player randomly and spontaneously being taken
-; into a sex scene.  If a mod allows enslavement, register for the mod event (to be documented)
-; to figure our when your mod looses control of the player.
-; Set aNewMaster=None as a transition period between two Masters.
-Int Function SetMaster(Actor aNewMaster, String szMod, Int iPermissions, \
-                       Int iMasterDistance=0x00000004, Bool bOverride=False)
-   String szName = "None"
-   If (aNewMaster)
-      szName = aNewMaster.GetDisplayName()
-   EndIf
-   Log("New Master [" + szMod + "]-" + iMasterDistance + ": " + szName, DL_INFO, S_MOD)
-
-   ; If a distant master is specified set our local "distant master" variable.
-   Int iStatus
-   If (MD_DISTANT == iMasterDistance)
-      iStatus = SetMasterDistant(aNewMaster, iPermissions, szMod, bOverride)
-   Else
-      iStatus =  SetMasterClose(aNewMaster, iPermissions, szMod, bOverride)
-   EndIf
-   If ((SUCCESS <= iStatus) && aNewMaster)
-      ; Register the player enslavement with the ZAZ Animation Pack as well.
-      aNewMaster.AddToFaction(_qZbfSlave.zbfFactionMaster)
-      aNewMaster.AddToFaction(_qZbfSlave.zbfFactionPlayerMaster)
-      _qZbfSlave.EnslaveActor(_aPlayer, szMod)
-   EndIf
-   Return iStatus
-EndFunction
-
-Int Function ClearMaster(Actor aMaster, Bool bEscaped=False)
-   String szName = "None"
-   If (aMaster)
-      szName = aMaster.GetDisplayName()
-   EndIf
-   Log("Clearing Master: " + szName, DL_INFO, S_MOD)
-
-   ; Clear the Master with the ZAZ Animation Pack as well.
-   aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionMaster)
-   aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionPlayerMaster)
-
-   String szControllingMod
-   Int iStatus = WARNING
-   If (_aMasterClose == aMaster)
-      _aMasterClose = None
-      szControllingMod = _aMasterModClose
-      iStatus = SUCCESS
-   EndIf
-   If (_aMasterDistant == aMaster)
-      _aMasterDistant = None
-      szControllingMod = _aMasterModDistant
-      iStatus = SUCCESS
-   EndIf
-
-   ; Clear the player as a slave from the ZAZ Animation Pack if no one else is controlling her.
-   If (szControllingMod && !_aMasterClose && !_aMasterDistant)
-      _qZbfSlave.ReleaseSlave(_aPlayer, szControllingMod, bEscaped)
-   EndIf
-   Return iStatus
-EndFunction
-
-Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool bOverride=False)
-   String szName = "None"
-   If (aMaster)
-      szName = aMaster.GetDisplayName()
-   EndIf
-   Log("Changing Master Distance: " + szName, DL_INFO, S_MOD)
-
-   If (bMoveToDistant)
-      ; If the specified Master is not close we can't move him to a distant master.
-      If (_aMasterClose != aMaster)
-         If (_aMasterDistant != aMaster)
-            Log("Current Master differs " + _aMasterClose.GetDisplayName() + " (" + \
-                _aMasterModClose + ")", DL_ERROR, S_MOD)
-            Return FAIL
-         EndIf
-         ; It is only a warning if the specified Master is already distant.
-         Log("Already Distant.", DL_DEBUG, S_MOD)
-         Return WARNING
-      EndIf
-
-      Int iStatus = SetMasterDistant(aMaster, _iPermissionsClose, _aMasterModClose, bOverride)
-      If (SUCCESS <= iStatus)
-         _aMasterClose = None
-      EndIf
-      Return iStatus
-   EndIf
-
-   ; If the specified Master is not distant we can't move him to a close master.
-   If (_aMasterDistant != aMaster)
-      If (_aMasterClose != aMaster)
-         Log("Current Master differs " + _aMasterDistant.GetDisplayName() + " (" + \
-             _aMasterModDistant + ")", DL_ERROR, S_MOD)
-         Return FAIL
-      EndIf
-      ; It is only a warning if the specified Master is already close.
-      Log("Already Close.", DL_DEBUG, S_MOD)
-      Return WARNING
-   EndIf
-
-   Int iStatus = SetMasterClose(aMaster, _iPermissionsDistant, _aMasterModDistant, bOverride)
-   If (SUCCESS <= iStatus)
-      _aMasterDistant = None
-   EndIf
-   Return iStatus
-EndFunction
-
-Int Function GetNakedLevel()
-   Return _iNakedStatus
-EndFunction
-
-; Note: Currently bOnlyLocked is not supported.
-Bool Function IsPlayerBound(Bool bIncludeHidden=False, Bool bOnlyLocked=False)
-   If (_bIsCollared || _bIsArmLocked        || _bIsGagged || \
-       _bIsHobbled  || _iNumOtherRestraints || \
-       (_bHiddenRestraints && bIncludeHidden))
-      Return True
-   EndIf
-   Return False
-EndFunction
-
-Bool Function IsPlayerArmLocked()
-   Return _bIsArmLocked
-EndFunction
-
-Bool Function IsPlayerBelted()
-   Return _bIsBelted
-EndFunction
-
-Bool Function IsPlayerCollared()
-   Return _bIsCollared
-EndFunction
-
-Bool Function IsPlayerGagged()
-   Return _bIsGagged
-EndFunction
-
-Bool Function IsPlayerHobbled()
-   Return _bIsHobbled
-EndFunction
-
-ObjectReference Function GetBdsmFurniture()
-   Return _oBdsmFurniture
-EndFunction
-
-Function SetBdsmFurnitureLocked(Bool bLocked=True)
-   _bIsFurnitureLocked = bLocked
-
-   ; If we previously disabled the player's inventory, release it now.
-   ; TODO: This should check if the player is no longer on the furniture.
-   If (!_bIsFurnitureLocked && _bInventoryLocked)
-      _bInventoryLocked = False
-      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
-      Game.EnablePlayerControls(False, False, False, False, False, True,  False, False)
-   Endif
-EndFunction
-
-; Never returns more than 100.
-Int Function GetVulnerability(Actor aActor=None)
-   Log("Get Vulnerability: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   If (!aActor)
-      aActor = _aPlayer
-   EndIf
-
-   Int iVulnerability = 0
-
-   If (_aPlayer == aActor)
-      If (NS_NAKED == _iNakedStatus)
-         ; Both slots are naked.
-         iVulnerability += _qMcm.iVulnerabilityNude
-      ElseIf ((NS_WAIST_PARTIAL == _iNakedStatus) || (NS_CHEST_PARTIAL == _iNakedStatus))
-         ; One slot is naked and the other is reduced.
-         iVulnerability += _qMcm.iVulnerabilityNude / 2
-         iVulnerability += (_qMcm.iVulnerabilityNude * _qMcm.iVulnerabilityNakedReduce / \
-                            100 / 2)
-      ElseIf ((NS_WAIST_COVERED == _iNakedStatus) || (NS_WAIST_COVERED == _iNakedStatus))
-         ; One slot is naked.
-         iVulnerability += _qMcm.iVulnerabilityNude / 2
-      ElseIf (NS_BOTH_PARTIAL == _iNakedStatus)
-         ; Both slots are worn but reduced.
-         iVulnerability += (_qMcm.iVulnerabilityNude * _qMcm.iVulnerabilityNakedReduce / 100)
-      EndIf
-      If (_bIsCollared)
-         iVulnerability += _qMcm.iVulnerabilityCollar
-      EndIf
-      If (_bIsArmLocked)
-         iVulnerability += _qMcm.iVulnerabilityBinder
-      EndIf
-      If (_bIsGagged)
-         iVulnerability += _qMcm.iVulnerabilityGagged
-      EndIf
-      Int iNumRestraints = _iNumOtherRestraints
-      If (_bIsHobbled)
-         iNumRestraints += 1
-      EndIf
-      iVulnerability += (iNumRestraints * _qMcm.iVulnerabilityRestraints)
-      If (_oLeashTarget)
-         iVulnerability += _qMcm.iVulnerabilityLeashed
-      EndIf
-      If (_qDfwUtil.IsNight())
-         iVulnerability += _qMcm.iVulnerabilityNight
-      EndIf
-   Else
-      Log("Vulnerability for NPCs not implemented.", DL_INFO, S_MOD)
-   EndIf
-
-   ; Todo: Make BDSM furniture MCM configurable.
-   If (_oBdsmFurniture)
-      iVulnerability += 10
-   EndIf
-
-   Log("Vulnerability: " + iVulnerability, DL_DEBUG, S_MOD)
-   If (100 < iVulnerability)
-      Return 100
-   EndIf
-   Return iVulnerability
-EndFunction
-
-; The distance should be about 750 - 1,000 (loud talking distance) in the city.
-; New actors are excluded by default.
-Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, \
-                                   Int iExcludeFlags=0)
-   Log("Get Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   ; Clean up the actor list before we return elements from it.
-   ; Note: The cleanup has it's own throttle mechanism preventing it from running all the time.
-   CleanupNearbyList()
-
-   ; If there is no filtering just return the known list.
-   If (!iIncludeFlags && !iExcludeFlags && !fMaxDistance)
-      _aiRecentFlags = _aiNearbyFlags
-      Log("Get Nearby Done (Simple): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-      Return _aoNearby
-   EndIf
-
-   ; Otherwise create a new list and only add filtered items.
-   Form[] aoSubList
-
-   ; I don't know how to assign an empty array so I'm going to declare an new empty array, fill
-   ; it, and then copy it over.  Simply clearing _aiRecentFlags by setting it to None doesn't
-   ; work because the value AddIntToArray() returns below is lost unwinding the stack.
-   ; _aiRecentFlags = None
-   Int[] aiTempFlags
-
-   Int iCount = _aoNearby.Length
-   Int iIndex
-   While (iIndex < iCount)
-      Actor aNearby = (_aoNearby[iIndex] As Actor)
-      If (!iExcludeFlags || !Math.LogicalAnd(_aiNearbyFlags[iIndex], iExcludeFlags))
-         If (!iIncludeFlags || Math.LogicalAnd(_aiNearbyFlags[iIndex], iIncludeFlags))
-            If (!fMaxDistance || (fMaxDistance > aNearby.GetDistance(_aPlayer)))
-               aoSubList = _qDfwUtil.AddFormToArray(aoSubList, aNearby, True)
-               aiTempFlags = _qDfwUtil.AddIntToArray(aiTempFlags, _aiNearbyFlags[iIndex], True)
-            EndIf
-         EndIf
-      EndIf
-      iIndex += 1
-   EndWhile
-
-   ; Fill in the flags from the recent GetNearbyActorsList() before returning.  See note above.
-   _aiRecentFlags = aiTempFlags
-
-   Log("Get Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   Return aoSubList
-EndFunction
-
-; Be careful when using this.
-; There is a race condition if the lists change between getting the actors and the flags.
-; At the very least make sure the two lists are the same size.
-; This function only works when getting an actor list with include/exclude parameters set to 0.
-Int[] Function GetNearbyActorFlags()
-   ; Return _aiNearbyFlags
-   Return _aiRecentFlags
-EndFunction
-
-Actor Function GetRandomActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
-   Log("Get Random: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
-   Int iCount = aoNearbyList.Length
-   If (iCount)
-      Int iRandomIndex = Utility.RandomInt(0, iCount - 1)
-      Log("Get Random Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-      Return (aoNearbyList[iRandomIndex] As Actor)
-   EndIf
-   Log("Get Random Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   Return None
-EndFunction
-
-Actor Function GetNearestActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
-   Log("Get Nearest: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
-   Int iIndex = aoNearbyList.Length - 1
-   If (0 > iIndex)
-      Log("Get Nearest Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-      Return None
-   EndIf
-
-   Actor aNearest = (aoNearbyList[iIndex] As Actor)
-   Float fNearestDistance = aNearest.GetDistance(_aPlayer)
-   While (0 < iIndex)
-      ; We check the first element before the while loop so decrement the index at the start.
-      iIndex -= 1
-      Actor aCurrent = (aoNearbyList[iIndex] As Actor)
-      Float fCurrentDistance = aCurrent.GetDistance(_aPlayer)
-      If (fCurrentDistance < fNearestDistance)
-         fNearestDistance = fCurrentDistance
-         aNearest = aCurrent
-      EndIf
-   EndWhile
-   Log("Get Nearest Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   Return aNearest
-EndFunction
-
-Bool Function IsActorNearby(Actor aActor)
-   CleanupNearbyList()
-   Return (-1 != _aoNearby.Find(aActor))
-EndFunction
-
-Actor Function GetPlayerTalkingTo()
-   Log("Get Talking: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   Int iIndex = _aoNearby.Length - 1
-   While (0 <= iIndex)
-      Actor aActor = (_aoNearby[iIndex] As Actor)
-      If (aActor.IsInDialogueWithPlayer())
-         Log("Get Talking Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-         Return aActor
-      EndIf
-      iIndex -= 1
-   EndWhile
-   Log("Get Talking Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
-   Return None
-EndFunction
-
-; Leash target should be an in world object or an actor.
-Function SetLeashTarget(ObjectReference oLeashTarget)
-   _oLeashTarget = oLeashTarget
-EndFunction
-
-Function SetLeashLength(Int iLength)
-   _iLeashLength = iLength
-EndFunction
-
-Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, Bool bInterruptScene=True)
-   ; Use a simplified mutex to make sure the leash isn't yanked twice at the same time.
-   If (_bYankingLeash)
-      Return
-   EndIf
-   _bYankingLeash = True
-
-   Actor aPlayerTalkingTo = GetPlayerTalkingTo()
-   If (aPlayerTalkingTo && (aPlayerTalkingTo != _oLeashTarget))
-      ; Moving the player to her own location will end the conversation.
-      _aPlayer.MoveTo(_aPlayer)
-      ; MoveTo enables fast travel.  Disable it again if necessary.
-      If (_iBlockFastTravel)
-         Game.EnableFastTravel(False)
-      EndIf
-   EndIf
-
-   ; Keep track of whether there are movement issues with the leash (player hobbled, etc.).
-   Actor aLeashTarget = (_oLeashTarget As Actor)
-   Bool bMovementIssues = (IsActor(_oLeashTarget) && \
-                           (aLeashTarget.IsRunning() || aLeashTarget.IsSprinting() || \
-                            _aPlayer.WornHasKeyword(_oKeywordZbfEffectNoMove) || \
-                            _aPlayer.WornHasKeyword(_oKeywordZbfEffectSlowMove) || \
-                            _aPlayer.GetActorValue("CarryWeight") < \
-                               _aPlayer.GetTotalItemWeight()))
-
-   ; Figure out which style of leash to use.
-   Int iLeashStyle = _qMcm.iModLeashStyle
-   If (iOverrideLeashStyle)
-      iLeashStyle = iOverrideLeashStyle
-   EndIf
-   If (500 > _iLeashLength)
-      ; The dragging leash doesn't work with distances less than 500 units.
-      ; By the time the player stands up she is being dragged again.
-      iLeashStyle = LS_TELEPORT
-   ElseIf (LS_AUTO == iLeashStyle)
-      ; If the player is at low health use the teleport leash (a little safer).
-      iLeashStyle = LS_DRAG
-      If (bMovementIssues || (100 > _aPlayer.GetActorValue("Health")))
-         iLeashStyle = LS_TELEPORT
-      EndIf
-   EndIf
-
-   If (LS_DRAG == iLeashStyle)
-      ; Remove ragdoll from the player.  The first time fails so do it here before
-      ; doing it later.
-;      _aPlayer.ForceRemoveRagdollFromWorld()
-
-      ; While dragging the player via the leash make sure they are immune to damage.
-      ; Otherwise getting stuck behind a rock would kill the player.
-      Float fDamageResistance = _aPlayer.GetActorValue("DamageResist")
-      _aPlayer.ModActorValue("DamageResist", 10000)
-
-      Int iLoopCount = 1
-      While ((1 == iLoopCount) || (200 < _oLeashTarget.GetDistance(_aPlayer)))
-         _oLeashTarget.PushActorAway(_aPlayer, -2)
-
-         If (!(iLoopCount))
-            _qDfwUtil.TeleportToward(_oLeashTarget, 30)
-;            _aPlayer.ForceRemoveRagdollFromWorld()
-         EndIf
-         iLoopCount -= 1
-      EndWhile
-
-      ; You'll notice a lot of RemoveRagdoll() calls here.  Sometimes the player gets stuck
-      ; standing and having all of these help.  I'm not sure which ones are really needed.
-      _aPlayer.ForceRemoveRagdollFromWorld()
-      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
-      Utility.Wait(0.25)
-      _aPlayer.StopTranslation()
-      _aPlayer.SetMotionType(7)
-      _aPlayer.PlayIdle(_oIdleStop_Loose)
-;         Float fZOffset = _aPlayer.GetHeadingAngle(_oLeashTarget)
-;ToggleCollisions()
-;         _aPlayer.SetAngle(_aPlayer.X, _aPlayer.Y, _aPlayer.Z + fZOffset)
-;ToggleCollisions()
-;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
-;      _aPlayer.ForceAddRagdollToWorld()
-;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
-;      Utility.Wait(0.25)
-;      _aPlayer.ForceRemoveRagdollFromWorld()
-;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
-; Some things that appear to help:
-;_aPlayer.PlayIdle(_oIdleStop_Loose)
-; Something that doesn't seem to help:
-;Debug.SendAnimationEvent(_aPlayer, "IdleForceDefaultState")
-
-      ; Reset the player's damage resistance.
-      _aPlayer.ModActorValue("DamageResist", -10000)
-
-      ; Do damage if there are no movement issues.  Otherwise just drag the player along.
-      If (!bMovementIssues)
-         Float fDamage = ((_aPlayer.GetActorValue("Health") * _qMcm.iModLeashDamage / 100) + \
-                          (_aPlayer.GetLevel() / 2))
-         fDamage *= fDamageMultiplier
-         _aPlayer.DamageActorValue("Health", fDamage)
-      EndIf
-   Else ; LS_TELEPORT
-      While ((_iLeashLength / 1.75) < _oLeashTarget.GetDistance(_aPlayer))
-         _qDfwUtil.TeleportToward(_oLeashTarget, 40)
-
-         Utility.Wait(0.5)
-      EndWhile
-      ; Do damage if there are no movement issues.  Otherwise just drag the player along.
-      If (!bMovementIssues)
-         Float fDamage = ((_aPlayer.GetActorValue("Health") * _qMcm.iModLeashDamage / \
-                           100) + (_aPlayer.GetLevel() / 2))
-         fDamage *= fDamageMultiplier
-         _aPlayer.DamageActorValue("Health", fDamage)
-      EndIf
-   EndIf
-   _bYankingLeash = False
-EndFunction
-
-; Waits for any yank leash in progress to complete before returning.
-Int Function YankLeashWait(Int iTimeoutMs)
-   Bool bUseTimeout = (iTimeoutMs As Bool)
-
-   While (_bYankingLeash)
-      Utility.Wait(0.1)
-      If (bUseTimeout)
-         iTimeoutMs -= 100
-         If (0 >= iTimeoutMs)
-            Return FAIL
-         EndIf
-      EndIf
-   EndWhile
-   Return SUCCESS
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -2469,12 +1982,132 @@ Function RestoreJournal()
    EndIf
 EndFunction
 
-Bool Function IsAllowed(Int iAction)
-   If ((_aMasterClose && !Math.LogicalAnd(_iPermissionsClose, iAction)) || \
-       (_aMasterDistant && !Math.LogicalAnd(_iPermissionsDistant, iAction)))
-      Return False
+
+;----------------------------------------------------------------------------------------------
+; API: Master
+; TODO: Support any and all distances.
+Actor Function GetMaster(Int iMasterDistance=0x00000001, Int iInstance=1)
+   If (MD_DISTANT == iMasterDistance)
+      Return _aMasterDistant
    EndIf
-   Return True
+   Return _aMasterClose
+EndFunction
+
+String Function GetMasterMod(Int iMasterDistance=0x00000001, Int iInstance=1)
+   If (MD_DISTANT == iMasterDistance)
+      If (_aMasterDistant)
+         Return _aMasterModDistant
+      EndIf
+   ElseIf (_aMasterClose)
+      Return _aMasterModClose
+   EndIf
+   Return ""
+EndFunction
+
+; szMod: Only used to display which Mod controls the Master.  Can be any short string.
+; A mod should only allow sex if it can handle the player randomly and spontaneously being taken
+; into a sex scene.  If a mod allows enslavement, register for the mod event (to be documented)
+; to figure our when your mod looses control of the player.
+; Set aNewMaster=None as a transition period between two Masters.
+Int Function SetMaster(Actor aNewMaster, String szMod, Int iPermissions, \
+                       Int iMasterDistance=0x00000004, Bool bOverride=False)
+   String szName = "None"
+   If (aNewMaster)
+      szName = aNewMaster.GetDisplayName()
+   EndIf
+   Log("New Master [" + szMod + "]-" + iMasterDistance + ": " + szName, DL_INFO, S_MOD)
+
+   ; If a distant master is specified set our local "distant master" variable.
+   Int iStatus
+   If (MD_DISTANT == iMasterDistance)
+      iStatus = SetMasterDistant(aNewMaster, iPermissions, szMod, bOverride)
+   Else
+      iStatus =  SetMasterClose(aNewMaster, iPermissions, szMod, bOverride)
+   EndIf
+   If ((SUCCESS <= iStatus) && aNewMaster)
+      ; Register the player enslavement with the ZAZ Animation Pack as well.
+      aNewMaster.AddToFaction(_qZbfSlave.zbfFactionMaster)
+      aNewMaster.AddToFaction(_qZbfSlave.zbfFactionPlayerMaster)
+      _qZbfSlave.EnslaveActor(_aPlayer, szMod)
+   EndIf
+   Return iStatus
+EndFunction
+
+Int Function ClearMaster(Actor aMaster, Bool bEscaped=False)
+   String szName = "None"
+   If (aMaster)
+      szName = aMaster.GetDisplayName()
+   EndIf
+   Log("Clearing Master: " + szName, DL_INFO, S_MOD)
+
+   ; Clear the Master with the ZAZ Animation Pack as well.
+   aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionMaster)
+   aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionPlayerMaster)
+
+   String szControllingMod
+   Int iStatus = WARNING
+   If (_aMasterClose == aMaster)
+      _aMasterClose = None
+      szControllingMod = _aMasterModClose
+      iStatus = SUCCESS
+   EndIf
+   If (_aMasterDistant == aMaster)
+      _aMasterDistant = None
+      szControllingMod = _aMasterModDistant
+      iStatus = SUCCESS
+   EndIf
+
+   ; Clear the player as a slave from the ZAZ Animation Pack if no one else is controlling her.
+   If (szControllingMod && !_aMasterClose && !_aMasterDistant)
+      _qZbfSlave.ReleaseSlave(_aPlayer, szControllingMod, bEscaped)
+   EndIf
+   Return iStatus
+EndFunction
+
+Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool bOverride=False)
+   String szName = "None"
+   If (aMaster)
+      szName = aMaster.GetDisplayName()
+   EndIf
+   Log("Changing Master Distance: " + szName, DL_INFO, S_MOD)
+
+   If (bMoveToDistant)
+      ; If the specified Master is not close we can't move him to a distant master.
+      If (_aMasterClose != aMaster)
+         If (_aMasterDistant != aMaster)
+            Log("Current Master differs " + _aMasterClose.GetDisplayName() + " (" + \
+                _aMasterModClose + ")", DL_ERROR, S_MOD)
+            Return FAIL
+         EndIf
+         ; It is only a warning if the specified Master is already distant.
+         Log("Already Distant.", DL_DEBUG, S_MOD)
+         Return WARNING
+      EndIf
+
+      Int iStatus = SetMasterDistant(aMaster, _iPermissionsClose, _aMasterModClose, bOverride)
+      If (SUCCESS <= iStatus)
+         _aMasterClose = None
+      EndIf
+      Return iStatus
+   EndIf
+
+   ; If the specified Master is not distant we can't move him to a close master.
+   If (_aMasterDistant != aMaster)
+      If (_aMasterClose != aMaster)
+         Log("Current Master differs " + _aMasterDistant.GetDisplayName() + " (" + \
+             _aMasterModDistant + ")", DL_ERROR, S_MOD)
+         Return FAIL
+      EndIf
+      ; It is only a warning if the specified Master is already close.
+      Log("Already Close.", DL_DEBUG, S_MOD)
+      Return WARNING
+   EndIf
+
+   Int iStatus = SetMasterClose(aMaster, _iPermissionsDistant, _aMasterModDistant, bOverride)
+   If (SUCCESS <= iStatus)
+      _aMasterDistant = None
+   EndIf
+   Return iStatus
 EndFunction
 
 Function AddPermission(Actor aMaster, Int iPermissionMask)
@@ -2491,6 +2124,128 @@ Function RemovePermission(Actor aMaster, Int iPermissionMask)
    ElseIf (_aMasterDistant == aMaster)
       _iPermissionsDistant = Math.LogicalXor(_iPermissionsDistant, iPermissionMask)
    EndIf
+EndFunction
+
+Bool Function IsAllowed(Int iAction)
+   If ((_aMasterClose && !Math.LogicalAnd(_iPermissionsClose, iAction)) || \
+       (_aMasterDistant && !Math.LogicalAnd(_iPermissionsDistant, iAction)))
+      Return False
+   EndIf
+   Return True
+EndFunction
+
+
+;----------------------------------------------------------------------------------------------
+; API: Player Status
+Int Function GetNakedLevel()
+   Return _iNakedStatus
+EndFunction
+
+; Note: Currently bOnlyLocked is not supported.
+Bool Function IsPlayerBound(Bool bIncludeHidden=False, Bool bOnlyLocked=False)
+   If (_bIsCollared || _bIsArmLocked        || _bIsGagged || \
+       _bIsHobbled  || _iNumOtherRestraints || \
+       (_bHiddenRestraints && bIncludeHidden))
+      Return True
+   EndIf
+   Return False
+EndFunction
+
+Bool Function IsPlayerArmLocked()
+   Return _bIsArmLocked
+EndFunction
+
+Bool Function IsPlayerBelted()
+   Return _bIsBelted
+EndFunction
+
+Bool Function IsPlayerCollared()
+   Return _bIsCollared
+EndFunction
+
+Bool Function IsPlayerGagged()
+   Return _bIsGagged
+EndFunction
+
+Bool Function IsPlayerHobbled()
+   Return _bIsHobbled
+EndFunction
+
+ObjectReference Function GetBdsmFurniture()
+   Return _oBdsmFurniture
+EndFunction
+
+Function SetBdsmFurnitureLocked(Bool bLocked=True)
+   _bIsFurnitureLocked = bLocked
+
+   ; If we previously disabled the player's inventory, release it now.
+   ; TODO: This should check if the player is no longer on the furniture.
+   If (!_bIsFurnitureLocked && _bInventoryLocked)
+      _bInventoryLocked = False
+      ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
+      Game.EnablePlayerControls(False, False, False, False, False, True,  False, False)
+   Endif
+EndFunction
+
+; Never returns more than 100.
+Int Function GetVulnerability(Actor aActor=None)
+   Log("Get Vulnerability: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   If (!aActor)
+      aActor = _aPlayer
+   EndIf
+
+   Int iVulnerability = 0
+
+   If (_aPlayer == aActor)
+      If (NS_NAKED == _iNakedStatus)
+         ; Both slots are naked.
+         iVulnerability += _qMcm.iVulnerabilityNude
+      ElseIf ((NS_WAIST_PARTIAL == _iNakedStatus) || (NS_CHEST_PARTIAL == _iNakedStatus))
+         ; One slot is naked and the other is reduced.
+         iVulnerability += _qMcm.iVulnerabilityNude / 2
+         iVulnerability += (_qMcm.iVulnerabilityNude * _qMcm.iVulnerabilityNakedReduce / \
+                            100 / 2)
+      ElseIf ((NS_WAIST_COVERED == _iNakedStatus) || (NS_WAIST_COVERED == _iNakedStatus))
+         ; One slot is naked.
+         iVulnerability += _qMcm.iVulnerabilityNude / 2
+      ElseIf (NS_BOTH_PARTIAL == _iNakedStatus)
+         ; Both slots are worn but reduced.
+         iVulnerability += (_qMcm.iVulnerabilityNude * _qMcm.iVulnerabilityNakedReduce / 100)
+      EndIf
+      If (_bIsCollared)
+         iVulnerability += _qMcm.iVulnerabilityCollar
+      EndIf
+      If (_bIsArmLocked)
+         iVulnerability += _qMcm.iVulnerabilityBinder
+      EndIf
+      If (_bIsGagged)
+         iVulnerability += _qMcm.iVulnerabilityGagged
+      EndIf
+      Int iNumRestraints = _iNumOtherRestraints
+      If (_bIsHobbled)
+         iNumRestraints += 1
+      EndIf
+      iVulnerability += (iNumRestraints * _qMcm.iVulnerabilityRestraints)
+      If (_oLeashTarget)
+         iVulnerability += _qMcm.iVulnerabilityLeashed
+      EndIf
+      If (_qDfwUtil.IsNight())
+         iVulnerability += _qMcm.iVulnerabilityNight
+      EndIf
+   Else
+      Log("Vulnerability for NPCs not implemented.", DL_INFO, S_MOD)
+   EndIf
+
+   ; Todo: Make BDSM furniture MCM configurable.
+   If (_oBdsmFurniture)
+      iVulnerability += 10
+   EndIf
+
+   Log("Vulnerability: " + iVulnerability, DL_DEBUG, S_MOD)
+   If (100 < iVulnerability)
+      Return 100
+   EndIf
+   Return iVulnerability
 EndFunction
 
 ; Includes spells.  Returns 0 - 100.  50 should be "well equipped" for the player's level.
@@ -2535,6 +2290,268 @@ Int Function GetWeaponLevel()
    Return (fTotalValue As Int)
 EndFunction
 
+
+;----------------------------------------------------------------------------------------------
+; API: Nearby Actors
+; The distance should be about 750 - 1,000 (loud talking distance) in the city.
+; New actors are excluded by default.
+Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, \
+                                   Int iExcludeFlags=0)
+   Log("Get Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   ; Clean up the actor list before we return elements from it.
+   ; Note: The cleanup has it's own throttle mechanism preventing it from running all the time.
+   CleanupNearbyList()
+
+   ; If there is no filtering just return the known list.
+   If (!iIncludeFlags && !iExcludeFlags && !fMaxDistance)
+      _aiRecentFlags = _aiNearbyFlags
+      Log("Get Nearby Done (Simple): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Return _aoNearby
+   EndIf
+
+   ; Otherwise create a new list and only add filtered items.
+   Form[] aoSubList
+
+   ; I don't know how to assign an empty array so I'm going to declare an new empty array, fill
+   ; it, and then copy it over.  Simply clearing _aiRecentFlags by setting it to None doesn't
+   ; work because the value AddIntToArray() returns below is lost unwinding the stack.
+   ; _aiRecentFlags = None
+   Int[] aiTempFlags
+
+   Int iCount = _aoNearby.Length
+   Int iIndex
+   While (iIndex < iCount)
+      Actor aNearby = (_aoNearby[iIndex] As Actor)
+      If (!iExcludeFlags || !Math.LogicalAnd(_aiNearbyFlags[iIndex], iExcludeFlags))
+         If (!iIncludeFlags || Math.LogicalAnd(_aiNearbyFlags[iIndex], iIncludeFlags))
+            If (!fMaxDistance || (fMaxDistance > aNearby.GetDistance(_aPlayer)))
+               aoSubList = _qDfwUtil.AddFormToArray(aoSubList, aNearby, True)
+               aiTempFlags = _qDfwUtil.AddIntToArray(aiTempFlags, _aiNearbyFlags[iIndex], True)
+            EndIf
+         EndIf
+      EndIf
+      iIndex += 1
+   EndWhile
+
+   ; Fill in the flags from the recent GetNearbyActorsList() before returning.  See note above.
+   _aiRecentFlags = aiTempFlags
+
+   Log("Get Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Return aoSubList
+EndFunction
+
+; Be careful when using this.
+; There is a race condition if the lists change between getting the actors and the flags.
+; At the very least make sure the two lists are the same size.
+; This function only works when getting an actor list with include/exclude parameters set to 0.
+Int[] Function GetNearbyActorFlags()
+   ; Return _aiNearbyFlags
+   Return _aiRecentFlags
+EndFunction
+
+Actor Function GetRandomActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
+   Log("Get Random: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
+   Int iCount = aoNearbyList.Length
+   If (iCount)
+      Int iRandomIndex = Utility.RandomInt(0, iCount - 1)
+      Log("Get Random Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Return (aoNearbyList[iRandomIndex] As Actor)
+   EndIf
+   Log("Get Random Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Return None
+EndFunction
+
+Actor Function GetNearestActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
+   Log("Get Nearest: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
+   Int iIndex = aoNearbyList.Length - 1
+   If (0 > iIndex)
+      Log("Get Nearest Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Return None
+   EndIf
+
+   Actor aNearest = (aoNearbyList[iIndex] As Actor)
+   Float fNearestDistance = aNearest.GetDistance(_aPlayer)
+   While (0 < iIndex)
+      ; We check the first element before the while loop so decrement the index at the start.
+      iIndex -= 1
+      Actor aCurrent = (aoNearbyList[iIndex] As Actor)
+      Float fCurrentDistance = aCurrent.GetDistance(_aPlayer)
+      If (fCurrentDistance < fNearestDistance)
+         fNearestDistance = fCurrentDistance
+         aNearest = aCurrent
+      EndIf
+   EndWhile
+   Log("Get Nearest Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Return aNearest
+EndFunction
+
+Bool Function IsActorNearby(Actor aActor)
+   CleanupNearbyList()
+   Return (-1 != _aoNearby.Find(aActor))
+EndFunction
+
+Actor Function GetPlayerTalkingTo()
+   Log("Get Talking: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Int iIndex = _aoNearby.Length - 1
+   While (0 <= iIndex)
+      Actor aActor = (_aoNearby[iIndex] As Actor)
+      If (aActor.IsInDialogueWithPlayer())
+         Log("Get Talking Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+         Return aActor
+      EndIf
+      iIndex -= 1
+   EndWhile
+   Log("Get Talking Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Return None
+EndFunction
+
+
+;----------------------------------------------------------------------------------------------
+; API: Leash
+; Leash target should be an in world object or an actor.
+Function SetLeashTarget(ObjectReference oLeashTarget)
+   _oLeashTarget = oLeashTarget
+EndFunction
+
+Function SetLeashLength(Int iLength)
+   _iLeashLength = iLength
+EndFunction
+
+Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, Bool bInterruptScene=True)
+   ; Use a simplified mutex to make sure the leash isn't yanked twice at the same time.
+   If (_bYankingLeash)
+      Return
+   EndIf
+   _bYankingLeash = True
+
+   Actor aPlayerTalkingTo = GetPlayerTalkingTo()
+   If (aPlayerTalkingTo && (aPlayerTalkingTo != _oLeashTarget))
+      ; Moving the player to her own location will end the conversation.
+      _aPlayer.MoveTo(_aPlayer)
+      ; MoveTo enables fast travel.  Disable it again if necessary.
+      If (_iBlockFastTravel)
+         Game.EnableFastTravel(False)
+      EndIf
+   EndIf
+
+   ; Keep track of whether there are movement issues with the leash (player hobbled, etc.).
+   Actor aLeashTarget = (_oLeashTarget As Actor)
+   Bool bMovementIssues = (IsActor(_oLeashTarget) && \
+                           (aLeashTarget.IsRunning() || aLeashTarget.IsSprinting() || \
+                            _aPlayer.WornHasKeyword(_oKeywordZbfEffectNoMove) || \
+                            _aPlayer.WornHasKeyword(_oKeywordZbfEffectSlowMove) || \
+                            _aPlayer.GetActorValue("CarryWeight") < \
+                               _aPlayer.GetTotalItemWeight()))
+
+   ; Figure out which style of leash to use.
+   Int iLeashStyle = _qMcm.iModLeashStyle
+   If (iOverrideLeashStyle)
+      iLeashStyle = iOverrideLeashStyle
+   EndIf
+   If (500 > _iLeashLength)
+      ; The dragging leash doesn't work with distances less than 500 units.
+      ; By the time the player stands up she is being dragged again.
+      iLeashStyle = LS_TELEPORT
+   ElseIf (LS_AUTO == iLeashStyle)
+      ; If the player is at low health use the teleport leash (a little safer).
+      iLeashStyle = LS_DRAG
+      If (bMovementIssues || (100 > _aPlayer.GetActorValue("Health")))
+         iLeashStyle = LS_TELEPORT
+      EndIf
+   EndIf
+
+   If (LS_DRAG == iLeashStyle)
+      ; Remove ragdoll from the player.  The first time fails so do it here before
+      ; doing it later.
+;      _aPlayer.ForceRemoveRagdollFromWorld()
+
+      ; While dragging the player via the leash make sure they are immune to damage.
+      ; Otherwise getting stuck behind a rock would kill the player.
+      Float fDamageResistance = _aPlayer.GetActorValue("DamageResist")
+      _aPlayer.ModActorValue("DamageResist", 10000)
+
+      Int iLoopCount = 1
+      While ((1 == iLoopCount) || (200 < _oLeashTarget.GetDistance(_aPlayer)))
+         _oLeashTarget.PushActorAway(_aPlayer, -2)
+
+         If (!(iLoopCount))
+            _qDfwUtil.TeleportToward(_oLeashTarget, 30)
+;            _aPlayer.ForceRemoveRagdollFromWorld()
+         EndIf
+         iLoopCount -= 1
+      EndWhile
+
+      ; You'll notice a lot of RemoveRagdoll() calls here.  Sometimes the player gets stuck
+      ; standing and having all of these help.  I'm not sure which ones are really needed.
+      _aPlayer.ForceRemoveRagdollFromWorld()
+      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
+      Utility.Wait(0.25)
+      _aPlayer.StopTranslation()
+      _aPlayer.SetMotionType(7)
+      _aPlayer.PlayIdle(_oIdleStop_Loose)
+;         Float fZOffset = _aPlayer.GetHeadingAngle(_oLeashTarget)
+;ToggleCollisions()
+;         _aPlayer.SetAngle(_aPlayer.X, _aPlayer.Y, _aPlayer.Z + fZOffset)
+;ToggleCollisions()
+;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
+;      _aPlayer.ForceAddRagdollToWorld()
+;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
+;      Utility.Wait(0.25)
+;      _aPlayer.ForceRemoveRagdollFromWorld()
+;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
+; Some things that appear to help:
+;_aPlayer.PlayIdle(_oIdleStop_Loose)
+; Something that doesn't seem to help:
+;Debug.SendAnimationEvent(_aPlayer, "IdleForceDefaultState")
+
+      ; Reset the player's damage resistance.
+      _aPlayer.ModActorValue("DamageResist", -10000)
+
+      ; Do damage if there are no movement issues.  Otherwise just drag the player along.
+      If (!bMovementIssues)
+         Float fDamage = ((_aPlayer.GetActorValue("Health") * _qMcm.iModLeashDamage / 100) + \
+                          (_aPlayer.GetLevel() / 2))
+         fDamage *= fDamageMultiplier
+         _aPlayer.DamageActorValue("Health", fDamage)
+      EndIf
+   Else ; LS_TELEPORT
+      While ((_iLeashLength / 1.75) < _oLeashTarget.GetDistance(_aPlayer))
+         _qDfwUtil.TeleportToward(_oLeashTarget, 40)
+
+         Utility.Wait(0.5)
+      EndWhile
+      ; Do damage if there are no movement issues.  Otherwise just drag the player along.
+      If (!bMovementIssues)
+         Float fDamage = ((_aPlayer.GetActorValue("Health") * _qMcm.iModLeashDamage / \
+                           100) + (_aPlayer.GetLevel() / 2))
+         fDamage *= fDamageMultiplier
+         _aPlayer.DamageActorValue("Health", fDamage)
+      EndIf
+   EndIf
+   _bYankingLeash = False
+EndFunction
+
+; Waits for any yank leash in progress to complete before returning.
+Int Function YankLeashWait(Int iTimeoutMs)
+   Bool bUseTimeout = (iTimeoutMs As Bool)
+
+   While (_bYankingLeash)
+      Utility.Wait(0.1)
+      If (bUseTimeout)
+         iTimeoutMs -= 100
+         If (0 >= iTimeoutMs)
+            Return FAIL
+         EndIf
+      EndIf
+   EndWhile
+   Return SUCCESS
+EndFunction
+
+
+;----------------------------------------------------------------------------------------------
+; API: NPC Disposition
 Int Function GetActorAnger(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
    Return IncActorAnger(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
 EndFunction
