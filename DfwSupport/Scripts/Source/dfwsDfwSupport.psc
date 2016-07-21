@@ -327,7 +327,8 @@ Event OnUpdate()
    If (_oBdsmFurniture || _qFramework.GetBdsmFurniture())
       ; If the player is free to move and no one is messing with her think about starting to.
       If (Game.IsMovementControlsEnabled() && !_aFurnitureLocker)
-         If (10 > Utility.RandomFloat(0, 100))
+         Float fRandomNumber = Utility.RandomFloat(0, 100)
+         If (10 > fRandomNumber) ;;;; Utility.RandomFloat(0, 100))
             ; Find someone nearby to lock the player in the device.
             Actor aNearby = _qFramework.GetRandomActor(iIncludeFlags=_qFramework.AF_DOMINANT)
             If (aNearby)

@@ -114,7 +114,7 @@ Bool _bDebug
 ;***********************************************************************************************
 ;***                                    INITIALIZATION                                       ***
 ;***********************************************************************************************
-Function InitScript()
+Function UpdateScript()
    ; Hardcore mode is turned off on all script updates.
    _bSecureHardcore = False
 
@@ -176,9 +176,12 @@ Function InitScript()
    EndIf
 EndFunction
 
-
 Event OnConfigInit()
-   InitScript()
+   UpdateScript()
+
+   ; Make sure the DFW Support main script is initialized.
+   ; Do this here so the main script can rely on our data having been initialized first.
+   _qDfwSupport.UpdateScript()
 EndEvent
 
 ; Version of the MCM script.
@@ -191,7 +194,7 @@ Int Function GetVersion()
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
-   InitScript()
+   UpdateScript()
 EndEvent
 
 
