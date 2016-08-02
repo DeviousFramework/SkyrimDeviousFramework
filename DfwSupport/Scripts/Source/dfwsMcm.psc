@@ -55,21 +55,30 @@ Bool _bIncludeOwners
 Bool _bCatchZazEvents
 Bool _bCatchSdPlus
 Bool _bLeashSdPlus
+Bool _bBlockHelpless
 Bool Property bIncludeOwners  Auto
 Bool Property bCatchZazEvents Auto
 Bool Property bCatchSdPlus    Auto
 Bool Property bLeashSdPlus    Auto
+Bool Property bBlockHelpless  Auto
 
 ; *** Float Slider Options ***
 Float _fPollTimeDef
-Float Property fPollTime Auto
+Float _fLeashGameChanceDef
+Float _fFurnitureLockChance
+Float _fFurnitureReleaseChance
+Float Property fPollTime                Auto
+Float Property fLeashGameChance         Auto
+Float Property fFurnitureLockChance     Auto
+Float Property fFurnitureReleaseChance  Auto
 
 ; *** Integer Slider Options ***
-Int _iLeashGameChanceDef
 Int _iIncreaseWhenVulnerable
 Int _iLeashLength
 Int _iSecurityLevel
 Int _iBlockTravel
+Int _iFurnitureTeaseChance
+Int _iFurnitureAltRelease
 Int _iLogLevelDef
 Int _iLogLevelScreenDef
 Int _iDurationMin
@@ -77,10 +86,12 @@ Int _iDurationMax
 Int _iChanceOfRelease
 Int _iDominanceAffectsRelease
 Int _iMaxAngerForRelease
-Int Property iLeashGameChance         Auto
+Int _iChanceIdleRestraints
 Int Property iIncreaseWhenVulnerable  Auto
 Int Property iLeashLength             Auto
 Int Property iBlockTravel             Auto
+Int Property iFurnitureTeaseChance    Auto
+Int Property iFurnitureAltRelease     Auto
 Int Property iLogLevel                Auto
 Int Property iLogLevelScreen          Auto
 Int Property iDurationMin             Auto
@@ -88,6 +99,7 @@ Int Property iDurationMax             Auto
 Int Property iChanceOfRelease         Auto
 Int Property iDominanceAffectsRelease Auto
 Int Property iMaxAngerForRelease      Auto
+Int Property iChanceIdleRestraints    Auto
 
 ; *** Enumeration Options ***
 
@@ -141,7 +153,6 @@ Function UpdateScript()
       _bCatchSdPlus             = True
       _bLeashSdPlus             = False
       _fPollTimeDef             =   3.0
-      _iLeashGameChanceDef      =   3
       _iIncreaseWhenVulnerable  =  10
       _iLeashLength             = 700
       _iBlockTravel             =   1
@@ -158,7 +169,6 @@ Function UpdateScript()
       bCatchSdPlus             = _bCatchSdPlus
       bLeashSdPlus             = _bLeashSdPlus
       fPollTime                = _fPollTimeDef
-      iLeashGameChance         = _iLeashGameChanceDef
       iIncreaseWhenVulnerable  = _iIncreaseWhenVulnerable
       iLeashLength             = _iLeashLength
       iBlockTravel             = _iBlockTravel
@@ -173,6 +183,27 @@ Function UpdateScript()
       ; Set the Security level to the level of night vulnerability.
       ; The primary purpose of the security level is to allow changing settings at night.
       _iSecurityLevel = _qDfwMcm.iVulnerabilityNight
+   EndIf
+
+   If (3 > CurrentVersion)
+      _iChanceIdleRestraints   = 10
+      _fFurnitureReleaseChance =  1
+      _iFurnitureTeaseChance   = 75
+      _iFurnitureAltRelease    = 20
+      _bBlockHelpless          = False
+
+      iChanceIdleRestraints   = _iChanceIdleRestraints
+      fFurnitureReleaseChance = _fFurnitureReleaseChance
+      iFurnitureTeaseChance   = _iFurnitureTeaseChance
+      iFurnitureAltRelease    = _iFurnitureAltRelease
+      bBlockHelpless          = _bBlockHelpless
+   EndIf
+
+   If (4 > CurrentVersion)
+      _fLeashGameChanceDef  =   3.0
+      _fFurnitureLockChance =  5.0
+      fLeashGameChance      = _fLeashGameChanceDef
+      fFurnitureLockChance  = _fFurnitureLockChance
    EndIf
 EndFunction
 
@@ -190,7 +221,7 @@ Int Function GetVersion()
    ; Reset the version number.
    ; CurrentVersion = 0
 
-   Return 2
+   Return 4
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -274,9 +305,6 @@ Function DisplayDfwSupportPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddTextOption("DFW Support Version", _qDfwSupport.GetModVersion(), a_flags=OPTION_FLAG_DISABLED)
-
-   AddEmptyOption()
    AddSliderOptionST("ST_FWK_SECURE",         "Security Level",        _iSecurityLevel, a_flags=iFlags)
    AddToggleOptionST("ST_FWK_HARDCORE",       "...Hardcore (Caution)", _bSecureHardcore, a_flags=iFlags)
 
@@ -284,9 +312,19 @@ Function DisplayDfwSupportPage(Bool bSecure)
    AddSliderOptionST("ST_FWK_POLL_TIME",      "Poll Time",             fPollTime, "{1}")
    AddSliderOptionST("ST_MOD_BLOCK_TRAVEL",   "Block Travel",          iBlockTravel, a_flags=iFlags)
 
+   AddEmptyOption()
+   AddHeaderOption("BDSM Furniture")
+   AddSliderOptionST("ST_MOD_FURNITURE_LOCK",    "Chance of Locking",  fFurnitureLockChance, "{1}", a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_FURNITURE_RELEASE", "Chance of Release",  fFurnitureReleaseChance, "{1}", a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_FURNITURE_TEASE",   "Teasing Chance",     iFurnitureTeaseChance, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_FURNITURE_ALT",     "Alternate Release",  iFurnitureAltRelease, a_flags=iFlags)
+
    ; Start on the second column.
    SetCursorPosition(1)
 
+   AddTextOption("DFW Support Version", _qDfwSupport.GetModVersion(), a_flags=OPTION_FLAG_DISABLED)
+
+   AddEmptyOption()
    AddHeaderOption("Mod Compatibility")
    AddToggleOptionST("ST_MOD_ZAZ_EVENTS", "Catch ZAZ Events",          bCatchZazEvents, a_flags=iFlags)
    AddToggleOptionST("ST_MOD_SDP_EVENTS", "Catch SD+ Enslavement",     bCatchSdPlus, a_flags=iFlags)
@@ -313,20 +351,15 @@ Function DisplayLeashGamePage(Bool bSecure)
    EndIf
 
    AddHeaderOption("Chance to Play")
-   AddSliderOptionST("ST_MOD_LEASH_GAME",     "Leash Game Chance",         iLeashGameChance, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_LEASH_GAME",     "Leash Game Chance",         fLeashGameChance, "{1}", a_flags=iFlags)
    AddSliderOptionST("ST_LGM_INC_VULNERABLE", "Increase When Vulnerable",  iIncreaseWhenVulnerable, a_flags=iFlags)
    AddToggleOptionST("ST_LGM_INCLUD_OWNERS",  "Include Owners",            bIncludeOwners, a_flags=iFlags)
 
    AddEmptyOption()
    AddSliderOptionST("ST_LGM_LEASH_LENGTH",   "Leash Length",              iLeashLength, a_flags=iFlags)
+   AddToggleOptionST("ST_LGM_BLOCK_HELPLESS", "Block Deviously Helpless",  bBlockHelpless, a_flags=iFlags)
 
-   AddEmptyOption()
-   AddHeaderOption("Duration")
-   AddSliderOptionST("ST_LGM_DURATION_MIN",   "Minimum Duration",          iDurationMin, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_DURATION_MAX",   "Maximum Duration",          iDurationMax, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_CHANCE_RELEASE", "Chance of Release",         iChanceOfRelease, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_RELEASE_DOM",    "Dominance Affects Release", iDominanceAffectsRelease, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_RELEASE_ANGER",  "Maximum Anger for Release", iMaxAngerForRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_IDLE",    "Chance of Idle Restraints", iChanceIdleRestraints, a_flags=iFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -341,6 +374,14 @@ Function DisplayLeashGamePage(Bool bSecure)
    If ((!_qDfwSupport.IsGameOn()) && aNearest)
       AddTextOptionST("ST_LEASH_TO", "Start Leash Game:", aNearest.GetDisplayName())
    EndIf
+
+   AddEmptyOption()
+   AddHeaderOption("Duration")
+   AddSliderOptionST("ST_LGM_DURATION_MIN",   "Minimum Duration",          iDurationMin, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_DURATION_MAX",   "Maximum Duration",          iDurationMax, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_RELEASE", "Chance of Release",         iChanceOfRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_RELEASE_DOM",    "Dominance Affects Release", iDominanceAffectsRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_RELEASE_ANGER",  "Maximum Anger for Release", iMaxAngerForRelease, a_flags=iFlags)
 EndFunction
 
 
@@ -442,6 +483,117 @@ State ST_MOD_BLOCK_TRAVEL
    EndEvent
 EndState
 
+State ST_MOD_FURNITURE_LOCK
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(fFurnitureLockChance)
+      SetSliderDialogDefaultValue(_fFurnitureLockChance)
+      If (10 <= fFurnitureLockChance)
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      Else
+         SetSliderDialogRange(0, 10)
+         SetSliderDialogInterval(0.1)
+      EndIf
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      fFurnitureLockChance = fValue
+      SetSliderOptionValueST(fFurnitureLockChance)
+   EndEvent
+
+   Event OnDefaultST()
+      fFurnitureLockChance = _fFurnitureLockChance
+      SetSliderOptionValueST(fFurnitureLockChance)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When sitting in unlocked BDSM furniture (a cross or pillory, etc.) this is the\n" +\
+                  "chance (per poll event) that a nearby NPC will decide to lock the furniture.")
+   EndEvent
+EndState
+
+State ST_MOD_FURNITURE_RELEASE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(fFurnitureReleaseChance)
+      SetSliderDialogDefaultValue(_fFurnitureReleaseChance)
+      If (10 <= fFurnitureReleaseChance)
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      Else
+         SetSliderDialogRange(0, 10)
+         SetSliderDialogInterval(0.1)
+      EndIf
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      fFurnitureReleaseChance = fValue
+      SetSliderOptionValueST(fFurnitureReleaseChance)
+   EndEvent
+
+   Event OnDefaultST()
+      fFurnitureReleaseChance = _fFurnitureReleaseChance
+      SetSliderOptionValueST(fFurnitureReleaseChance)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("If locked in BDSM furniture by this mod, this is the chance (per poll event) that\n" +\
+                  "the original locker of the furniture will unlock it.")
+   EndEvent
+EndState
+
+State ST_MOD_FURNITURE_TEASE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iFurnitureTeaseChance)
+      SetSliderDialogDefaultValue(_iFurnitureTeaseChance)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iFurnitureTeaseChance = (fValue As Int)
+      SetSliderOptionValueST(iFurnitureTeaseChance)
+   EndEvent
+
+   Event OnDefaultST()
+      iFurnitureTeaseChance = _iFurnitureTeaseChance
+      SetSliderOptionValueST(iFurnitureTeaseChance)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The % chance the NPC is teasing the player each time he lets her go.")
+   EndEvent
+EndState
+
+State ST_MOD_FURNITURE_ALT
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iFurnitureAltRelease)
+      SetSliderDialogDefaultValue(_iFurnitureAltRelease)
+      If (100 <= iFurnitureAltRelease)
+         SetSliderDialogRange(0, 500)
+         SetSliderDialogInterval(10)
+      Else
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      EndIf
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iFurnitureAltRelease = (fValue As Int)
+      SetSliderOptionValueST(iFurnitureAltRelease)
+   EndEvent
+
+   Event OnDefaultST()
+      iFurnitureAltRelease = _iFurnitureAltRelease
+      SetSliderOptionValueST(iFurnitureAltRelease)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("If the original locker of the furniture is not nearby another neraby NPC may unlock the furniture.\n" +\
+                  "The chance of an alternate NPC releasing the player is expressed as a percent of the \"Chance of Release\".\n" +\
+                  "If \"Chance of Release\" is 10% and this is 10, there will be a 1% chance when the original locker is not nearby.")
+   EndEvent
+EndState
+
 
 ;***********************************************************************************************
 ;***                                STATES: VULNERABILITY                                    ***
@@ -452,25 +604,30 @@ EndState
 ;***********************************************************************************************
 State ST_MOD_LEASH_GAME
    Event OnSliderOpenST()
-      SetSliderDialogStartValue(iLeashGameChance)
-      SetSliderDialogDefaultValue(_iLeashGameChanceDef)
-      SetSliderDialogRange(0, 100)
-      SetSliderDialogInterval(1)
+      SetSliderDialogStartValue(fLeashGameChance)
+      SetSliderDialogDefaultValue(_fLeashGameChanceDef)
+      If (10 <= fLeashGameChance)
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      Else
+         SetSliderDialogRange(0, 10)
+         SetSliderDialogInterval(0.1)
+      EndIf
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLeashGameChance = (fValue As Int)
-      SetSliderOptionValueST(iLeashGameChance)
+      fLeashGameChance = fValue
+      SetSliderOptionValueST(fLeashGameChance)
    EndEvent
 
    Event OnDefaultST()
-      iLeashGameChance = _iLeashGameChanceDef
-      SetSliderOptionValueST(iLeashGameChance)
+      fLeashGameChance = _fLeashGameChanceDef
+      SetSliderOptionValueST(fLeashGameChance)
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("A very rudamentary leash game.  When you encounter slavers they may drag you around for a time.\n" +\
-                  "Requires \"slave traders\".  Currently only Slave Girls by hydragorgon slavers are supported.\n" +\
+      SetInfoText("A rudamentary leash game.  When you encounter slavers they may drag you around for a time.\n" +\
+                  "Requires \"slave traders\".  Currently only Slave Girls by hydragorgon slavers are tested.\n" +\
                   "Does not trigger if you have a nearby Master.")
    EndEvent
 EndState
@@ -538,6 +695,23 @@ State ST_LGM_LEASH_LENGTH
       SetInfoText("The length of the player's leash.\n" +\
                   "Only set at the start of the leash game.\n" +\
                   "Warning: Many values are untested.  If unsure leave at " + _iLeashLength + ".")
+   EndEvent
+EndState
+
+State ST_LGM_BLOCK_HELPLESS
+   Event OnSelectST()
+      bBlockHelpless = !bBlockHelpless
+      SetToggleOptionValueST(bBlockHelpless)
+   EndEvent
+
+   Event OnDefaultST()
+      bBlockHelpless = _bBlockHelpless
+      SetToggleOptionValueST(bBlockHelpless)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Block deviously helpless assaults while the leash game is playing?\n" +\
+                  "Leave this off if the deviously helpless mod is not installed.")
    EndEvent
 EndState
 
@@ -610,7 +784,7 @@ State ST_LGM_CHANCE_RELEASE
 
    Event OnHighlightST()
       SetInfoText("The chance the player will be released at the end of the leash game.\n" +\
-                  "If the player is not released the the timer will start again with a new random duration.\n" +\
+                  "If the player is not released the timer will restart with a random duration half as long.\n" +\
                   "Note: The slaver's DFW dominance value also affects the player's chance of release (See below).")
    EndEvent
 EndState
@@ -662,6 +836,31 @@ State ST_LGM_RELEASE_ANGER
       SetInfoText("The maximum amount of DFW anger the slaver can have toward the player in order for him to release her.\n" +\
                   "If the slaver is more angry than this at the end of the game the game's release timer will be reset.\n" +\
                   "Warning: The slaver's anger can't naturally be reduced to zero so it is not recommended to set this low.")
+   EndEvent
+EndState
+
+State ST_LGM_CHANCE_IDLE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iChanceIdleRestraints)
+      SetSliderDialogDefaultValue(_iChanceIdleRestraints)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iChanceIdleRestraints = (fValue As Int)
+      SetSliderOptionValueST(iChanceIdleRestraints)
+   EndEvent
+
+   Event OnDefaultST()
+      iChanceIdleRestraints = _iChanceIdleRestraints
+      SetSliderOptionValueST(iChanceIdleRestraints)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The chance the slaver will decorate the player as a slave once she is fully under control.\n" +\
+                  "This does not affect when the slaver is initially trying to control the player or is angered or upset.\n" +\
+                  "It only affects decorating the player once she is under control (collar, stripping, boots).")
    EndEvent
 EndState
 

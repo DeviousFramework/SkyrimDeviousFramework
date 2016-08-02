@@ -8,7 +8,7 @@ Actor akSpeaker = akSpeakerRef as Actor
 ;BEGIN CODE
 dfwsDfwSupport _qQuest = Self.GetOwningQuest() As dfwsDfwSupport
 _qQuest.IncDominance(akSpeaker, 1)
-_qQuest.Cooperation(-6, 0)
+_qQuest.Cooperation(-6, 1)
 ;END CODE
 EndFunction
 ;END FRAGMENT
