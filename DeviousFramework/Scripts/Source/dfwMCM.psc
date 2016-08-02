@@ -108,6 +108,7 @@ Int _iDefVulBinder
 Int _iDefVulGagged
 Int _iDefVulRestraints
 Int _iDefVulLeashed
+Int _iDefVulFurniture
 Int _iDefVulNight
 Int _iDefNakedRedressTimeout
 Int _iDefRapeRedressTimeout
@@ -127,6 +128,7 @@ Int Property iVulnerabilityBinder      Auto
 Int Property iVulnerabilityGagged      Auto
 Int Property iVulnerabilityRestraints  Auto
 Int Property iVulnerabilityLeashed     Auto
+Int Property iVulnerabilityFurniture   Auto
 Int Property iVulnerabilityNight       Auto
 Int Property iModNakedRedressTimeout   Auto
 Int Property iModRapeRedressTimeout    Auto
@@ -209,8 +211,8 @@ Function InitScript()
       _iDefVulNight            =  5
       _iDefLogLevel            =  5
       _iDefLogLevelScreen      =  4
-      _iDefNakedRedressTimeout = 15
-      _iDefRapeRedressTimeout  = 30
+      _iDefNakedRedressTimeout = 20
+      _iDefRapeRedressTimeout  = 90
 
       fSettingsPollTime = _fDefSetPollTime
 
@@ -330,6 +332,12 @@ Function InitScript()
       _iDefLeashDamage = 12
       iModLeashDamage  = _iDefLeashDamage
    EndIf
+
+   ; Added a vulnerability configuration for BDSM furniture in version 6.
+   If (6 > CurrentVersion)
+      _iDefVulFurniture       = 10
+      iVulnerabilityFurniture = _iDefVulFurniture
+   EndIf
 EndFunction
 
 
@@ -347,7 +355,7 @@ Int Function GetVersion()
    ; Reset the version number.
    ; CurrentVersion = 2
 
-   Return 5
+   Return 6
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -595,13 +603,14 @@ Function DisplayVulnerabilityPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddSliderOptionST("ST_VUL_NUDE",       "Nude",       iVulnerabilityNude,       a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_COLLAR",     "Collar",     iVulnerabilityCollar,     a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_BINDER",     "Arm Binder", iVulnerabilityBinder,     a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_GAGGED",     "Gag",        iVulnerabilityGagged,     a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_RESTRAINTS", "Restraints", iVulnerabilityRestraints, a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_LEASHED",    "Leashed",    iVulnerabilityLeashed,    a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_NIGHT",      "Night Time", iVulnerabilityNight,      a_flags=iFlags)
+   AddSliderOptionST("ST_VUL_NUDE",       "Nude",           iVulnerabilityNude,       a_flags=iFlags)
+   AddSliderOptionST("ST_VUL_COLLAR",     "Collar",         iVulnerabilityCollar,     a_flags=iFlags)
+   AddSliderOptionST("ST_VUL_BINDER",     "Arm Binder",     iVulnerabilityBinder,     a_flags=iFlags)
+   AddSliderOptionST("ST_VUL_GAGGED",     "Gag",            iVulnerabilityGagged,     a_flags=iFlags)
+   AddSliderOptionST("ST_VUL_RESTRAINTS", "Restraints",     iVulnerabilityRestraints, a_flags=iFlags)
+   AddSliderOptionST("ST_VUL_LEASHED",    "Leashed",        iVulnerabilityLeashed,    a_flags=iFlags)
+   AddSliderOptionST("ST_VUL_FURNITURE",  "BDSM Furniture", iVulnerabilityFurniture,  a_flags=iFlags)
+   AddSliderOptionST("ST_VUL_NIGHT",      "Night Time",     iVulnerabilityNight,      a_flags=iFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -616,8 +625,8 @@ Function DisplayModFeaturesPage(Bool bSecure)
    EndIf
 
    AddHeaderOption("Redress Timeouts")
-   AddSliderOptionST("ST_MOD_NAKED_REDRESS",   "Post Rape Redress Timeout", iModNakedRedressTimeout, a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_RAPE_REDRESS",    "Naked Redress Timeout",     iModRapeRedressTimeout,  a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_RAPE_REDRESS",    "Post Rape Redress Timeout", iModRapeRedressTimeout,  a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_NAKED_REDRESS",   "Naked Redress Timeout",     iModNakedRedressTimeout, a_flags=iFlags)
    AddHeaderOption("Leash Configuration")
    AddTextOptionST("ST_MOD_LEASH_STYLE",       "Leash Style", LeashStyleToString(iModLeashStyle))
    AddToggleOptionST("ST_MOD_LEASH_VISIBLE",   "Leash Visible", bModLeashVisible)
@@ -1230,6 +1239,31 @@ State ST_VUL_LEASHED
    EndEvent
 EndState
 
+State ST_VUL_FURNITURE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iVulnerabilityFurniture)
+      SetSliderDialogDefaultValue(_iDefVulFurniture)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iVulnerabilityFurniture = fValue As Int
+      SetSliderOptionValueST(iVulnerabilityFurniture)
+   EndEvent
+
+   Event OnDefaultST()
+      iVulnerabilityFurniture = _iDefVulFurniture
+      SetSliderOptionValueST(iVulnerabilityFurniture)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When the player is sitting in BDSM furniture (a cross, a pillory, etc) she will be reported as " + iVulnerabilityFurniture + "% vulnerable.\n" +\
+                  "It is up to individual mods to decide what this vulnerability means.\n" +\
+                  "Cumulative with other vulnerabilities.")
+   EndEvent
+EndState
+
 State ST_VUL_NIGHT
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityNight)
@@ -1284,31 +1318,6 @@ EndState
 ;***********************************************************************************************
 ;***                                 STATES: MOD FEATURES                                    ***
 ;***********************************************************************************************
-State ST_MOD_NAKED_REDRESS
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iModNakedRedressTimeout)
-      SetSliderDialogDefaultValue(_iDefNakedRedressTimeout)
-      SetSliderDialogRange(0, 300)
-      SetSliderDialogInterval(5)
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      iModNakedRedressTimeout = fValue As Int
-      SetSliderOptionValueST(iModNakedRedressTimeout)
-   EndEvent
-
-   Event OnDefaultST()
-      iModNakedRedressTimeout = _iDefNakedRedressTimeout
-      SetSliderOptionValueST(iModNakedRedressTimeout)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("After the player has been detected as naked it will take them some time to dress.\n" +\
-                  "Attempts to dress in this time will be blocked and the timer will be reset.\n" +\
-                  "Measured in game minutes.  0 turns off this feature.")
-   EndEvent
-EndState
-
 State ST_MOD_RAPE_REDRESS
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModRapeRedressTimeout)
@@ -1329,6 +1338,31 @@ State ST_MOD_RAPE_REDRESS
 
    Event OnHighlightST()
       SetInfoText("After the player has been raped it will take them some time to dress.\n" +\
+                  "Attempts to dress in this time will be blocked and the timer will be reset.\n" +\
+                  "Measured in game minutes.  0 turns off this feature.")
+   EndEvent
+EndState
+
+State ST_MOD_NAKED_REDRESS
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModNakedRedressTimeout)
+      SetSliderDialogDefaultValue(_iDefNakedRedressTimeout)
+      SetSliderDialogRange(0, 300)
+      SetSliderDialogInterval(5)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModNakedRedressTimeout = fValue As Int
+      SetSliderOptionValueST(iModNakedRedressTimeout)
+   EndEvent
+
+   Event OnDefaultST()
+      iModNakedRedressTimeout = _iDefNakedRedressTimeout
+      SetSliderOptionValueST(iModNakedRedressTimeout)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("After the player has been detected as naked it will take them some time to dress.\n" +\
                   "Attempts to dress in this time will be blocked and the timer will be reset.\n" +\
                   "Measured in game minutes.  0 turns off this feature.")
    EndEvent

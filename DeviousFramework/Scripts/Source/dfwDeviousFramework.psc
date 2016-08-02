@@ -309,6 +309,10 @@ Int[] _aiRecentFlags
 ; Keeps track of the number of polls since the last NPC detection scan.
 Int _iDetectPollCount
 
+; Keep track of whether a scene is running and how long to wait for a call to scene done.
+Float _fSceneTimeout
+String _szCurrentScene
+
 ; Keep track of how long before the next cleanup is scheduled for the nearby actors list.
 Float _fNearbyCleanupTime
 
@@ -372,6 +376,8 @@ Function OnPlayerLoadGame()
    EndIf
    ; The nearby cleanup timeout is always set.  Always reset it.
    _fNearbyCleanupTime = fCurrTime + 3
+   _fSceneTimeout = 0
+   _szCurrentScene = ""
 
    ; Very basic initialization.
    If (0.01 > _fCurrVer)
@@ -461,8 +467,8 @@ Function OnPlayerLoadGame()
 
       ; Keywords to identify clothing (Clothes, Light Armour, and Heavy Armour).
       _oKeywordClothes     = Keyword.GetKeyword("ArmorClothing")
-      _oKeywordArmourLight = Keyword.GetKeyword("ArmorHeavy")
-      _oKeywordArmourHeavy = Keyword.GetKeyword("ArmorLight")
+      _oKeywordArmourLight = Keyword.GetKeyword("ArmorLight")
+      _oKeywordArmourHeavy = Keyword.GetKeyword("ArmorHeavy")
 
       ; Getting this directly from the .ESP file prevents us from being dependent on the mod.
       _oFactionHydraSlaver = Game.GetFormFromFile(0x0000B670, "hydra_slavegirls.esp") as Faction
@@ -525,6 +531,14 @@ Event OnUpdate()
       EndIf
    EndIf
 
+   ; If a scene has run too long abandon it.
+   If (_fSceneTimeout)
+      If (fCurrTime >= _fSceneTimeout)
+         _fSceneTimeout = 0
+         _szCurrentScene = ""
+      EndIf
+   EndIf
+
    ; If the player is leashed to a target make sure they are not too far away.
    If (_oLeashTarget)
       ; Play the leash effect to draw leash particles between the player and the leash holder.
@@ -549,7 +563,7 @@ Event OnUpdate()
       Float fDistance = _oLeashTarget.GetDistance(_aPlayer)
       _iLeashLength
       If (1500 < fDistance)
-         If (CheckLeashInterruptScene())
+         If ((!_oBdsmFurniture || !_bIsFurnitureLocked) && CheckLeashInterruptScene())
             If (GetPlayerTalkingTo())
                ; Moving the player to her own location will end the conversation.
                _aPlayer.MoveTo(_aPlayer)
@@ -565,8 +579,9 @@ Event OnUpdate()
       ElseIf (_iLeashLength < fDistance)
          ; Only try to drag the player if she is not busy or we can interrupt the scene.
          If (CheckLeashInterruptScene())
-            Log("You feel a jerk on your leash as you are pulled roughly.", DL_CRIT, S_MOD)
-            YankLeash()
+            If (!YankLeash())
+               Log("You feel a jerk on your leash as you are pulled roughly.", DL_CRIT, S_MOD)
+            EndIf
          EndIf
       EndIf
    EndIf
@@ -1580,7 +1595,6 @@ Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bo
          If (iModEvent)
             ModEvent.PushString(iModEvent, szOldMod)
             ModEvent.PushForm(iModEvent, aOldMaster)
-Log("Sending Event DFW_NewMaster(" + szOldMod + ", " + aOldMaster.GetDisplayName() + ")", DL_CRIT, S_MOD)
             If (ModEvent.Send(iModEvent))
                ; Give the overthrown mod a little time time process the event.
                Utility.Wait(0.1)
@@ -1608,7 +1622,6 @@ Int Function SetMasterDistant(Actor aNewMaster, Int iPermissions, String szMod, 
       If (aOldMaster)
          Log("Overriding " + aOldMaster.GetDisplayName() + " (" + szOldMod + ")", \
              DL_CRIT, S_MOD)
-Log("Distant Master.  No Event Sent!", DL_CRIT, S_MOD)
          Return WARNING
       EndIf
       Return SUCCESS
@@ -1678,7 +1691,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "0.0001"
+   Return "1.0000"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -1702,6 +1715,32 @@ Bool Function IsPlayerCriticallyBusy(Bool bIncludeBleedout=True)
    EndIf
 
    Return False
+EndFunction
+
+; szSceneName can be anything.
+; iSceneTimeout is in seconds.  The amount of time before giving up waiting for the scene done.
+Int Function SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs=0)
+   While (_szCurrentScene && (0 < iWaitMs))
+      Utility.Wait(0.1)
+      iWaitMs -= 100
+   EndWhile
+   If (_szCurrentScene)
+      Return FAIL
+   EndIf
+   _szCurrentScene = szSceneName
+   _fSceneTimeout = Utility.GetCurrentRealTime() + iSceneTimeout
+   Return SUCCESS
+EndFunction
+
+Function SceneDone(String szSceneName)
+   If (_szCurrentScene == szSceneName)
+      _fSceneTimeout = 0
+      _szCurrentScene = ""
+   EndIf
+EndFunction
+
+String Function GetCurrentScene()
+   Return _szCurrentScene
 EndFunction
 
 Function BlockHealthRegen()
@@ -2127,6 +2166,11 @@ Function RemovePermission(Actor aMaster, Int iPermissionMask)
 EndFunction
 
 Bool Function IsAllowed(Int iAction)
+   ; Only a nearby master can assist dressing.
+   If ((AP_DRESSING_ASSISTED == iAction) && !_iPermissionsClose)
+      Return False
+   EndIf
+   
    If ((_aMasterClose && !Math.LogicalAnd(_iPermissionsClose, iAction)) || \
        (_aMasterDistant && !Math.LogicalAnd(_iPermissionsDistant, iAction)))
       Return False
@@ -2177,6 +2221,9 @@ EndFunction
 
 Function SetBdsmFurnitureLocked(Bool bLocked=True)
    _bIsFurnitureLocked = bLocked
+   If (!_bIsFurnitureLocked && (3 > _aPlayer.GetSitState()))
+      _oBdsmFurniture = None
+   EndIf
 
    ; If we previously disabled the player's inventory, release it now.
    ; TODO: This should check if the player is no longer on the furniture.
@@ -2238,7 +2285,7 @@ Int Function GetVulnerability(Actor aActor=None)
 
    ; Todo: Make BDSM furniture MCM configurable.
    If (_oBdsmFurniture)
-      iVulnerability += 10
+      iVulnerability += _qMcm.iVulnerabilityFurniture
    EndIf
 
    Log("Vulnerability: " + iVulnerability, DL_DEBUG, S_MOD)
@@ -2419,12 +2466,20 @@ Function SetLeashLength(Int iLength)
    _iLeashLength = iLength
 EndFunction
 
-Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, Bool bInterruptScene=True)
+Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
+                       Bool bInterruptScene=True)
    ; Use a simplified mutex to make sure the leash isn't yanked twice at the same time.
    If (_bYankingLeash)
-      Return
+      Return FAIL
    EndIf
    _bYankingLeash = True
+
+   ; If the player is locked in BDSM furniture she cannot be yanked with the leash.
+   ; TODO: This should be an MCM setting to decide if she should be yanked from the furniture.
+   If (_oBdsmFurniture && _bIsFurnitureLocked)
+      _bYankingLeash = False
+      Return WARNING
+   EndIf
 
    Actor aPlayerTalkingTo = GetPlayerTalkingTo()
    If (aPlayerTalkingTo && (aPlayerTalkingTo != _oLeashTarget))
@@ -2463,48 +2518,27 @@ Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, Bool 
    EndIf
 
    If (LS_DRAG == iLeashStyle)
-      ; Remove ragdoll from the player.  The first time fails so do it here before
-      ; doing it later.
-;      _aPlayer.ForceRemoveRagdollFromWorld()
-
       ; While dragging the player via the leash make sure they are immune to damage.
       ; Otherwise getting stuck behind a rock would kill the player.
-      Float fDamageResistance = _aPlayer.GetActorValue("DamageResist")
       _aPlayer.ModActorValue("DamageResist", 10000)
 
-      Int iLoopCount = 1
+      Int iLoopCount = 19
       While ((1 == iLoopCount) || (200 < _oLeashTarget.GetDistance(_aPlayer)))
          _oLeashTarget.PushActorAway(_aPlayer, -2)
 
-         If (!(iLoopCount))
-            _qDfwUtil.TeleportToward(_oLeashTarget, 30)
-;            _aPlayer.ForceRemoveRagdollFromWorld()
+         If (!(iLoopCount % 5))
+            Utility.Wait(0.1)
+            _qDfwUtil.TeleportToward(_oLeashTarget, 50)
          EndIf
          iLoopCount -= 1
       EndWhile
 
-      ; You'll notice a lot of RemoveRagdoll() calls here.  Sometimes the player gets stuck
-      ; standing and having all of these help.  I'm not sure which ones are really needed.
       _aPlayer.ForceRemoveRagdollFromWorld()
       _qDfwUtil.TeleportToward(_oLeashTarget, 10)
       Utility.Wait(0.25)
       _aPlayer.StopTranslation()
       _aPlayer.SetMotionType(7)
       _aPlayer.PlayIdle(_oIdleStop_Loose)
-;         Float fZOffset = _aPlayer.GetHeadingAngle(_oLeashTarget)
-;ToggleCollisions()
-;         _aPlayer.SetAngle(_aPlayer.X, _aPlayer.Y, _aPlayer.Z + fZOffset)
-;ToggleCollisions()
-;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
-;      _aPlayer.ForceAddRagdollToWorld()
-;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
-;      Utility.Wait(0.25)
-;      _aPlayer.ForceRemoveRagdollFromWorld()
-;      _qDfwUtil.TeleportToward(_oLeashTarget, 10)
-; Some things that appear to help:
-;_aPlayer.PlayIdle(_oIdleStop_Loose)
-; Something that doesn't seem to help:
-;Debug.SendAnimationEvent(_aPlayer, "IdleForceDefaultState")
 
       ; Reset the player's damage resistance.
       _aPlayer.ModActorValue("DamageResist", -10000)
@@ -2531,6 +2565,7 @@ Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, Bool 
       EndIf
    EndIf
    _bYankingLeash = False
+   Return SUCCESS
 EndFunction
 
 ; Waits for any yank leash in progress to complete before returning.

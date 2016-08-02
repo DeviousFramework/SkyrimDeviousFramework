@@ -8,7 +8,7 @@ Actor akSpeaker = akSpeakerRef as Actor
 ;BEGIN CODE
 dfwsDfwSupport _qQuest = Self.GetOwningQuest() As dfwsDfwSupport
 _qQuest.VerbalAnnoyance()
-_qQuest.Cooperation(1, -1)
+_qQuest.Cooperation(1, -2)
 ;END CODE
 EndFunction
 ;END FRAGMENT
