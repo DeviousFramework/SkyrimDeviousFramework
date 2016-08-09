@@ -37,6 +37,8 @@ Scriptname dfwsMcm extends SKI_ConfigBase
 ;***********************************************************************************************
 ;***                                      CONSTANTS                                          ***
 ;***********************************************************************************************
+String S_REM_NONE = "Remove None"
+
 
 ;***********************************************************************************************
 ;***                                      VARIABLES                                          ***
@@ -56,18 +58,23 @@ Bool _bCatchZazEvents
 Bool _bCatchSdPlus
 Bool _bLeashSdPlus
 Bool _bBlockHelpless
-Bool Property bIncludeOwners  Auto
-Bool Property bCatchZazEvents Auto
-Bool Property bCatchSdPlus    Auto
-Bool Property bLeashSdPlus    Auto
-Bool Property bBlockHelpless  Auto
+Bool _bAutoAddFurniture
+Bool Property bIncludeOwners    Auto
+Bool Property bCatchZazEvents   Auto
+Bool Property bCatchSdPlus      Auto
+Bool Property bLeashSdPlus      Auto
+Bool Property bBlockHelpless    Auto
+Bool Property bAutoAddFurniture Auto
+
 
 ; *** Float Slider Options ***
 Float _fPollTimeDef
+Float _fChanceFurnitureTransfer
 Float _fLeashGameChanceDef
 Float _fFurnitureLockChance
 Float _fFurnitureReleaseChance
 Float Property fPollTime                Auto
+Float Property fChanceFurnitureTransfer Auto
 Float Property fLeashGameChance         Auto
 Float Property fFurnitureLockChance     Auto
 Float Property fFurnitureReleaseChance  Auto
@@ -87,6 +94,7 @@ Int _iChanceOfRelease
 Int _iDominanceAffectsRelease
 Int _iMaxAngerForRelease
 Int _iChanceIdleRestraints
+Int _iFurnitureMinLockTime
 Int Property iIncreaseWhenVulnerable  Auto
 Int Property iLeashLength             Auto
 Int Property iBlockTravel             Auto
@@ -100,6 +108,7 @@ Int Property iChanceOfRelease         Auto
 Int Property iDominanceAffectsRelease Auto
 Int Property iMaxAngerForRelease      Auto
 Int Property iChanceIdleRestraints    Auto
+Int Property iFurnitureMinLockTime    Auto
 
 ; *** Enumeration Options ***
 
@@ -140,9 +149,6 @@ Function UpdateScript()
       _qDfwUtil = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
       _qDfwMcm = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
-      Pages = New String[2]
-      Pages[0] = "DFW Support"
-      Pages[1] = "Leash Game"
    EndIf
 
    ; Historical configuration...
@@ -150,7 +156,6 @@ Function UpdateScript()
       ; Initialize all default values.
       _bIncludeOwners           = False
       _bCatchZazEvents          = True
-      _bCatchSdPlus             = True
       _bLeashSdPlus             = False
       _fPollTimeDef             =   3.0
       _iIncreaseWhenVulnerable  =  10
@@ -166,7 +171,6 @@ Function UpdateScript()
 
       bIncludeOwners           = _bIncludeOwners
       bCatchZazEvents          = _bCatchZazEvents
-      bCatchSdPlus             = _bCatchSdPlus
       bLeashSdPlus             = _bLeashSdPlus
       fPollTime                = _fPollTimeDef
       iIncreaseWhenVulnerable  = _iIncreaseWhenVulnerable
@@ -205,6 +209,23 @@ Function UpdateScript()
       fLeashGameChance      = _fLeashGameChanceDef
       fFurnitureLockChance  = _fFurnitureLockChance
    EndIf
+
+   If (5 > CurrentVersion)
+      Pages = New String[3]
+      Pages[0] = "DFW Support"
+      Pages[1] = "Leash Game"
+      Pages[2] = "BDSM Furniture"
+
+      _bAutoAddFurniture        = False
+      _iFurnitureMinLockTime    = 30
+      _bCatchSdPlus             = False
+      _fChanceFurnitureTransfer = 1.0
+
+      bAutoAddFurniture        = _bAutoAddFurniture
+      iFurnitureMinLockTime    = _iFurnitureMinLockTime
+      bCatchSdPlus             = _bCatchSdPlus
+      fChanceFurnitureTransfer = _fChanceFurnitureTransfer
+   EndIf
 EndFunction
 
 Event OnConfigInit()
@@ -219,9 +240,12 @@ EndEvent
 ; Unrelated to the Devious Framework Version.
 Int Function GetVersion()
    ; Reset the version number.
-   ; CurrentVersion = 0
+   ; This can be used to manage saves between releases.
+   ;If (4 < CurrentVersion)
+   ;   CurrentVersion = 4
+   ;EndIf
 
-   Return 4
+   Return 5
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -293,6 +317,8 @@ Event OnPageReset(String szRequestedPage)
    ; For now there is only one page, "DFW Support"
    If ("Leash Game" == szPage)
       DisplayLeashGamePage(bSecure)
+   ElseIf ("BDSM Furniture" == szPage)
+      DisplayBdsmFurniturePage(bSecure)
    Else
       ; Load this page if nothing else is set.  Initial page and "DFW Support".
       DisplayDfwSupportPage(bSecure)
@@ -311,13 +337,6 @@ Function DisplayDfwSupportPage(Bool bSecure)
    AddEmptyOption()
    AddSliderOptionST("ST_FWK_POLL_TIME",      "Poll Time",             fPollTime, "{1}")
    AddSliderOptionST("ST_MOD_BLOCK_TRAVEL",   "Block Travel",          iBlockTravel, a_flags=iFlags)
-
-   AddEmptyOption()
-   AddHeaderOption("BDSM Furniture")
-   AddSliderOptionST("ST_MOD_FURNITURE_LOCK",    "Chance of Locking",  fFurnitureLockChance, "{1}", a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_FURNITURE_RELEASE", "Chance of Release",  fFurnitureReleaseChance, "{1}", a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_FURNITURE_TEASE",   "Teasing Chance",     iFurnitureTeaseChance, a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_FURNITURE_ALT",     "Alternate Release",  iFurnitureAltRelease, a_flags=iFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -351,15 +370,16 @@ Function DisplayLeashGamePage(Bool bSecure)
    EndIf
 
    AddHeaderOption("Chance to Play")
-   AddSliderOptionST("ST_MOD_LEASH_GAME",     "Leash Game Chance",         fLeashGameChance, "{1}", a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_INC_VULNERABLE", "Increase When Vulnerable",  iIncreaseWhenVulnerable, a_flags=iFlags)
-   AddToggleOptionST("ST_LGM_INCLUD_OWNERS",  "Include Owners",            bIncludeOwners, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_LEASH_GAME",     "Leash Game Chance",            fLeashGameChance, "{1}", a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_INC_VULNERABLE", "Increase When Vulnerable",     iIncreaseWhenVulnerable, a_flags=iFlags)
+   AddToggleOptionST("ST_LGM_INCLUD_OWNERS",  "Include Owners",               bIncludeOwners, a_flags=iFlags)
 
    AddEmptyOption()
-   AddSliderOptionST("ST_LGM_LEASH_LENGTH",   "Leash Length",              iLeashLength, a_flags=iFlags)
-   AddToggleOptionST("ST_LGM_BLOCK_HELPLESS", "Block Deviously Helpless",  bBlockHelpless, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_LEASH_LENGTH",   "Leash Length",                 iLeashLength, a_flags=iFlags)
+   AddToggleOptionST("ST_LGM_BLOCK_HELPLESS", "Block Deviously Helpless",     bBlockHelpless, a_flags=iFlags)
 
-   AddSliderOptionST("ST_LGM_CHANCE_IDLE",    "Chance of Idle Restraints", iChanceIdleRestraints, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_IDLE",    "Chance of Idle Restraints",    iChanceIdleRestraints, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_XFER",    "Chance of Furniture Transfer", fChanceFurnitureTransfer, a_flags=iFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -382,6 +402,34 @@ Function DisplayLeashGamePage(Bool bSecure)
    AddSliderOptionST("ST_LGM_CHANCE_RELEASE", "Chance of Release",         iChanceOfRelease, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_RELEASE_DOM",    "Dominance Affects Release", iDominanceAffectsRelease, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_RELEASE_ANGER",  "Maximum Anger for Release", iMaxAngerForRelease, a_flags=iFlags)
+EndFunction
+
+Function DisplayBdsmFurniturePage(Bool bSecure)
+   Int iFlags = OPTION_FLAG_NONE
+   If (bSecure)
+      iFlags = OPTION_FLAG_DISABLED
+   EndIf
+
+   AddEmptyOption()
+   AddHeaderOption("Chances")
+   AddSliderOptionST("ST_BDSMF_LOCK",     "Chance of Locking", fFurnitureLockChance, "{1}", a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_RELEASE",  "Chance of Release", fFurnitureReleaseChance, "{1}", a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_TEASE",    "Teasing Chance",    iFurnitureTeaseChance, a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_ALT",      "Alternate Release", iFurnitureAltRelease, a_flags=iFlags)
+
+   AddEmptyOption()
+   AddHeaderOption("Options")
+   AddSliderOptionST("ST_BDSMF_MIN_TIME", "Initial Lock Time", iFurnitureMinLockTime, a_flags=iFlags)
+
+   ; Start on the second column.
+   SetCursorPosition(1)
+   AddHeaderOption("Favourites")
+   ObjectReference oCurrFurniture = _qFramework.GetBdsmFurniture()
+   If (oCurrFurniture)
+      AddTextOptionST("ST_BDSMF_FAV",     "Add Favourite:",     oCurrFurniture.GetDisplayName())
+   EndIf
+   AddToggleOptionST("ST_BDSMF_AUTO_FAV", "Auto Add Favourite", bAutoAddFurniture, a_flags=iFlags)
+   AddMenuOptionST("ST_BDSMF_AUTO_SHOW",  "Remove/View Favourite Furniture", "Open")
 EndFunction
 
 
@@ -483,124 +531,110 @@ State ST_MOD_BLOCK_TRAVEL
    EndEvent
 EndState
 
-State ST_MOD_FURNITURE_LOCK
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(fFurnitureLockChance)
-      SetSliderDialogDefaultValue(_fFurnitureLockChance)
-      If (10 <= fFurnitureLockChance)
-         SetSliderDialogRange(0, 100)
-         SetSliderDialogInterval(1)
-      Else
-         SetSliderDialogRange(0, 10)
-         SetSliderDialogInterval(0.1)
-      EndIf
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      fFurnitureLockChance = fValue
-      SetSliderOptionValueST(fFurnitureLockChance)
+State ST_MOD_ZAZ_EVENTS
+   Event OnSelectST()
+      bCatchZazEvents = !bCatchZazEvents
+      SetToggleOptionValueST(bCatchZazEvents)
    EndEvent
 
    Event OnDefaultST()
-      fFurnitureLockChance = _fFurnitureLockChance
-      SetSliderOptionValueST(fFurnitureLockChance)
+      bCatchZazEvents = _bCatchZazEvents
+      SetToggleOptionValueST(bCatchZazEvents)
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("When sitting in unlocked BDSM furniture (a cross or pillory, etc.) this is the\n" +\
-                  "chance (per poll event) that a nearby NPC will decide to lock the furniture.")
+      SetInfoText("Catch any ZAZ Enslave/Free events realted to the player and update the\n" +\
+                  "Devious Framework Master information accordingly.")
    EndEvent
 EndState
 
-State ST_MOD_FURNITURE_RELEASE
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(fFurnitureReleaseChance)
-      SetSliderDialogDefaultValue(_fFurnitureReleaseChance)
-      If (10 <= fFurnitureReleaseChance)
-         SetSliderDialogRange(0, 100)
-         SetSliderDialogInterval(1)
-      Else
-         SetSliderDialogRange(0, 10)
-         SetSliderDialogInterval(0.1)
-      EndIf
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      fFurnitureReleaseChance = fValue
-      SetSliderOptionValueST(fFurnitureReleaseChance)
+State ST_MOD_SDP_EVENTS
+   Event OnSelectST()
+      bCatchSdPlus = !bCatchSdPlus
+      SetToggleOptionValueST(bCatchSdPlus)
    EndEvent
 
    Event OnDefaultST()
-      fFurnitureReleaseChance = _fFurnitureReleaseChance
-      SetSliderOptionValueST(fFurnitureReleaseChance)
+      bCatchSdPlus = _bCatchSdPlus
+      SetToggleOptionValueST(bCatchSdPlus)
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("If locked in BDSM furniture by this mod, this is the chance (per poll event) that\n" +\
-                  "the original locker of the furniture will unlock it.")
+      SetInfoText("Detect when the player becomes enslaved via the Sanguine Debaucherty Plus mod\n" +\
+                  "and register the Master with the Devious Framework mod.")
    EndEvent
 EndState
 
-State ST_MOD_FURNITURE_TEASE
+State ST_MOD_SDP_LEASH
+   Event OnSelectST()
+      bLeashSdPlus = !bLeashSdPlus
+      SetToggleOptionValueST(bLeashSdPlus)
+   EndEvent
+
+   Event OnDefaultST()
+      bLeashSdPlus = _bLeashSdPlus
+      SetToggleOptionValueST(bLeashSdPlus)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Also start a DFW leash between the Sanguine Debauchery Master and the player when enslaved\n" +\
+                  "and clear the leash when the player is released.")
+   EndEvent
+EndState
+
+State ST_DBG_LEVEL
    Event OnSliderOpenST()
-      SetSliderDialogStartValue(iFurnitureTeaseChance)
-      SetSliderDialogDefaultValue(_iFurnitureTeaseChance)
-      SetSliderDialogRange(0, 100)
+      SetSliderDialogStartValue(iLogLevel)
+      SetSliderDialogDefaultValue(_iLogLevelDef)
+      SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iFurnitureTeaseChance = (fValue As Int)
-      SetSliderOptionValueST(iFurnitureTeaseChance)
+      iLogLevel = (fValue As Int)
+      SetSliderOptionValueST(iLogLevel)
    EndEvent
 
    Event OnDefaultST()
-      iFurnitureTeaseChance = _iFurnitureTeaseChance
-      SetSliderOptionValueST(iFurnitureTeaseChance)
+      iLogLevel = _iLogLevelDef
+      SetSliderOptionValueST(iLogLevel)
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("The % chance the NPC is teasing the player each time he lets her go.")
+      SetInfoText("Set the level of messages that go to the papyrus log file.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "This should be set to the maximum value to have a complete log file.")
    EndEvent
 EndState
 
-State ST_MOD_FURNITURE_ALT
+State ST_DBG_SCREEN
    Event OnSliderOpenST()
-      SetSliderDialogStartValue(iFurnitureAltRelease)
-      SetSliderDialogDefaultValue(_iFurnitureAltRelease)
-      If (100 <= iFurnitureAltRelease)
-         SetSliderDialogRange(0, 500)
-         SetSliderDialogInterval(10)
-      Else
-         SetSliderDialogRange(0, 100)
-         SetSliderDialogInterval(1)
-      EndIf
+      SetSliderDialogStartValue(iLogLevelScreen)
+      SetSliderDialogDefaultValue(_iLogLevelScreenDef)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iFurnitureAltRelease = (fValue As Int)
-      SetSliderOptionValueST(iFurnitureAltRelease)
+      iLogLevelScreen = (fValue As Int)
+      SetSliderOptionValueST(iLogLevelScreen)
    EndEvent
 
    Event OnDefaultST()
-      iFurnitureAltRelease = _iFurnitureAltRelease
-      SetSliderOptionValueST(iFurnitureAltRelease)
+      iLogLevelScreen = _iLogLevelScreenDef
+      SetSliderOptionValueST(iLogLevelScreen)
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("If the original locker of the furniture is not nearby another neraby NPC may unlock the furniture.\n" +\
-                  "The chance of an alternate NPC releasing the player is expressed as a percent of the \"Chance of Release\".\n" +\
-                  "If \"Chance of Release\" is 10% and this is 10, there will be a 1% chance when the original locker is not nearby.")
+      SetInfoText("Set the level of messages that go to the screen.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "This should be Critical to reduce clutter on your screen but still get event messages.")
    EndEvent
 EndState
 
 
 ;***********************************************************************************************
-;***                                STATES: VULNERABILITY                                    ***
-;***********************************************************************************************
-
-;***********************************************************************************************
-;***                                 STATES: MOD FEATURES                                    ***
+;***                                  STATES: LEASH GAME                                     ***
 ;***********************************************************************************************
 State ST_MOD_LEASH_GAME
    Event OnSliderOpenST()
@@ -864,6 +898,36 @@ State ST_LGM_CHANCE_IDLE
    EndEvent
 EndState
 
+State ST_LGM_CHANCE_XFER
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(fChanceFurnitureTransfer)
+      SetSliderDialogDefaultValue(_fChanceFurnitureTransfer)
+      If (10 <= fChanceFurnitureTransfer)
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      Else
+         SetSliderDialogRange(0, 10)
+         SetSliderDialogInterval(0.1)
+      EndIf
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      fChanceFurnitureTransfer = fValue
+      SetSliderOptionValueST(fChanceFurnitureTransfer)
+   EndEvent
+
+   Event OnDefaultST()
+      fChanceFurnitureTransfer = _fChanceFurnitureTransfer
+      SetSliderOptionValueST(fChanceFurnitureTransfer)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The chance the slaver will lock the player up in nearby Favourite BDSM furniture and leave her.\n" +\
+                  "This will only happen if they are in the same \"cell\" as the furniture.\n" +\
+                  "This will only happen if the player is all locked up.")
+   EndEvent
+EndState
+
 State ST_LEASH_TO
    Event OnSelectST()
       Actor aNearest = _qFramework.GetNearestActor()
@@ -887,104 +951,223 @@ State ST_LEASH_TO
    EndEvent
 EndState
 
-State ST_MOD_ZAZ_EVENTS
-   Event OnSelectST()
-      bCatchZazEvents = !bCatchZazEvents
-      SetToggleOptionValueST(bCatchZazEvents)
-   EndEvent
 
-   Event OnDefaultST()
-      bCatchZazEvents = _bCatchZazEvents
-      SetToggleOptionValueST(bCatchZazEvents)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Catch any ZAZ Enslave/Free events realted to the player and update the\n" +\
-                  "Devious Framework Master information accordingly.")
-   EndEvent
-EndState
-
-State ST_MOD_SDP_EVENTS
-   Event OnSelectST()
-      bCatchSdPlus = !bCatchSdPlus
-      SetToggleOptionValueST(bCatchSdPlus)
-   EndEvent
-
-   Event OnDefaultST()
-      bCatchSdPlus = _bCatchSdPlus
-      SetToggleOptionValueST(bCatchSdPlus)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Detect when the player becomes enslaved via the Sanguine Debaucherty Plus mod\n" +\
-                  "and register the Master with the Devious Framework mod.")
-   EndEvent
-EndState
-
-State ST_MOD_SDP_LEASH
-   Event OnSelectST()
-      bLeashSdPlus = !bLeashSdPlus
-      SetToggleOptionValueST(bLeashSdPlus)
-   EndEvent
-
-   Event OnDefaultST()
-      bLeashSdPlus = _bLeashSdPlus
-      SetToggleOptionValueST(bLeashSdPlus)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Also start a DFW leash between the Sanguine Debauchery Master and the player when enslaved\n" +\
-                  "and clear the leash when the player is released.")
-   EndEvent
-EndState
-
-State ST_DBG_LEVEL
+;***********************************************************************************************
+;***                                 STATES: BDSM FURNITURE                                  ***
+;***********************************************************************************************
+State ST_BDSMF_LOCK
    Event OnSliderOpenST()
-      SetSliderDialogStartValue(iLogLevel)
-      SetSliderDialogDefaultValue(_iLogLevelDef)
-      SetSliderDialogRange(0, 5)
+      SetSliderDialogStartValue(fFurnitureLockChance)
+      SetSliderDialogDefaultValue(_fFurnitureLockChance)
+      If (10 <= fFurnitureLockChance)
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      Else
+         SetSliderDialogRange(0, 10)
+         SetSliderDialogInterval(0.1)
+      EndIf
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      fFurnitureLockChance = fValue
+      SetSliderOptionValueST(fFurnitureLockChance)
+   EndEvent
+
+   Event OnDefaultST()
+      fFurnitureLockChance = _fFurnitureLockChance
+      SetSliderOptionValueST(fFurnitureLockChance)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When sitting in unlocked BDSM furniture (a cross or pillory, etc.) this is the\n" +\
+                  "chance (per poll event) that a nearby NPC will decide to lock the furniture.")
+   EndEvent
+EndState
+
+State ST_BDSMF_RELEASE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(fFurnitureReleaseChance)
+      SetSliderDialogDefaultValue(_fFurnitureReleaseChance)
+      If (10 <= fFurnitureReleaseChance)
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      Else
+         SetSliderDialogRange(0, 10)
+         SetSliderDialogInterval(0.1)
+      EndIf
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      fFurnitureReleaseChance = fValue
+      SetSliderOptionValueST(fFurnitureReleaseChance)
+   EndEvent
+
+   Event OnDefaultST()
+      fFurnitureReleaseChance = _fFurnitureReleaseChance
+      SetSliderOptionValueST(fFurnitureReleaseChance)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("If locked in BDSM furniture by this mod, this is the chance (per poll event) that\n" +\
+                  "the original locker of the furniture will unlock it.")
+   EndEvent
+EndState
+
+State ST_BDSMF_TEASE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iFurnitureTeaseChance)
+      SetSliderDialogDefaultValue(_iFurnitureTeaseChance)
+      SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevel = (fValue As Int)
-      SetSliderOptionValueST(iLogLevel)
+      iFurnitureTeaseChance = (fValue As Int)
+      SetSliderOptionValueST(iFurnitureTeaseChance)
    EndEvent
 
    Event OnDefaultST()
-      iLogLevel = _iLogLevelDef
-      SetSliderOptionValueST(iLogLevel)
+      iFurnitureTeaseChance = _iFurnitureTeaseChance
+      SetSliderOptionValueST(iFurnitureTeaseChance)
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the papyrus log file.\n" +\
-                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
-                  "This should be set to the maximum value to have a complete log file.")
+      SetInfoText("The % chance the NPC is teasing the player each time he lets her go.")
    EndEvent
 EndState
 
-State ST_DBG_SCREEN
+State ST_BDSMF_ALT
    Event OnSliderOpenST()
-      SetSliderDialogStartValue(iLogLevelScreen)
-      SetSliderDialogDefaultValue(_iLogLevelScreenDef)
-      SetSliderDialogRange(0, 5)
+      SetSliderDialogStartValue(iFurnitureAltRelease)
+      SetSliderDialogDefaultValue(_iFurnitureAltRelease)
+      If (100 <= iFurnitureAltRelease)
+         SetSliderDialogRange(0, 500)
+         SetSliderDialogInterval(10)
+      Else
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      EndIf
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iFurnitureAltRelease = (fValue As Int)
+      SetSliderOptionValueST(iFurnitureAltRelease)
+   EndEvent
+
+   Event OnDefaultST()
+      iFurnitureAltRelease = _iFurnitureAltRelease
+      SetSliderOptionValueST(iFurnitureAltRelease)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("If the original locker of the furniture is not nearby another neraby NPC may unlock the furniture.\n" +\
+                  "The chance of an alternate NPC releasing the player is expressed as a percent of the \"Chance of Release\".\n" +\
+                  "If \"Chance of Release\" is 10% and this is 10, there will be a 1% chance when the original locker is not nearby.")
+   EndEvent
+EndState
+
+State ST_BDSMF_MIN_TIME
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iFurnitureMinLockTime)
+      SetSliderDialogDefaultValue(_iFurnitureMinLockTime)
+      SetSliderDialogRange(0, 360)
       SetSliderDialogInterval(1)
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreen = (fValue As Int)
-      SetSliderOptionValueST(iLogLevelScreen)
+      iFurnitureMinLockTime = (fValue As Int)
+      SetSliderOptionValueST(iFurnitureMinLockTime)
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreen = _iLogLevelScreenDef
-      SetSliderOptionValueST(iLogLevelScreen)
+      iFurnitureMinLockTime = _iFurnitureMinLockTime
+      SetSliderOptionValueST(iFurnitureMinLockTime)
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen.\n" +\
-                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
-                  "This should be Critical to reduce clutter on your screen but still get event messages.")
+      SetInfoText("If the player sits in furniture she will be locked in it for this amount of time.\n" +\
+                  "This is measured in Game Minutes.")
+   EndEvent
+EndState
+
+State ST_BDSMF_FAV
+   Event OnSelectST()
+      _qDfwSupport.FavouriteCurrentFurniture()
+      SetTextOptionValueST("Done")
+   EndEvent
+
+   Event OnDefaultST()
+      ObjectReference oCurrFurniture = _qFramework.GetBdsmFurniture()
+      String sValue = "None"
+      If (oCurrFurniture)
+         sValue = oCurrFurniture.GetDisplayName()
+      EndIf
+      SetTextOptionValueST(sValue)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Add the furniture the player is currently sitting in to the favourite list.")
+   EndEvent
+EndState
+
+State ST_BDSMF_AUTO_FAV
+   Event OnSelectST()
+      bAutoAddFurniture = !bAutoAddFurniture
+      SetToggleOptionValueST(bAutoAddFurniture)
+   EndEvent
+
+   Event OnDefaultST()
+      bAutoAddFurniture = _bAutoAddFurniture
+      SetToggleOptionValueST(bAutoAddFurniture)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Automatically add BDSM furniture the player sits in to the favourite furniture list.")
+   EndEvent
+EndState
+
+State ST_BDSMF_AUTO_SHOW
+   Event OnMenuOpenST()
+      Form[] aoFavourites = _qDfwSupport.GetFavouriteFurniture()
+      Form[] aoCells      = _qDfwSupport.GetFavouriteCell()
+      ; Create a new array to hold all of the options.
+      Int iIndex = aoFavourites.Length - 1
+      String[] aszOptions = Utility.CreateStringArray(iIndex + 2)
+      aszOptions[0] = S_REM_NONE
+
+      ; Add a text value for each slot to the option array.
+      While (0 <= iIndex)
+         ObjectReference oFurniture = (aoFavourites[iIndex] As ObjectReference)
+         Cell oCell = (aoCells[iIndex] As Cell)
+         aszOptions[iIndex + 1] = oFurniture.GetDisplayName() + " In " + oCell
+         iIndex -= 1
+      EndWhile
+
+      ; Display the options
+      SetMenuDialogStartIndex(0)
+      SetMenuDialogDefaultIndex(0)
+      SetMenuDialogOptions(aszOptions)
+   EndEvent
+
+   Event OnMenuAcceptST(Int iChosenIndex)
+      ; Ignore the first option ("Remove None")
+      If (!iChosenIndex)
+         Return
+      EndIf
+
+      ; Don't allow this to be changed (but it can be viewed) if vulnerable.
+      If (IsSecure())
+         Return
+      EndIf
+
+      ; Adjust the chosen index since the "Remove None" is no longer in the list.
+      iChosenIndex -= 1
+ 
+      _qDfwSupport.RemoveFavourite(iChosenIndex)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("View the list of favourited furniture and remove one if desired.")
    EndEvent
 EndState
 
