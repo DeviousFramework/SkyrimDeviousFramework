@@ -274,6 +274,7 @@ Zadlibs _qZadLibs
 ; A reference to the ZAZ Animation Pack (ZBF) slave control APIs.
 zbfSlaveControl _qZbfSlave
 zbfSlaveActions _qZbfSlaveActions
+zbfSlot _qZbfPlayerSlot
 
 ; A list of nearby actors.
 ; The first is a list of known actors we have at least estimated some information about.
@@ -412,7 +413,7 @@ Function OnPlayerLoadGame()
    EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 0.04
+   Float fScriptVer = 0.05
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
@@ -504,6 +505,10 @@ Function OnPlayerLoadGame()
       _qZbfSlaveActions = zbfSlaveActions.GetApi()
    EndIf
 
+   If (0.05 > _fCurrVer)
+      _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
+   EndIf
+
    ; Finally update the version number.
    _fCurrVer = fScriptVer
 EndFunction
@@ -563,7 +568,8 @@ Event OnUpdate()
       Float fDistance = _oLeashTarget.GetDistance(_aPlayer)
       _iLeashLength
       If (1500 < fDistance)
-         If ((!_oBdsmFurniture || !_bIsFurnitureLocked) && CheckLeashInterruptScene())
+         If ((!GetBdsmFurniture() || !_bIsFurnitureLocked) && \
+             CheckLeashInterruptScene())
             If (GetPlayerTalkingTo())
                ; Moving the player to her own location will end the conversation.
                _aPlayer.MoveTo(_aPlayer)
@@ -1142,9 +1148,12 @@ EndFunction
 
 Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender)
    If (_bIsFurnitureLocked)
-      Actor aNearby = GetNearestActor()
-      Log(aNearby.GetDisplayName() + " locks you back up in the device.", DL_CRIT, S_MOD)
-      _qZbfSlaveActions.RestrainInDevice(_oBdsmFurniture, aNearby, S_MOD)
+      ObjectReference oFurniture = GetBdsmFurniture()
+      If (oFurniture)
+         Actor aNearby = GetNearestActor()
+         Log(aNearby.GetDisplayName() + " locks you back up in the device.", DL_CRIT, S_MOD)
+         _qZbfSlaveActions.RestrainInDevice(oFurniture, aNearby, S_MOD)
+      EndIf
    EndIf
 
    ; If the player is the victim start a post-rape redress timeout.
@@ -2088,11 +2097,13 @@ Int Function ClearMaster(Actor aMaster, Bool bEscaped=False)
    If (_aMasterClose == aMaster)
       _aMasterClose = None
       szControllingMod = _aMasterModClose
+      _iPermissionsClose = 0
       iStatus = SUCCESS
    EndIf
    If (_aMasterDistant == aMaster)
       _aMasterDistant = None
       szControllingMod = _aMasterModDistant
+      _iPermissionsDistant = 0
       iStatus = SUCCESS
    EndIf
 
@@ -2124,6 +2135,7 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
       EndIf
 
       Int iStatus = SetMasterDistant(aMaster, _iPermissionsClose, _aMasterModClose, bOverride)
+      _iPermissionsClose = 0
       If (SUCCESS <= iStatus)
          _aMasterClose = None
       EndIf
@@ -2143,6 +2155,7 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
    EndIf
 
    Int iStatus = SetMasterClose(aMaster, _iPermissionsDistant, _aMasterModDistant, bOverride)
+   _iPermissionsDistant = 0
    If (SUCCESS <= iStatus)
       _aMasterDistant = None
    EndIf
@@ -2215,8 +2228,16 @@ Bool Function IsPlayerHobbled()
    Return _bIsHobbled
 EndFunction
 
+; The DFW uses OnSit() and OnGetUp() events to keep track of _oBdsmFurniture.  There are some
+; cases where this doesn't work.  In particular after some ZAZ Animation Pack scenes.  The ZAZ
+; Animation Pack (zbf) GetFurniture() does not always seem to work when sitting with the
+; RestrainInDevice() interface (Is this right?  Maybe we can very it).
+; Use a combination of both to get the best coverage.
 ObjectReference Function GetBdsmFurniture()
-   Return _oBdsmFurniture
+   If (_oBdsmFurniture)
+      Return _oBdsmFurniture
+   EndIf
+   Return _qZbfPlayerSlot.GetFurniture()
 EndFunction
 
 Function SetBdsmFurnitureLocked(Bool bLocked=True)
@@ -2232,6 +2253,10 @@ Function SetBdsmFurnitureLocked(Bool bLocked=True)
       ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
       Game.EnablePlayerControls(False, False, False, False, False, True,  False, False)
    Endif
+EndFunction
+
+Bool Function IsBdsmFurnitureLocked()
+   Return _bIsFurnitureLocked
 EndFunction
 
 ; Never returns more than 100.
@@ -2284,7 +2309,7 @@ Int Function GetVulnerability(Actor aActor=None)
    EndIf
 
    ; Todo: Make BDSM furniture MCM configurable.
-   If (_oBdsmFurniture)
+   If (GetBdsmFurniture())
       iVulnerability += _qMcm.iVulnerabilityFurniture
    EndIf
 
@@ -2476,7 +2501,7 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
 
    ; If the player is locked in BDSM furniture she cannot be yanked with the leash.
    ; TODO: This should be an MCM setting to decide if she should be yanked from the furniture.
-   If (_oBdsmFurniture && _bIsFurnitureLocked)
+   If (GetBdsmFurniture() && _bIsFurnitureLocked)
       _bYankingLeash = False
       Return WARNING
    EndIf
