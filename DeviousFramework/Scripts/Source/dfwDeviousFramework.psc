@@ -307,6 +307,9 @@ Int[] _aiRecentFlags
 ; Keeps track of the number of polls since the last NPC detection scan.
 Int _iDetectPollCount
 
+; Keep track of the number of items unequipped in a second to prevent it going infinite.
+Int _iNumItemsUnequipped
+
 ; Keep track of whether a scene is running and how long to wait for a call to scene done.
 Float _fSceneTimeout
 String _szCurrentScene
@@ -550,6 +553,9 @@ Event OnUpdate()
       EndIf
    EndIf
 
+   ; Reset the number of items unequipped as we unequip more each poll interval.
+   _iNumItemsUnequipped = 0
+
    ; If the player is leashed to a target make sure they are not too far away.
    If (_oLeashTarget)
       ; Play the leash effect to draw leash particles between the player and the leash holder.
@@ -744,7 +750,10 @@ Event OnUpdate()
             If (-1 == _qMcm.aiBlockExceptionsHobble.Find(oFootwear.GetFormID()))
                Log("Your hobble is interfering with your " + oFootwear.GetName() + ".", \
                    DL_CRIT, S_MOD)
-               _aPlayer.UnequipItem(oFootwear, abSilent=True)
+               If (50 > _iNumItemsUnequipped)
+                  _aPlayer.UnequipItem(oFootwear, abSilent=True)
+                  _iNumItemsUnequipped += 1
+               EndIf
             EndIf
          EndIf
       EndIf
@@ -859,7 +868,10 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
             Log("You are too exhausted from being raped to dress right now.", DL_CRIT, S_MOD)
             _fRapeRedressTimeout = Utility.GetCurrentGameTime() + \
                                    ((_qMcm.iModRapeRedressTimeout As Float) / 1440)
-            _aPlayer.UnequipItem(oItem, abSilent=True)
+            If (50 > _iNumItemsUnequipped)
+               _aPlayer.UnequipItem(oItem, abSilent=True)
+               _iNumItemsUnequipped += 1
+            EndIf
             Log("Equip Done (Rape): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
             Return
          EndIf
@@ -870,7 +882,10 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
             Log("You tried to dress too fast.  Now you have to start again.", DL_CRIT, S_MOD)
             _fNakedRedressTimeout = Utility.GetCurrentGameTime() + \
                                     ((_qMcm.iModNakedRedressTimeout As Float) / 1440)
-            _aPlayer.UnequipItem(oItem, abSilent=True)
+            If (50 > _iNumItemsUnequipped)
+               _aPlayer.UnequipItem(oItem, abSilent=True)
+               _iNumItemsUnequipped += 1
+            EndIf
             Log("Equip Done (Redress): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
             Return
          EndIf
@@ -935,7 +950,10 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
       If (bUnequip)
          Log("You can't equip \"" + oItem.GetName() + "\" over your " + szBlockedBy + ".", \
              DL_CRIT, S_MOD)
-         _aPlayer.UnequipItem(oItem, abSilent=True)
+         If (50 > _iNumItemsUnequipped)
+            _aPlayer.UnequipItem(oItem, abSilent=True)
+            _iNumItemsUnequipped += 1
+         EndIf
       EndIf
    EndIf
    Log("Equip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
@@ -1708,7 +1726,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.02"
+   Return "1.03"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
