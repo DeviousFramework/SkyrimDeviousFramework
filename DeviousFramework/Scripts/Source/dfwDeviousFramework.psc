@@ -364,6 +364,18 @@ Function OnPlayerLoadGame()
    ; To make sure the Utility script is loaded.
    ; _fCurrVer = 0.00
 
+   ; Very basic initialization.
+   ; Make sure this is done before logging so the MCM options are available.
+   If (0.01 > _fCurrVer)
+      _aPlayer = Game.GetPlayer()
+      _qMcm = (Self As Quest) As dfwMcm
+      _qDfwUtil = (Self As Quest) As dfwUtil
+      _qZadLibs = Quest.GetQuest("zadQuest") As Zadlibs
+      _qSexLab = Quest.GetQuest("SexLabQuestFramework") As SexLabFramework
+      _qSexLabArousedMain = Quest.GetQuest("sla_Main") As slaMainScr
+      _qSexLabAroused = Quest.GetQuest("sla_Framework") As slaFrameworkScr
+   EndIf
+
    Float fCurrTime = Utility.GetCurrentRealTime()
    Log("Game Loaded: " + fCurrTime, DL_TRACE, S_MOD)
 
@@ -376,17 +388,6 @@ Function OnPlayerLoadGame()
    _fNearbyCleanupTime = fCurrTime + 3
    _fSceneTimeout = 0
    _szCurrentScene = ""
-
-   ; Very basic initialization.
-   If (0.01 > _fCurrVer)
-      _aPlayer = Game.GetPlayer()
-      _qMcm = (Self As Quest) As dfwMcm
-      _qDfwUtil = (Self As Quest) As dfwUtil
-      _qZadLibs = Quest.GetQuest("zadQuest") As Zadlibs
-      _qSexLab = Quest.GetQuest("SexLabQuestFramework") As SexLabFramework
-      _qSexLabArousedMain = Quest.GetQuest("sla_Main") As slaMainScr
-      _qSexLabAroused = Quest.GetQuest("sla_Framework") As slaFrameworkScr
-   EndIf
 
    ; Make sure the utility script gets updated as well.
    _qDfwUtil.OnPlayerLoadGame()
@@ -1707,7 +1708,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.01"
+   Return "1.02"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)

@@ -279,16 +279,6 @@ Function InitScript()
       _aszDefSetSlotsWaist = New String[2]
       _aszDefSetSlotsWaist[0] = _aszSlotList[19]
       _aszDefSetSlotsWaist[1] = _aszSlotList[22]
-
-      ; Block List Exceptions
-      aiSettingsSlotsChest = New Int[2]
-      aiSettingsSlotsChest[0] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsChest[0])
-      aiSettingsSlotsChest[1] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsChest[1])
-      aiSettingsSlotsWaist = New Int[2]
-      aiSettingsSlotsWaist[0] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsWaist[0])
-      aiSettingsSlotsWaist[1] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsWaist[1])
-
-      aiBlockExceptionsHobble = None
    EndIf
 
    If (3 > CurrentVersion)
@@ -301,7 +291,17 @@ Function InitScript()
       _bDefBlockLeash = True
       bBlockLeash = _bDefBlockLeash
       _bInfoForPlayer = True
+
+      ; Block List Exceptions
       _qDfwUtil = (Self As Quest) As dfwUtil
+      aiSettingsSlotsChest = New Int[2]
+      aiSettingsSlotsChest[0] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsChest[0])
+      aiSettingsSlotsChest[1] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsChest[1])
+      aiSettingsSlotsWaist = New Int[2]
+      aiSettingsSlotsWaist[0] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsWaist[0])
+      aiSettingsSlotsWaist[1] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsWaist[1])
+
+      aiBlockExceptionsHobble = None
    EndIf
 
    If (4 > CurrentVersion)

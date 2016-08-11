@@ -219,6 +219,7 @@ Function UpdateScript()
    ; _fCurrVer = 0.00
 
    ; Very basic initialization.
+   ; Make sure this is done before logging so the MCM options are available.
    If (0.01 > _fCurrVer)
       _aPlayer = Game.GetPlayer()
       _qMcm = (Self As Quest) As dfwsMcm
@@ -1794,7 +1795,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "1.01"
+   Return "1.02"
 EndFunction
 
 Float Function GetLastUpdateTime()
