@@ -162,7 +162,6 @@ Function UpdateScript()
       _iLeashLength             = 700
       _iBlockTravel             =   1
       _iLogLevelDef             =   5
-      _iLogLevelScreenDef       =   4
       _iDurationMin             =   5
       _iDurationMax             =  15
       _iChanceOfRelease         =  50
@@ -177,16 +176,11 @@ Function UpdateScript()
       iLeashLength             = _iLeashLength
       iBlockTravel             = _iBlockTravel
       iLogLevel                = _iLogLevelDef
-      iLogLevelScreen          = _iLogLevelScreenDef
       iDurationMin             = _iDurationMin
       iDurationMax             = _iDurationMax
       iChanceOfRelease         = _iChanceOfRelease
       iDominanceAffectsRelease = _iDominanceAffectsRelease
       iMaxAngerForRelease      = _iMaxAngerForRelease
-
-      ; Set the Security level to the level of night vulnerability.
-      ; The primary purpose of the security level is to allow changing settings at night.
-      _iSecurityLevel = _qDfwMcm.iVulnerabilityNight
    EndIf
 
    If (3 > CurrentVersion)
@@ -226,6 +220,15 @@ Function UpdateScript()
       bCatchSdPlus             = _bCatchSdPlus
       fChanceFurnitureTransfer = _fChanceFurnitureTransfer
    EndIf
+
+   If (6 > CurrentVersion)
+      ; Set the Security level to the maximum.  This does not prevent settings to be changed
+      ; when installing the mod into games where the player is already vulnerable.
+      _iSecurityLevel = 100
+
+      _iLogLevelScreenDef = 2
+      iLogLevelScreen     = _iLogLevelScreenDef
+   EndIf
 EndFunction
 
 Event OnConfigInit()
@@ -245,7 +248,7 @@ Int Function GetVersion()
    ;   CurrentVersion = 4
    ;EndIf
 
-   Return 5
+   Return 6
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -410,7 +413,6 @@ Function DisplayBdsmFurniturePage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddEmptyOption()
    AddHeaderOption("Chances")
    AddSliderOptionST("ST_BDSMF_LOCK",     "Chance of Locking", fFurnitureLockChance, "{1}", a_flags=iFlags)
    AddSliderOptionST("ST_BDSMF_RELEASE",  "Chance of Release", fFurnitureReleaseChance, "{1}", a_flags=iFlags)
@@ -939,11 +941,11 @@ State ST_LEASH_TO
 
    Event OnDefaultST()
       Actor aNearest = _qFramework.GetNearestActor()
-      String sValue = "None"
+      String szValue = "None"
       If ((!_qDfwSupport.IsGameOn()) && aNearest)
-         sValue = aNearest.GetDisplayName()
+         szValue = aNearest.GetDisplayName()
       EndIf
-      SetTextOptionValueST(sValue)
+      SetTextOptionValueST(szValue)
    EndEvent
 
    Event OnHighlightST()

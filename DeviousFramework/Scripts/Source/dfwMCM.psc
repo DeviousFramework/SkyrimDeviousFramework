@@ -157,6 +157,9 @@ dfwDeviousFramework _qFramework
 ; A reference to the Devious Framework Util quest script.
 dfwUtil _qDfwUtil
 
+; A reference to the ZAZ Animation Pack (ZBF) slave control APIs.
+zbfSlot _qZbfPlayerSlot
+
 ; A list of slots to choose from.
 String[] _aszSlotList
 
@@ -210,15 +213,10 @@ Function InitScript()
       _iDefVulRestraints       = 10
       _iDefVulNight            =  5
       _iDefLogLevel            =  5
-      _iDefLogLevelScreen      =  4
       _iDefNakedRedressTimeout = 20
       _iDefRapeRedressTimeout  = 90
 
       fSettingsPollTime = _fDefSetPollTime
-
-      ; Set the Security level to the level of night vulnerability.
-      ; The primary purpose of the security level is to allow changing settings at night.
-      iSettingsSecurity = _iDefVulNight
 
       iSettingsPollNearby = _iDefSetPollNearby
       iSettingsNearbyDistance = _iDefSetNearbyDistance
@@ -239,7 +237,6 @@ Function InitScript()
       iModNakedRedressTimeout   = _iDefNakedRedressTimeout
       iModRapeRedressTimeout    = _iDefRapeRedressTimeout
       iLogLevel                 = _iDefLogLevel
-      iLogLevelScreen           = _iDefLogLevelScreen
 
       _aszSlotList = New String[32]
       _aszSlotList[0]  = "Head           0x00000001"   ; 30
@@ -338,6 +335,21 @@ Function InitScript()
       _iDefVulFurniture       = 10
       iVulnerabilityFurniture = _iDefVulFurniture
    EndIf
+
+   ; Changed the default security setting to allow changing settings in new games where the
+   ; player is already vulnerable in version 7.
+   If (7 > CurrentVersion)
+      ; Set the Security level to the maximum.  This does not prevent settings to be changed
+      ; when installing the mod into games where the player is already vulnerable.
+      iSettingsSecurity = 100
+
+      ; Also in this version I added furniture status which come from the ZAZ Animation Pack.
+      _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
+
+      ; Also decrease the screen logging level.
+      _iDefLogLevelScreen = 2
+      iLogLevelScreen     = _iDefLogLevelScreen
+   EndIf
 EndFunction
 
 
@@ -355,7 +367,7 @@ Int Function GetVersion()
    ; Reset the version number.
    ; CurrentVersion = 2
 
-   Return 6
+   Return 7
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -724,6 +736,22 @@ Function DisplayStatusPage(Bool bSecure)
    SetCursorPosition(1)
 
    AddMenuOptionST("ST_STA_KEYWORD", "Keyword Browsing", "Select Item")
+
+   AddEmptyOption()
+   AddHeaderOption("Furniture")
+   ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
+   String szValue = "None"
+   If (oCurrFurniture)
+      szValue = oCurrFurniture.GetDisplayName()
+   EndIf
+   AddLabel("ZAZ Furniture: " + szValue)
+
+   oCurrFurniture = _qFramework.GetBdsmFurniture()
+   szValue = "None"
+   If (oCurrFurniture)
+      szValue = oCurrFurniture.GetDisplayName()
+   EndIf
+   AddLabel("DFW Furniture: " + szValue)
 
    AddEmptyOption()
    AddHeaderOption("Slots Worn")

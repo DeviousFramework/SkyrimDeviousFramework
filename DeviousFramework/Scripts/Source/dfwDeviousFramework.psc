@@ -276,10 +276,7 @@ zbfSlaveControl _qZbfSlave
 zbfSlaveActions _qZbfSlaveActions
 zbfSlot _qZbfPlayerSlot
 
-; A list of nearby actors.
-; The first is a list of known actors we have at least estimated some information about.
-; The second is a list of new actors we don't know anything about.
-; Gradually during polling intervals we will move actors from the new list to the known list.
+; A list of nearby actors and their accompanying characteristic flags.
 Int _iNearbyMutex
 Form[] _aoNearby
 Int[] _aiNearbyFlags
@@ -413,7 +410,7 @@ Function OnPlayerLoadGame()
    EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 0.05
+   Float fScriptVer = 0.06
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
@@ -507,6 +504,14 @@ Function OnPlayerLoadGame()
 
    If (0.05 > _fCurrVer)
       _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
+   EndIf
+
+   ; There was a problem on initial release where at least one player could not dress even after
+   ; waiting for three in game hours.  This should clear such a problem although it would be
+   ; nice to know why she this happened.
+   If (0.06 > _fCurrVer)
+      _fNakedRedressTimeout = 0
+      _fRapeRedressTimeout = 0
    EndIf
 
    ; Finally update the version number.
@@ -1042,8 +1047,10 @@ Function NearbyActorSeen(Actor aActor)
 
    ; Perform some basic estimations for flags of this actor.
    Int iFlags = AF_ESTIMATE
+   Bool bIsChild = False
    If (aActor.IsChild())
       iFlags = Math.LogicalOr(AF_CHILD, iFlags)
+      bIsChild = True
    ElseIf (aActor.IsGuard())
       iFlags = Math.LogicalOr(AF_GUARDS, iFlags)
    ElseIf (aActor.IsInFaction(_oFactionMerchants))
@@ -1091,8 +1098,8 @@ Function NearbyActorSeen(Actor aActor)
           aActor.WornHasKeyword(_oKeywordZbfWornYoke))
          iFlags = Math.LogicalOr(AF_SLAVE, iFlags)
       EndIf
-   Else
-      ; For now treat anyone not restrained as a dominant.
+   ElseIf (!bIsChild)
+      ; For now treat anyone not restrained as a dominant (other than children of course).
       iFlags = Math.LogicalOr(AF_DOMINANT, iFlags)
 
       ; If the actor owns a slave mark Him as a slave owner.
@@ -1700,7 +1707,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.0000"
+   Return "1.01"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -2237,7 +2244,11 @@ ObjectReference Function GetBdsmFurniture()
    If (_oBdsmFurniture)
       Return _oBdsmFurniture
    EndIf
-   Return _qZbfPlayerSlot.GetFurniture()
+   ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
+   If (oCurrFurniture.hasKeyword(_oKeywordZbfFurniture))
+      Return oCurrFurniture
+   EndIf
+   Return None
 EndFunction
 
 Function SetBdsmFurnitureLocked(Bool bLocked=True)
