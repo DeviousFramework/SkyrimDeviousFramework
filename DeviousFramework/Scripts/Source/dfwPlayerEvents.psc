@@ -34,18 +34,14 @@ dfwDeviousFramework _qFramework
 
 Event OnObjectUnequipped(Form oItem, ObjectReference oReference)
    ; Only process this event if an actual item was unequipped.
-   If (oItem)
+   If (oItem && _qFramework)
       _qFramework.ItemUnequipped(oItem, oReference)
-Else
-Debug.Notification("Unequip-No Item: " + oReference)
-Debug.Notification("(" + oReference.GetFormID() + "-" + oReference.GetName() + ")")
-
    EndIf
 EndEvent
 
 Event OnObjectEquipped(Form oItem, ObjectReference oReference)
    ; Only process this event if an actual item was equipped.
-   If (oItem)
+   If (oItem && _qFramework)
       _qFramework.ItemEquipped(oItem, oReference)
    EndIf
 EndEvent
