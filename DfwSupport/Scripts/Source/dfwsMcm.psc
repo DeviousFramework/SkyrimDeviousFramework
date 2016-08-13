@@ -234,9 +234,10 @@ EndFunction
 Event OnConfigInit()
    UpdateScript()
 
-   ; Make sure the DFW Support main script is initialized.
+   ; Make sure the DFW Support polling interval is running.
+   ; The first polling interval should configure the script.
    ; Do this here so the main script can rely on our data having been initialized first.
-   _qDfwSupport.UpdateScript()
+   _qDfwSupport.UpdatePollingInterval(fPollTime)
 EndEvent
 
 ; Version of the MCM script.
@@ -356,7 +357,7 @@ Function DisplayDfwSupportPage(Bool bSecure)
    Float fDelta = Utility.GetCurrentRealTime() - _qDfwSupport.GetLastUpdateTime()
    If ((fPollTime * 3) < fDelta)
       AddEmptyOption()
-      AddTextOption("Warning: Poll has Stopped!", "", a_flags=OPTION_FLAG_DISABLED)
+      AddTextOption("Warning: Poll May Have Stopped!", "", a_flags=OPTION_FLAG_DISABLED)
       AddTextOption("Seconds Since Update", (fDelta As Int), a_flags=OPTION_FLAG_DISABLED)
    EndIf
 
@@ -515,9 +516,6 @@ State ST_MOD_BLOCK_TRAVEL
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      If (iBlockTravel != fValue)
-         _qDfwSupport.UpdatePollingInterval(fValue)
-      EndIf
       iBlockTravel = (fValue As Int)
       SetSliderOptionValueST(iBlockTravel)
    EndEvent

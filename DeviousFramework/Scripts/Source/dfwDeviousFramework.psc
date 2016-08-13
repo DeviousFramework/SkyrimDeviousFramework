@@ -366,7 +366,7 @@ Weapon _oSpergFist2
 
 
 ;***********************************************************************************************
-;***                                        EVENTS                                           ***
+;***                                    INITIALIZATION                                       ***
 ;***********************************************************************************************
 ; This is called from the player monitor script when a game is loaded.
 ; This function is primarily to ensure new variables are initialized for new script versions.
@@ -403,8 +403,8 @@ Function OnPlayerLoadGame()
    ; Make sure the utility script gets updated as well.
    _qDfwUtil.OnPlayerLoadGame()
 
-   ; Always register for updates.  We want to make sure the periodic function is polling.
-   RegisterForUpdate(_qMcm.fSettingsPollTime)
+   ; Always register for a poll update.  We want to make sure the periodic function is polling.
+   RegisterForSingleUpdate(_qMcm.fSettingsPollTime)
 
    ; If the nearby actors lists are out of sync clear them completely.
    If (_aoNearby.Length != _aiNearbyFlags.Length)
@@ -537,11 +537,15 @@ Function OnPlayerLoadGame()
    _fCurrVer = fScriptVer
 EndFunction
 
+
+;***********************************************************************************************
+;***                                        EVENTS                                           ***
+;***********************************************************************************************
 ; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function in
 ; various situations.
 ;Int _iWeaponScanCount = 10
 
-Event OnUpdate()
+Function PerformOnUpdate()
    Float fCurrTime = Utility.GetCurrentRealTime()
    Log("Update Event: " + fCurrTime, DL_TRACE, S_MOD)
 
@@ -642,7 +646,6 @@ Event OnUpdate()
       CleanupNearbyList()
 
       ; No flags are set so return here.
-      Log("Update Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
       Return
    EndIf
    _bFlagSet = False
@@ -846,7 +849,24 @@ Event OnUpdate()
          Log(szMessage, DL_DEBUG, S_MOD)
       EndIf
    EndIf
-   Log("Update Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+EndFunction
+
+; The OnUpdate() code is in a wrapper, PerformOnUpdate().  This is to allow us to return from
+; the function without having to add code to re-register for the update at each return point.
+Event OnUpdate()
+   ; If the script has not been initialized do that instead of performing the update.
+   If (!_fCurrVer)
+      OnPlayerLoadGame()
+   Else
+      PerformOnUpdate()
+      Log("Update Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   EndIf
+
+   ; Register for our next update event.
+   ; We are registering for each update individually after the previous processing has
+   ; completed to avoid long updates causing multiple future updates to occur at the same time,
+   ; thus, piling up.  This is a technique recommended by the community.
+   RegisterForSingleUpdate(_qMcm.fSettingsPollTime)
 EndEvent
 
 ; This is called from the player monitor script when an item equipped event is seen.
@@ -1638,7 +1658,7 @@ Form[] Function GetKnownActors()
 EndFunction
 
 Function UpdatePollingInterval(Float fNewInterval)
-   RegisterForUpdate(fNewInterval)
+   RegisterForSingleUpdate(fNewInterval)
 EndFunction
 
 Function UpdatePollingDistance(Int iNewDistance)
@@ -1756,7 +1776,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.05"
+   Return "1.06"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -2294,7 +2314,7 @@ ObjectReference Function GetBdsmFurniture()
       Return _oBdsmFurniture
    EndIf
    ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
-   If (oCurrFurniture.hasKeyword(_oKeywordZbfFurniture))
+   If (oCurrFurniture && oCurrFurniture.hasKeyword(_oKeywordZbfFurniture))
       Return oCurrFurniture
    EndIf
    Return None
