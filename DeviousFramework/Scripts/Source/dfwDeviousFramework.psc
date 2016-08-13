@@ -356,6 +356,14 @@ Int[] _aiMutex
 String[] _aszMutexName
 Int _iMutexNext
 
+;----------------------------------------------------------------------------------------------
+; Mod Compatability.
+; Skyrim Perk Enhancements and Rebalanced Gameplay (SPERG) unarmed "fists" that should not be
+; considered weapons.
+Weapon _oSpergFist1
+Weapon _oSpergFist2
+;----------
+
 
 ;***********************************************************************************************
 ;***                                        EVENTS                                           ***
@@ -411,6 +419,13 @@ Function OnPlayerLoadGame()
 
          MutexRelease(_iNearbyMutex)
       EndIf
+   EndIf
+
+   ; Check if the Skyrim Perk Enhancements and Rebalanced Gameplay (SPERG) unarmed "fists" can
+   ; be initialized.  Check each game load in case the SPERG mod has just been installed.
+   If (!_oSpergFist1)
+      _oSpergFist1 = Game.GetFormFromFile(0x00024689, "SPERG.esm") as Weapon
+      _oSpergFist2 = Game.GetFormFromFile(0x00035A8E, "SPERG.esm") as Weapon
    EndIf
 
    ; If the script is at the current version we are done.
@@ -524,7 +539,7 @@ EndFunction
 
 ; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function in
 ; various situations.
-Int _iWeaponScanCount = 10
+;Int _iWeaponScanCount = 10
 
 Event OnUpdate()
    Float fCurrTime = Utility.GetCurrentRealTime()
@@ -532,11 +547,11 @@ Event OnUpdate()
 
    ; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function
    ; in various situations.
-   _iWeaponScanCount -= 1
-   If (0 >= _iWeaponScanCount)
-      _iWeaponScanCount = 10
-      GetWeaponLevel()
-   EndIf
+;   _iWeaponScanCount -= 1
+;   If (0 >= _iWeaponScanCount)
+;      _iWeaponScanCount = 10
+;      GetWeaponLevel()
+;   EndIf
 
    ; If the bleedout time is past due reset it.
    If (_iBleedoutTime)
@@ -1409,6 +1424,15 @@ Int Function GetClothingType(Form oItem)
    Return iType
 EndFunction
 
+Bool Function IsWeapon(Weapon oWeapon)
+   If (!oWeapon || \
+       (_oSpergFist1 && (_oSpergFist1 == oWeapon)) || \
+       (_oSpergFist2 && (_oSpergFist2 == oWeapon)))
+      Return False
+   EndIf
+   Return True
+EndFunction
+
 Function CheckIsNaked(Actor aActor=None)
    Log("Naked Check: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
    If (!aActor)
@@ -1726,7 +1750,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.03"
+   Return "1.04"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -2357,14 +2381,14 @@ Int Function GetWeaponLevel()
    Float fLeftHand
 
    Weapon oWeaponRight = _aPlayer.GetEquippedWeapon()
-   If (oWeaponRight)
+   If (IsWeapon(oWeaponRight))
       Float fSkill = _aPlayer.GetActorValue(oWeaponRight.GetSkill())
 ;      Log("W-R: E(" + oWeaponRight.GetEnchantmentValue() + ") D(" + oWeaponRight.GetBaseDamage() + ") " + oWeaponRight.GetSkill() + "(" + fSkill + ")", DL_CRIT, S_MOD)
       fRightHand = ((25 As Float) * (oWeaponRight.GetBaseDamage() * fSkill / 10) / (_aPlayer.GetLevel() * 2))
    EndIf
 
    Weapon oWeaponLeft = _aPlayer.GetEquippedWeapon(True)
-   If (oWeaponLeft)
+   If (IsWeapon(oWeaponLeft))
       Float fSkill = _aPlayer.GetActorValue(oWeaponLeft.GetSkill())
 ;      Log("W-R: E(" + oWeaponLeft.GetEnchantmentValue() + ") D(" + oWeaponLeft.GetBaseDamage() + ") " + oWeaponLeft.GetSkill() + "(" + fSkill + ")", DL_CRIT, S_MOD)
       fLeftHand = ((25 As Float) * (oWeaponLeft.GetBaseDamage() * fSkill / 10) / (_aPlayer.GetLevel() * 2))
