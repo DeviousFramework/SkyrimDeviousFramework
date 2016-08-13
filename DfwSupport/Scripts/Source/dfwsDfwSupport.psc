@@ -203,7 +203,7 @@ Bool _bEnslavedSdPlus
 
 ; A reference to the SD+ mod's "_SD_state_caged" global variable.
 GlobalVariable _gSdPlusStateCaged
-Bool _bCagedSDPlus
+Bool _bCagedSdPlus
 
 ; A variable to keep track of whether we have blocked fast travel.
 Bool _bFastTravelBlocked
@@ -275,6 +275,7 @@ Event OnUpdate()
 
          ; It seems registering for some events on game load doesn't take effect 100% of the
          ; time.  To account for this register for the events for all of the first few polls.
+         UnregisterForAllModEvents()
          If (_qMcm.bCatchZazEvents)
             RegisterForModEvent("zbfSC_EnslaveActor", "ActorEnslaved")
             RegisterForModEvent("zbfSC_FreeSlave", "ActorFreed")
@@ -282,6 +283,8 @@ Event OnUpdate()
          EndIf
          RegisterForModEvent("DFW_NewMaster", "DfwNewMaster")
          RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
+         RegisterForModEvent("SDEnslavedStart", "EventSdPlusStart")
+         RegisterForModEvent("SDEnslavedStop", "EventSdPlusStop")
       EndIf
 
       ; Near the start of each game load suspend deviously helpless assaults if needed.
@@ -318,19 +321,11 @@ Event OnUpdate()
    If (_qMcm.bCatchSdPlus && _bEnslavedSdPlus)
       ; We think the player is enslaved.  Verify that she actually is.
       If (0 >= StorageUtil.GetIntValue(_aPlayer, "_SD_iEnslaved"))
-         Log("Player no longer SD+ Enslaved.", DL_CRIT, S_MOD)
-
-         _qFramework.ClearMaster(_qFramework.GetMaster(_qFramework.MD_CLOSE))
-         If (_qMcm.bLeashSdPlus)
-            _qFramework.RestoreHealthRegen()
-            _qFramework.RestoreMagickaRegen()
-            _qFramework.SetLeashTarget(None)
-         EndIf
-         _bEnslavedSdPlus = False
+         StopSdPlus()
       ElseIf (_qMcm.bLeashSdPlus)
          ; The player is still enslaved.  Manage her leashed based on her SD+ caged state.
 
-         If (_bCagedSDPlus)
+         If (_bCagedSdPlus)
             ; We think the player is caged.  Verify that she actually is.
             If (!_gSdPlusStateCaged.GetValue())
                ; The player does not seem to be caged any more.  Reconnect the leash.
@@ -338,43 +333,17 @@ Event OnUpdate()
                If (aMaster)
                   _qFramework.SetLeashTarget(aMaster)
                EndIf
-               _bCagedSDPlus = False
+               _bCagedSdPlus = False
             EndIf
          ElseIf (_gSdPlusStateCaged.GetValue())
             ; We think the player is not caged but she now is.  Break her leash.
             _qFramework.SetLeashTarget(None)
-            _bCagedSDPlus = True
+            _bCagedSdPlus = True
          EndIf
       EndIf
    ElseIf (_qMcm.bCatchSdPlus)
       If (0 < StorageUtil.GetIntValue(_aPlayer, "_SD_iEnslaved"))
-         Log("Player now SD+ Enslaved.", DL_CRIT, S_MOD)
-
-         If (_qFramework.IsAllowed(_qFramework.AP_ENSLAVE))
-            Actor aMaster = (StorageUtil.GetFormValue(_aPlayer, "_SD_CurrentOwner") As Actor)
-            ; I've seen a case where the slaver makes the player available for enslavement
-            ; with low anger.  This debug logging is to look into that.
-            Log("Permission: Set No Enslave (SD+)", DL_DEBUG, S_MOD)
-            If (SUCCESS <= _qFramework.SetMaster(aMaster, "SD+", _qFramework.AP_NO_BDSM, \
-                                                 _qFramework.MD_CLOSE, True))
-               ; Check if the player is currently locked in her cage.
-               _bCagedSDPlus = False
-               If (_gSdPlusStateCaged.GetValue())
-                  _bCagedSDPlus = True
-               EndIf
-
-               ; If we are configured to leash the player do so now.
-               If (_qMcm.bLeashSdPlus)
-                  _qFramework.BlockHealthRegen()
-                  _qFramework.BlockMagickaRegen()
-                  If (!_bCagedSDPlus)
-                     _qFramework.SetLeashTarget(aMaster)
-                  EndIf
-               EndIf
-               ; Identify the plyaer is now SD+ enslaved.
-               _bEnslavedSdPlus = True
-            EndIf
-         EndIf
+         StartSdPlus()
       EndIf
    EndIf
 
@@ -479,9 +448,6 @@ Event ActorEnslaved(Form oActor, String szMod)
             Log("Master found: " + aNearbyActor.GetDisplayName(), DL_CRIT, szMod)
             If ((aNearbyActor != _qFramework.GetMaster(_qFramework.MD_CLOSE)) && \
                 (aNearbyActor != _qFramework.GetMaster(_qFramework.MD_DISTANT)))
-               ; I've seen a case where the slaver makes the player available for enslavement
-               ; with low anger.  This debug logging is to look into that.
-               Log("Permission: Set Enslave (Enslaved)", DL_DEBUG, S_MOD)
                _qFramework.SetMaster(aNearbyActor, szMod, _qFramework.AP_DRESSING, \
                                      bOverride=True)
             EndIf
@@ -605,6 +571,14 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
       EndIf
       _qFramework.SceneDone(S_MOD)
    EndIf
+EndEvent
+
+Event EventSdPlusStart(String szEventName, String szArg, Float fArg = 1.0, Form oSender)
+   StartSdPlus()
+EndEvent
+
+Event EventSdPlusStop(String szEventName, String szArg, Float fArg = 1.0, Form oSender)
+   StopSdPlus()
 EndEvent
 
 
@@ -1282,9 +1256,6 @@ Function PlayLeashGame()
       Else
          ; If we were trying to strip the player take back assisted dressing.
          If (2 == _iLeashHolderGoal)
-            ; I've seen a case where the slaver makes the player available for enslavement
-            ; with low anger.  This debug logging is to look into that.
-            Log("Permission: No Longer Dressing.", DL_DEBUG, S_MOD)
             _qFramework.RemovePermission(_aLeashHolder, _qFramework.AP_DRESSING_ASSISTED)
          EndIf
 
@@ -1333,9 +1304,6 @@ Function PlayLeashGame()
 
       ; If the player has undressed.  Relax a little.
       If (_qFramework.NS_BOTH_PARTIAL >= _qFramework.GetNakedLevel())
-         ; I've seen a case where the slaver makes the player available for enslavement
-         ; with low anger.  This debug logging is to look into that.
-         Log("Permission: Dressing Done (Cooperate).", DL_DEBUG, S_MOD)
          _qFramework.RemovePermission(_aLeashHolder, _qFramework.AP_DRESSING_ASSISTED)
 
          _iLeashHolderGoal = -2
@@ -1349,9 +1317,6 @@ Function PlayLeashGame()
 
       ; If the actor is overly annoyed yank the player's leash.
       If (65 < iAnger)
-         ; I've seen a case where the slaver makes the player available for enslavement
-         ; with low anger.  This debug logging is to look into that.
-         Log("Permission: Dressing Done (Refusal).", DL_DEBUG, S_MOD)
          _qFramework.RemovePermission(_aLeashHolder, _qFramework.AP_DRESSING_ASSISTED)
          AssaultPlayer(0.3, bStrip=True, bAddArmBinder=True)
       ElseIf (!(_iLeashGoalRefusalCount % 5))
@@ -1394,16 +1359,10 @@ Function PlayLeashGame()
    If (_bIsEnslaveAllowed && (50 >= iCurrAnger))
       ; The player has been behaving and the slaver won't slave her out.
       _bIsEnslaveAllowed = False
-      ; I've seen a case where the slaver makes the player available for enslavement
-      ; with low anger.  This debug logging is to look into that.
-      Log("Permission: Slaver Pacified: " + iCurrAnger, DL_DEBUG, S_MOD)
       _qFramework.RemovePermission(_aLeashHolder, _qFramework.AP_ENSLAVE)
    ElseIf (!_bIsEnslaveAllowed && (60 <= iCurrAnger))
       ; The player has not been behaving and the slaver is okay with mods enslaving her.
       _bIsEnslaveAllowed = True
-      ; I've seen a case where the slaver makes the player available for enslavement
-      ; with low anger.  This debug logging is to look into that.
-      Log("Permission: Slaver Enraged: " + iCurrAnger, DL_DEBUG, S_MOD)
       _qFramework.AddPermission(_aLeashHolder, _qFramework.AP_ENSLAVE)
    EndIf
 
@@ -1552,8 +1511,7 @@ Function PlayLeashGame()
 
    ; All of the following will only be considered if the player's arms are locked up.
    iRandomEvent = Utility.RandomInt(1, 100)
-;ZXC   If (_qFramework.IsPlayerArmLocked() && (iRandomEvent <= _qMcm.iChanceIdleRestraints))
-   If (_qFramework.IsPlayerArmLocked())
+   If (_qFramework.IsPlayerArmLocked() && (iRandomEvent <= _qMcm.iChanceIdleRestraints))
       ;Log("Extra Events.", DL_TRACE, S_MOD)
       iRandomEvent = Utility.RandomInt(1, 100)
 
@@ -1581,6 +1539,50 @@ Function PlayLeashGame()
             Return
          EndIf
       EndIf
+   EndIf
+EndFunction
+
+Function StartSdPlus()
+   If (!_bEnslavedSdPlus)
+      Log("Player now SD+ Enslaved.", DL_CRIT, S_MOD)
+
+      If (_qFramework.IsAllowed(_qFramework.AP_ENSLAVE))
+         Actor aMaster = (StorageUtil.GetFormValue(_aPlayer, "_SD_CurrentOwner") As Actor)
+         If (SUCCESS <= _qFramework.SetMaster(aMaster, "SD+", _qFramework.AP_NO_BDSM, \
+                                              _qFramework.MD_CLOSE, True))
+            ; Identify the plyaer is now SD+ enslaved.
+            _bEnslavedSdPlus = True
+
+            ; Check if the player is currently locked in her cage.
+            _bCagedSdPlus = False
+            If (_gSdPlusStateCaged.GetValue())
+               _bCagedSdPlus = True
+            EndIf
+
+            ; If we are configured to leash the player do so now.
+            If (_qMcm.bLeashSdPlus)
+               _qFramework.BlockHealthRegen()
+               _qFramework.BlockMagickaRegen()
+               If (!_bCagedSdPlus)
+                  _qFramework.SetLeashTarget(aMaster)
+               EndIf
+            EndIf
+         EndIf
+      EndIf
+   EndIf
+EndFunction
+
+Function StopSdPlus()
+   If (_bEnslavedSdPlus)
+      Log("Player no longer SD+ Enslaved.", DL_CRIT, S_MOD)
+
+      _qFramework.ClearMaster(_qFramework.GetMaster(_qFramework.MD_CLOSE))
+      If (_qMcm.bLeashSdPlus)
+         _qFramework.RestoreHealthRegen()
+         _qFramework.RestoreMagickaRegen()
+         _qFramework.SetLeashTarget(None)
+      EndIf
+      _bEnslavedSdPlus = False
    EndIf
 EndFunction
 
@@ -1688,9 +1690,6 @@ Function Cooperation(Int iGoal, Int iLevel)
 
       ; Set the player to have dressing assisted with the devious framework.  This is so the
       ; slaver can help the player equip sexy clothing over her leash.
-      ; I've seen a case where the slaver makes the player available for enslavement
-      ; with low anger.  This debug logging is to look into that.
-      Log("Permission: Assist Dressing.", DL_DEBUG, S_MOD)
       _qFramework.AddPermission(_aLeashHolder, _qFramework.AP_DRESSING_ASSISTED)
    ElseIf (3 == iGoal)
       ; Goal 3: Take the player's weapons.
@@ -1795,7 +1794,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "1.03"
+   Return "1.04"
 EndFunction
 
 Float Function GetLastUpdateTime()
@@ -1814,9 +1813,6 @@ Int Function StartLeashGame(Actor aActor)
    ; problem of everyone attacking the leash holder when the player attacks him.
    aActor.SetActorCause(_aPlayer)
 
-   ; I've seen a case where the slaver makes the player available for enslavement
-   ; with low anger.  This debug logging is to look into that.
-   Log("Permission: Set No Enslave (Leash Game)", DL_DEBUG, S_MOD)
    If (SUCCESS <= _qFramework.SetMaster(aActor, S_MOD, _qFramework.AP_DRESSING_ALONE, \
                                         _qFramework.MD_CLOSE))
       ; Stop deviously helpless assaults if configured.
@@ -1833,9 +1829,6 @@ Int Function StartLeashGame(Actor aActor)
 
       ; If the slaver is already angry with the player start with enslave allowed.
       If (50 < iCurrAnger)
-         ; I've seen a case where the slaver makes the player available for enslavement
-         ; with low anger.  This debug logging is to look into that.
-         Log("Permission: Start Game Angry: " + iCurrAnger, DL_DEBUG, S_MOD)
          _qFramework.AddPermission(aActor, _qFramework.AP_ENSLAVE)
       EndIf
 
