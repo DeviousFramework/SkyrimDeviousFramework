@@ -31,6 +31,9 @@ Scriptname dfwMcm extends SKI_ConfigBase
 ; Added basic vulnerability options.
 ;***********************************************************************************************
 
+Import StringUtil
+
+
 ;***********************************************************************************************
 ;***                                      CONSTANTS                                          ***
 ;***********************************************************************************************
@@ -734,6 +737,14 @@ Function DisplayStatusPage(Bool bSecure)
 
    ; Start on the second column.
    SetCursorPosition(1)
+
+   ; Report the name of the player's current cell.
+   String szCellName = _aPlayer.GetParentCell()
+   szCellName = Substring(szCellName, 7, GetLength(szCellName) - 20)
+   If (_aPlayer.IsInInterior())
+      szCellName += " (I)"
+   EndIf
+   AddLabel("Current Cell: " + szCellName)
 
    AddMenuOptionST("ST_STA_KEYWORD", "Keyword Browsing", "Select Item")
 

@@ -592,9 +592,15 @@ Event OnUpdate()
          EndIf
       EndIf
 
+      ; Keep track of whether the player is being yanked across a loading screen.  This doesn't
+      ; cover all conditions.  It misses external areas to external areas but for now it will
+      ; have to do.  This will be considered a leash yank across a great distance.
+      Bool bCellTransition = ((_oLeashTarget.GetParentCell() != _aPlayer.GetParentCell()) && \
+                              (_oLeashTarget.IsInInterior() || _aPlayer.IsInInterior()))
+
       Float fDistance = _oLeashTarget.GetDistance(_aPlayer)
       _iLeashLength
-      If (1500 < fDistance)
+      If (bCellTransition || (1500 < fDistance))
          If ((!GetBdsmFurniture() || !_bIsFurnitureLocked) && \
              CheckLeashInterruptScene())
             If (GetPlayerTalkingTo())
@@ -602,7 +608,7 @@ Event OnUpdate()
                _aPlayer.MoveTo(_aPlayer)
             EndIf
 
-            _aPlayer.MoveTo(_oLeashTarget, 100, 100, 100)
+            _aPlayer.MoveTo(_oLeashTarget, 25, 25, 50)
             ; MoveTo enables fast travel.  Disable it again if necessary.
             If (_iBlockFastTravel)
                Game.EnableFastTravel(False)
@@ -1750,7 +1756,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.04"
+   Return "1.05"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -2585,7 +2591,7 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
       iLeashStyle = iOverrideLeashStyle
    EndIf
    If (500 > _iLeashLength)
-      ; The dragging leash doesn't work with distances less than 500 units.
+      ; The dragging leash doesn't work with leash lengths of less than 500 units.
       ; By the time the player stands up she is being dragged again.
       iLeashStyle = LS_TELEPORT
    ElseIf (LS_AUTO == iLeashStyle)
