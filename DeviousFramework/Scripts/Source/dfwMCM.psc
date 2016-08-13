@@ -359,9 +359,10 @@ EndFunction
 Event OnConfigInit()
    InitScript()
 
-   ; Make sure the Devious Framework main script is initialized.
+   ; Make sure the Devious Framework polling interval is running.
+   ; The first polling interval should configure the script.
    ; Do this here so the main script can rely on our data having been initialized first.
-   _qFramework.OnPlayerLoadGame()
+   _qFramework.UpdatePollingInterval(fSettingsPollTime)
 EndEvent
 
 ; Version of the MCM script.

@@ -229,9 +229,9 @@ Function UpdateScript()
       _qZbfSlaveActions = zbfSlaveActions.GetApi()
    EndIf
 
-   ; Always register for updates.  We want to make sure the periodic function is polling.
+   ; Always register for an update.  We want to make sure the periodic function is polling.
    If (_qMcm.fPollTime)
-      RegisterForUpdate(_qMcm.fPollTime)
+      RegisterForSingleUpdate(_qMcm.fPollTime)
    EndIf
 
    ; If the script is at the current version we are done.
@@ -259,7 +259,7 @@ EndFunction
 ;***********************************************************************************************
 ;***                                        EVENTS                                           ***
 ;***********************************************************************************************
-Event OnUpdate()
+Function PerformOnUpdate()
    Float fCurrRealTime = Utility.GetCurrentRealTime()
 
    ; Game Loaded: If the current real time is low (has been reset) that indicates the game has
@@ -427,6 +427,23 @@ Event OnUpdate()
          EndIf
       EndIf
    EndIf
+EndFunction
+
+; The OnUpdate() code is in a wrapper, PerformOnUpdate().  This is to allow us to return from
+; the function without having to add code to re-register for the update at each return point.
+Event OnUpdate()
+   ; If the script has not been initialized do that instead of performing the update.
+   If (!_fCurrVer)
+      UpdateScript()
+   Else
+      PerformOnUpdate()
+   EndIf
+
+   ; Register for our next update event.
+   ; We are registering for each update individually after the previous processing has
+   ; completed to avoid long updates causing multiple future updates to occur at the same time,
+   ; thus, piling up.  This is a technique recommended by the community.
+   RegisterForSingleUpdate(_qMcm.fPollTime)
 EndEvent
 
 Event ActorEnslaved(Form oActor, String szMod)
@@ -683,7 +700,7 @@ Function Log(String szMessage, Int iLevel=0, String szClass="")
 EndFunction
 
 Function UpdatePollingInterval(Float fNewInterval)
-   RegisterForUpdate(fNewInterval)
+   RegisterForSingleUpdate(fNewInterval)
 EndFunction
 
 Function ImmobilizePlayer()
@@ -1794,7 +1811,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "1.05"
+   Return "1.06"
 EndFunction
 
 Float Function GetLastUpdateTime()
