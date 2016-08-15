@@ -34,6 +34,7 @@ Import StringUtil
 ;***                                      CONSTANTS                                          ***
 ;***********************************************************************************************
 String S_MOD = "DFWS"
+String S_MOD_SD = "SD+"
 
 ; Standard status constants.
 Int FAIL    = -1
@@ -1565,7 +1566,7 @@ Function StartSdPlus()
 
       If (_qFramework.IsAllowed(_qFramework.AP_ENSLAVE))
          Actor aMaster = (StorageUtil.GetFormValue(_aPlayer, "_SD_CurrentOwner") As Actor)
-         If (SUCCESS <= _qFramework.SetMaster(aMaster, "SD+", _qFramework.AP_NO_BDSM, \
+         If (SUCCESS <= _qFramework.SetMaster(aMaster, S_MOD_SD, _qFramework.AP_NO_BDSM, \
                                               _qFramework.MD_CLOSE, True))
             ; Identify the plyaer is now SD+ enslaved.
             _bEnslavedSdPlus = True
@@ -1600,6 +1601,44 @@ Function StopSdPlus()
          _qFramework.SetLeashTarget(None)
       EndIf
       _bEnslavedSdPlus = False
+   EndIf
+EndFunction
+
+; This can be used to turn on or of the SD+ leash in the case that the MCM value changes.
+Function UpdateSdPlusLeashState(Bool bNewValue)
+   ; If the player is not SD+ enslaved or the SD+ master is not registered with DFW for some
+   ; reason don't try to start/stop the leash.
+   If (!_bEnslavedSdPlus || (S_MOD_SD != _qFramework.GetMasterMod(_qFramework.MD_CLOSE)))
+      Return
+   EndIf
+
+   If (bNewValue)
+      Actor aMaster = (StorageUtil.GetFormValue(_aPlayer, "_SD_CurrentOwner") As Actor)
+      If (!_bCagedSdPlus)
+         _qFramework.SetLeashTarget(aMaster)
+      EndIf
+      If (_qMcm.bLeashSdPlus)
+         _qFramework.BlockHealthRegen()
+         _qFramework.BlockMagickaRegen()
+      EndIf
+   Else
+      _qFramework.SetLeashTarget(None)
+      If (!_qMcm.bLeashSdPlus)
+         _qFramework.RestoreHealthRegen()
+         _qFramework.RestoreMagickaRegen()
+      EndIf
+   EndIf
+EndFunction
+
+; Stops the SD+ leash if we believe the leash is being controlled by an SD+ master.
+; This can be called by the MCM script when the SD+ leash option is turned off.
+Function StopSdPlusLeash()
+   If (_bEnslavedSdPlus && (S_MOD_SD == _qFramework.GetMasterMod(_qFramework.MD_CLOSE)))
+      _qFramework.SetLeashTarget(None)
+      If (!_qMcm.bLeashSdPlus)
+         _qFramework.RestoreHealthRegen()
+         _qFramework.RestoreMagickaRegen()
+      EndIf
    EndIf
 EndFunction
 
@@ -1811,7 +1850,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "1.06"
+   Return "1.07"
 EndFunction
 
 Float Function GetLastUpdateTime()

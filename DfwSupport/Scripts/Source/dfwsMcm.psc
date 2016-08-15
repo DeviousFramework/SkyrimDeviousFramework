@@ -51,6 +51,7 @@ String _szLastPage
 
 ; *** Private Options ***
 Bool _bSecureHardcore
+Bool _bSecureSdPlusLeash
 
 ; *** Toggle Options ***
 Bool _bIncludeOwners
@@ -138,6 +139,7 @@ Bool _bDebug
 Function UpdateScript()
    ; Hardcore mode is turned off on all script updates.
    _bSecureHardcore = False
+   _bSecureSdPlusLeash = False
 
    Debug.Notification("[DFWS-MCM] Updating Script: " + CurrentVersion + " => " + GetVersion())
 
@@ -337,6 +339,7 @@ Function DisplayDfwSupportPage(Bool bSecure)
 
    AddSliderOptionST("ST_FWK_SECURE",         "Security Level",        _iSecurityLevel, a_flags=iFlags)
    AddToggleOptionST("ST_FWK_HARDCORE",       "...Hardcore (Caution)", _bSecureHardcore, a_flags=iFlags)
+   AddToggleOptionST("ST_FWK_SECURE_LEASH",   "Secure SD+ Leash",      _bSecureSdPlusLeash, a_flags=iFlags)
 
    AddEmptyOption()
    AddSliderOptionST("ST_FWK_POLL_TIME",      "Poll Time",             fPollTime, "{1}")
@@ -351,7 +354,13 @@ Function DisplayDfwSupportPage(Bool bSecure)
    AddHeaderOption("Mod Compatibility")
    AddToggleOptionST("ST_MOD_ZAZ_EVENTS", "Catch ZAZ Events",          bCatchZazEvents, a_flags=iFlags)
    AddToggleOptionST("ST_MOD_SDP_EVENTS", "Catch SD+ Enslavement",     bCatchSdPlus, a_flags=iFlags)
-   AddToggleOptionST("ST_MOD_SDP_LEASH",  "Start SD+ Leash",           bLeashSdPlus, a_flags=iFlags)
+
+   ; For now always allow the SD+ leash to be disabled as it can have pretty significant consequences.
+   Int iSdLeashFlags = OPTION_FLAG_NONE
+   If (_bSecureSdPlusLeash)
+      iSdLeashFlags = OPTION_FLAG_DISABLED
+   EndIf
+   AddToggleOptionST("ST_MOD_SDP_LEASH",  "Start SD+ Leash",           bLeashSdPlus, a_flags=iSdLeashFlags)
 
    ; Make sure the poll function is updating as expected.
    Float fDelta = Utility.GetCurrentRealTime() - _qDfwSupport.GetLastUpdateTime()
@@ -481,6 +490,24 @@ State ST_FWK_HARDCORE
    EndEvent
 EndState
 
+State ST_FWK_SECURE_LEASH
+   Event OnSelectST()
+      _bSecureSdPlusLeash = !_bSecureSdPlusLeash
+      SetToggleOptionValueST(_bSecureSdPlusLeash)
+   EndEvent
+
+   Event OnDefaultST()
+      _bSecureSdPlusLeash = False
+      SetToggleOptionValueST(_bSecureSdPlusLeash)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Locks the SD+ leash setting so it cannot be changed when vulnerable.\n" +\
+                  "Caution: Being stuck in an SD+ leash can break the game.  Don't make this secure until\n" +\
+                  "you have thoroughly tested the leash behaviour with SD+.  And keep a save!")
+   EndEvent
+EndState
+
 State ST_FWK_POLL_TIME
    Event OnSliderOpenST()
       SetSliderDialogStartValue(fPollTime)
@@ -568,17 +595,22 @@ EndState
 State ST_MOD_SDP_LEASH
    Event OnSelectST()
       bLeashSdPlus = !bLeashSdPlus
+      ; Call the Support Mod function to update the the leash state in case it is active.
+      _qDfwSupport.UpdateSdPlusLeashState(bLeashSdPlus)
       SetToggleOptionValueST(bLeashSdPlus)
    EndEvent
 
    Event OnDefaultST()
       bLeashSdPlus = _bLeashSdPlus
+      ; Call the Support Mod function to update the the leash state in case it is active.
+      _qDfwSupport.UpdateSdPlusLeashState(bLeashSdPlus)
       SetToggleOptionValueST(bLeashSdPlus)
    EndEvent
 
    Event OnHighlightST()
       SetInfoText("Also start a DFW leash between the Sanguine Debauchery Master and the player when enslaved\n" +\
-                  "and clear the leash when the player is released.")
+                  "and clear the leash when the player is released.\n" +\
+                  "Note: This option is only disabled when \"Hardcore\" security is set.")
    EndEvent
 EndState
 
