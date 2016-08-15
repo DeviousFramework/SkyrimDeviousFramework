@@ -1571,7 +1571,8 @@ Function CleanupNearbyList()
       ; I'm not sure what distance spell ranges are in (iSettingsNearbyDistance) but it must be
       ; converted to the same units as GetDistance().  A rough estimate is 22.2 to 1.  Add extra
       ; so the actor is removed at a notably longer distance than he is added.
-      If ((30 * _qMcm.iSettingsNearbyDistance) < aNearby.GetDistance(_aPlayer))
+      If (aNearby.IsDead() || \
+          ((30 * _qMcm.iSettingsNearbyDistance) < aNearby.GetDistance(_aPlayer)))
          ; Note: Converting the form ID to hex is a little bit expensive for something triggered
          ;       by every nearby actor; however, for now it will help diagnose which magic
          ;       effect script instances are becoming stray.
@@ -1776,7 +1777,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.06"
+   Return "1.07"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -2474,7 +2475,8 @@ Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, 
    Int iIndex
    While (iIndex < iCount)
       Actor aNearby = (_aoNearby[iIndex] As Actor)
-      If (!iExcludeFlags || !Math.LogicalAnd(_aiNearbyFlags[iIndex], iExcludeFlags))
+      If (!aNearby.IsDead() && \
+          (!iExcludeFlags || !Math.LogicalAnd(_aiNearbyFlags[iIndex], iExcludeFlags)))
          If (!iIncludeFlags || Math.LogicalAnd(_aiNearbyFlags[iIndex], iIncludeFlags))
             If (!fMaxDistance || (fMaxDistance > aNearby.GetDistance(_aPlayer)))
                aoSubList = _qDfwUtil.AddFormToArray(aoSubList, aNearby, True)
