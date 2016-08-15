@@ -1822,8 +1822,13 @@ EndState
 State ST_INFO_FACTIONS
    Event OnSelectST()
       Actor aActor = _aPlayer
+      String szTitle = "Player"
       If (!_bInfoForPlayer)
-         aActor = _qFramework.GetNearestActor(0)
+         Actor aNearby = _qFramework.GetNearestActor(0)
+         If (aNearby)
+            aActor = aNearby
+            szTitle = aActor.GetDisplayName()
+         EndIf
       EndIf
 
       String[] aszInfo
@@ -1842,8 +1847,11 @@ State ST_INFO_FACTIONS
          iIndex -= 1
       EndWhile
 
+      ; Includ information in the title about how many factions the player/NPC is in.
+      szTitle += " " + aoFaction.Length + " Factions"
+
       ; Display the information for the user.
-      PresentInformation(aszInfo, "Player Factions")
+      PresentInformation(aszInfo, szTitle)
    EndEvent
 
    Event OnHighlightST()
