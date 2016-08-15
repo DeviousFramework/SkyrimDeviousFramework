@@ -1630,18 +1630,6 @@ Function UpdateSdPlusLeashState(Bool bNewValue)
    EndIf
 EndFunction
 
-; Stops the SD+ leash if we believe the leash is being controlled by an SD+ master.
-; This can be called by the MCM script when the SD+ leash option is turned off.
-Function StopSdPlusLeash()
-   If (_bEnslavedSdPlus && (S_MOD_SD == _qFramework.GetMasterMod(_qFramework.MD_CLOSE)))
-      _qFramework.SetLeashTarget(None)
-      If (!_qMcm.bLeashSdPlus)
-         _qFramework.RestoreHealthRegen()
-         _qFramework.RestoreMagickaRegen()
-      EndIf
-   EndIf
-EndFunction
-
 ; Called by dialog scripts to indicate the dialog is upsetting the speaker.
 Function IncAnger(Actor aActor, Int iDelta)
    _iLeashHolderAnger = _qFramework.IncActorAnger(aActor, iDelta, 20, 80)
@@ -1850,7 +1838,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "1.07"
+   Return "1.08"
 EndFunction
 
 Float Function GetLastUpdateTime()

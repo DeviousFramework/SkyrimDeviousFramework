@@ -349,6 +349,7 @@ Int _iBlockJournal
 
 ; Mechanisms to identify slavers.
 Faction _oFactionHydraSlaver
+Faction _oFactionHydraCaravanSlaver
 Faction _oFactionHydraSlaverMisc
 
 ; A set of variables to manage mutexes.
@@ -429,7 +430,7 @@ Function OnPlayerLoadGame()
    EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 0.06
+   Float fScriptVer = 0.07
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
@@ -531,6 +532,11 @@ Function OnPlayerLoadGame()
    If (0.06 > _fCurrVer)
       _fNakedRedressTimeout = 0
       _fRapeRedressTimeout = 0
+   EndIf
+
+   If (0.07 > _fCurrVer)
+      _oFactionHydraCaravanSlaver = \
+         Game.GetFormFromFile(0x00072F71, "hydra_slavegirls.esp") as Faction
    EndIf
 
    ; Finally update the version number.
@@ -1131,16 +1137,19 @@ Function NearbyActorSeen(Actor aActor)
    ;    iFlags = Math.LogicalOr(AF_ANIMAL, iFlags)
    ; EndIf
 
-   If (aActor.IsInFaction(_oFactionHydraSlaver) || _qZbfSlave.IsSlaver(aActor))
-      ; Check if the actor deals in trading slaves.  Check this first as they can
+   If (_qZbfSlave.IsSlave(aActor))
+      ; Check if the actor is a slave, first on Zbf status.  A check later can also identify the
+      ; NPC as a slave based on items worn.  Check this first as some hydra slave girl slaves
+      ; are also in the CaravanSlaver faction.
+      iFlags = Math.LogicalOr(AF_SUBMISSIVE, iFlags)
+      iFlags = Math.LogicalOr(AF_SLAVE, iFlags)
+   ElseIf (_qZbfSlave.IsSlaver(aActor) || aActor.IsInFaction(_oFactionHydraSlaver) || \
+       aActor.IsInFaction(_oFactionHydraCaravanSlaver))
+      ; Check if the actor deals in trading slaves.  Check this before bondage items as they can
       ; sometimes be wearing restraints too.
       iFlags = Math.LogicalOr(AF_DOMINANT, iFlags)
       iFlags = Math.LogicalOr(AF_SLAVE_TRADER, iFlags)
       iFlags = Math.LogicalOr(AF_OWNER, iFlags)
-   ElseIf (_qZbfSlave.IsSlave(aActor))
-      ; Check if the actor is a slave, first on Zbf status and then on worn items.
-      iFlags = Math.LogicalOr(AF_SUBMISSIVE, iFlags)
-      iFlags = Math.LogicalOr(AF_SLAVE, iFlags)
    ElseIf (aActor.WornHasKeyword(_oKeywordZadLockable) || \
            aActor.WornHasKeyword(_oKeywordZadInventoryDevice) || \
            aActor.WornHasKeyword(_oKeywordZbfWornDevice))
@@ -1777,7 +1786,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.07"
+   Return "1.08"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
