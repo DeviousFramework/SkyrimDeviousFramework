@@ -1,7 +1,6 @@
-Scriptname dfwDeviousFramework extends Quest
+Scriptname dfwDeviousFramework extends Quest Conditional
 {Framework intended for Devious device mods.
  Hopefully there is an API document somewhere.}
-
 ;***********************************************************************************************
 ; Mod: Devious Framework
 ;
@@ -46,6 +45,14 @@ String S_MOD = "DFW"
 Int FAIL    = -1
 Int SUCCESS = 0
 Int WARNING = 1
+
+; Debug Class (DC_) constants.
+Int DC_GENERAL = 0
+Int DC_STATUS  = 1
+Int DC_MASTER  = 2
+Int DC_NEARBY  = 3
+Int DC_LEASH   = 4
+Int DC_EQUIP   = 5
 
 ; Debug Level (DL_) constants.
 Int DL_NONE   = 0
@@ -174,6 +181,36 @@ Actor _aPlayer
 ; Note: This is versioning control for the script.  It is unrelated to the mod version.
 Float _fCurrVer = 0.00
 
+;----------------------------------------------------------------------------------------------
+; Conditional variables available to dialogues.
+; Use PrepareActorDialogue() to set the variables before using them.
+Bool  _bIsPlayerBound           Conditional
+Bool  _bIsPlayerBoundVisible    Conditional
+Bool  _bIsPlayerArmLocked       Conditional
+Bool  _bIsPlayerBelted          Conditional
+Bool  _bIsPlayerCollared        Conditional
+Bool  _bIsPlayerGagged          Conditional
+Bool  _bIsPlayerHobbled         Conditional
+Bool  _bIsPlayersMaster         Conditional
+Bool  _bIsPlayerFurnitureLocked Conditional
+Bool  _bIsActorSlaver           Conditional
+Bool  _bIsActorOwner            Conditional
+Bool  _bIsActorDominant         Conditional
+Bool  _bIsActorSubmissive       Conditional
+Bool  _bIsActorSlave            Conditional
+Bool  _bIsActorLeashHolder      Conditional
+Int   _iActorAnger              Conditional
+Int   _iActorConfidence         Conditional
+Int   _iActorDominance          Conditional
+Int   _iActorInterest           Conditional
+Int   _iActorKindness           Conditional
+Int   _iWillingnessToHelp       Conditional
+Int   _iVulnerability           Conditional
+Int   _iNakedLevel              Conditional
+Float _fActorDistance           Conditional
+Float _fMasterDistance          Conditional
+;----------
+
 ;*** Vulnerability Flags ***
 Int _iNakedStatus
 Bool _bChestCovered = False
@@ -181,11 +218,6 @@ Bool _bWaistCovered = False
 Bool _bNakedReduced = False
 Bool _bChestReduced = False
 Bool _bWaistReduced = False
-Bool _bIsCollared   = False
-Bool _bIsArmLocked  = False
-Bool _bIsGagged     = False
-Bool _bIsHobbled    = False
-Bool _bIsBelted     = False
 Int _iNumOtherRestraints
 Bool _bHiddenRestraints = False
 Bool _bInventoryLocked = False
@@ -285,11 +317,12 @@ Int[] _aiNearbyFlags
 Int _iKnownMutex
 Form[] _aoKnown
 Float[] _afKnownLastSeen
-Int[] _aiKnownSeenCount
+Int[] _aiKnownSignificant
 Int[] _aiKnownAnger
 Int[] _aiKnownConfidence
 Int[] _aiKnownDominance
 Int[] _aiKnownInterest
+Int[] _aiKnownKindness
 
 ; A list of Masters who are controlling the player.
 Actor _aMasterClose
@@ -347,6 +380,12 @@ Int _iBlockMenu
 Int _iBlockActivate
 Int _iBlockJournal
 
+; The faction the NPC is added to when he becomes the DFW Dialogue Target.
+Bool _bDialogueTargetsEnabled Conditional
+Int _iTemporaryPauseDialogues
+Actor _aCurrTarget
+Faction _oFactionDfwDialogueTarget
+
 ; Mechanisms to identify slavers.
 Faction _oFactionHydraSlaver
 Faction _oFactionHydraCaravanSlaver
@@ -358,6 +397,14 @@ String[] _aszMutexName
 Int _iMutexNext
 
 ;----------------------------------------------------------------------------------------------
+; Local copy of frequently used MCM settings.
+; Accessing settings from other script is a little expensive as it can cause context switches.
+; For MCM settings that are used often we will store a local copy of their values in this script
+; for faster access.
+Int[] _aiMcmScreenLogLevel
+;----------
+
+;----------------------------------------------------------------------------------------------
 ; Mod Compatability.
 ; Skyrim Perk Enhancements and Rebalanced Gameplay (SPERG) unarmed "fists" that should not be
 ; considered weapons.
@@ -365,34 +412,31 @@ Weapon _oSpergFist1
 Weapon _oSpergFist2
 ;----------
 
+; Keep a counter so we don't prepare a dialogue with the same actor too many times.
+Int _iPrepareDialogAttempts
+
 
 ;***********************************************************************************************
 ;***                                    INITIALIZATION                                       ***
 ;***********************************************************************************************
 ; This is called from the player monitor script when a game is loaded.
 ; This function is primarily to ensure new variables are initialized for new script versions.
-Function OnPlayerLoadGame()
+Function UpdateScript()
    ; Reset the version number.
    ; To make sure the Utility script is loaded.
-   ; _fCurrVer = 0.00
+   ; If (0.08 < _fCurrVer)
+   ;   _fCurrVer = 0.08
+   ; EndIf
 
    ; Very basic initialization.
    ; Make sure this is done before logging so the MCM options are available.
    If (0.01 > _fCurrVer)
       _aPlayer = Game.GetPlayer()
-      _qMcm = (Self As Quest) As dfwMcm
-      _qDfwUtil = (Self As Quest) As dfwUtil
-      _qZadLibs = Quest.GetQuest("zadQuest") As Zadlibs
-      _qSexLab = Quest.GetQuest("SexLabQuestFramework") As SexLabFramework
-      _qSexLabArousedMain = Quest.GetQuest("sla_Main") As slaMainScr
-      _qSexLabAroused = Quest.GetQuest("sla_Framework") As slaFrameworkScr
    EndIf
-
-   Float fCurrTime = Utility.GetCurrentRealTime()
-   Log("Game Loaded: " + fCurrTime, DL_TRACE, S_MOD)
 
    ; If any real time timers are active reset them to the current time because the real time
    ; clock is reset each time the game is loaded.
+   Float fCurrTime = Utility.GetCurrentRealTime()
    If (_iBleedoutTime)
       _iBleedoutTime = fCurrTime + 30
    EndIf
@@ -401,15 +445,9 @@ Function OnPlayerLoadGame()
    _fSceneTimeout = 0
    _szCurrentScene = ""
 
-   ; Make sure the utility script gets updated as well.
-   _qDfwUtil.OnPlayerLoadGame()
-
-   ; Always register for a poll update.  We want to make sure the periodic function is polling.
-   RegisterForSingleUpdate(_qMcm.fSettingsPollTime)
-
    ; If the nearby actors lists are out of sync clear them completely.
    If (_aoNearby.Length != _aiNearbyFlags.Length)
-      Log("Nearby Lists Out of Sync!  Cleaning.", DL_CRIT, S_MOD)
+      Log("Nearby Lists Out of Sync!  Cleaning.", DL_ERROR, DC_NEARBY)
       If (MutexLock(_iNearbyMutex))
          While (_aoNearby.Length)
             _aoNearby = _qDfwUtil.RemoveFormFromArray(_aoNearby, None, 0)
@@ -430,11 +468,11 @@ Function OnPlayerLoadGame()
    EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 0.07
+   Float fScriptVer = 0.09
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
-   Log("Updating Script " + _fCurrVer + " => " + fScriptVer, DL_CRIT, S_MOD)
+   Log("Updating Script " + _fCurrVer + " => " + fScriptVer, DL_INFO, DC_GENERAL)
 
    ; Historical configuration...
    If (0.02 > _fCurrVer)
@@ -497,13 +535,6 @@ Function OnPlayerLoadGame()
       RegisterForModEvent("AnimationEnd", "PostSexCallback")
    EndIf
 
-   If (0.03 > _fCurrVer)
-      _qZbfSlave = zbfSlaveControl.GetApi()
-
-      _qSexLabArousedMain = Quest.GetQuest("sla_Main") As slaMainScr
-      _qSexLabAroused = Quest.GetQuest("sla_Framework") As slaFrameworkScr
-   EndIf
-
    If (0.04 > _fCurrVer)
       _iLeashLength = 700
 
@@ -519,11 +550,6 @@ Function OnPlayerLoadGame()
 
       _oKeywordZbfFurniture = \
          Game.GetFormFromFile(0x0000762B, "ZaZAnimationPack.esm") as Keyword
-      _qZbfSlaveActions = zbfSlaveActions.GetApi()
-   EndIf
-
-   If (0.05 > _fCurrVer)
-      _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
    EndIf
 
    ; There was a problem on initial release where at least one player could not dress even after
@@ -539,8 +565,99 @@ Function OnPlayerLoadGame()
          Game.GetFormFromFile(0x00072F71, "hydra_slavegirls.esp") as Faction
    EndIf
 
+   If (0.08 > _fCurrVer)
+      UpdateLocalMcmSettings()
+
+      ; Register for notification when MCM settings change.
+      RegisterForModEvent("DFW_MCM_Changed", "UpdateLocalMcmSettings")
+   EndIf
+
+   If (0.09 > _fCurrVer)
+      _oFactionDfwDialogueTarget = \
+         Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") as Faction
+   EndIf
+
    ; Finally update the version number.
    _fCurrVer = fScriptVer
+EndFunction
+
+Function OnPlayerLoadGame()
+   Float fCurrTime = Utility.GetCurrentRealTime()
+
+   ; Update all quest variables upon loading each game.
+   ; There are too many things that can cause them to become invalid.
+   _qMcm = ((Self As Quest) As dfwMcm)
+   _qDfwUtil = ((Self As Quest) As dfwUtil)
+   _qZadLibs = (Quest.GetQuest("zadQuest") As Zadlibs)
+   _qSexLab = (Quest.GetQuest("SexLabQuestFramework") As SexLabFramework)
+   _qSexLabArousedMain = (Quest.GetQuest("sla_Main") As slaMainScr)
+   _qSexLabAroused = (Quest.GetQuest("sla_Framework") As slaFrameworkScr)
+   _qZbfSlave = zbfSlaveControl.GetApi()
+   _qSexLabArousedMain = (Quest.GetQuest("sla_Main") As slaMainScr)
+   _qSexLabAroused = (Quest.GetQuest("sla_Framework") As slaFrameworkScr)
+   _qZbfSlaveActions = zbfSlaveActions.GetApi()
+   _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
+
+   Log("Game Loaded: " + fCurrTime, DL_TRACE, DC_GENERAL)
+
+   ; On each load game make sure to re-apply any blocked effects.
+   If (_qMcm.bModBlockOnGameLoad)
+      If (_iBlockHealthRegen)
+         _aPlayer.DamageActorValue("HealRate", _aPlayer.GetActorValue("HealRate") * 0.99)
+      EndIf
+      If (_iDisableMagicka)
+         _aPlayer.DamageActorValue("MagickaRate", _aPlayer.GetActorValue("MagickaRate"))
+         _aPlayer.DamageActorValue("Magicka", _aPlayer.GetActorValue("Magicka"))
+      ElseIf (_iBlockMagickaRegen)
+         _aPlayer.DamageActorValue("MagickaRate", _aPlayer.GetActorValue("MagickaRate") * 0.99)
+      EndIf
+      If (_iDisableStamina)
+         _aPlayer.DamageActorValue("StaminaRate", _aPlayer.GetActorValue("StaminaRate"))
+         _aPlayer.DamageActorValue("Stamina", _aPlayer.GetActorValue("Stamina"))
+      ElseIf (_iBlockStaminaRegen)
+         _aPlayer.DamageActorValue("StaminaRate", _aPlayer.GetActorValue("StaminaRate") * 0.99)
+      EndIf
+      If (_iBlockFastTravel)
+         Game.EnableFastTravel(False)
+      EndIf
+      Bool bMove     = (0 != _iBlockMovement)
+      Bool bFight    = (0 != _iBlockFighting)
+      Bool bCam      = (0 != _iBlockCameraSwitch)
+      Bool bLook     = (0 != _iBlockLooking)
+      Bool bSneak    = (0 != _iBlockSneaking)
+      Bool bMenu     = (0 != _iBlockMenu)
+      Bool bActivate = (0 != _iBlockActivate)
+      Bool bJournal  = (0 != _iBlockJournal)
+      If (bMove || bFight || bCam || bLook || bSneak || bMenu || bActivate || bJournal)
+         Game.DisablePlayerControls(bMove, bFight, bCam, bLook, bSneak, bMenu, bActivate, \
+                                    bJournal)
+      EndIf
+   EndIf
+
+   ; Make sure the utility script gets updated as well.
+   _qDfwUtil.OnPlayerLoadGame()
+
+   UpdateScript()
+
+   ; Always register for a poll update.  We want to make sure the periodic function is polling.
+   RegisterForSingleUpdate(_qMcm.fSettingsPollTime)
+EndFunction
+
+Function UpdateLocalMcmSettings(String sCategory="")
+   Debug.Notification("MCM Settings Updated: " + sCategory)
+   If (!sCategory || ("Logging" == sCategory))
+      _aiMcmScreenLogLevel = New Int[6]
+      _aiMcmScreenLogLevel[DC_GENERAL] = _qMcm.iLogLevelScreenGeneral
+      _aiMcmScreenLogLevel[DC_STATUS]  = _qMcm.iLogLevelScreenStatus
+      _aiMcmScreenLogLevel[DC_MASTER]  = _qMcm.iLogLevelScreenMaster
+      _aiMcmScreenLogLevel[DC_NEARBY]  = _qMcm.iLogLevelScreenNearby
+      _aiMcmScreenLogLevel[DC_LEASH]   = _qMcm.iLogLevelScreenLeash
+      _aiMcmScreenLogLevel[DC_EQUIP]   = _qMcm.iLogLevelScreenEquip
+   EndIf
+
+   If (!sCategory || ("ModFeatures" == sCategory))
+      _bDialogueTargetsEnabled = _qMcm.bModEnableDialogues
+   EndIf
 EndFunction
 
 
@@ -553,7 +670,7 @@ EndFunction
 
 Function PerformOnUpdate()
    Float fCurrTime = Utility.GetCurrentRealTime()
-   Log("Update Event: " + fCurrTime, DL_TRACE, S_MOD)
+   Log("Update Event: " + fCurrTime, DL_TRACE, DC_GENERAL)
 
    ; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function
    ; in various situations.
@@ -581,6 +698,14 @@ Function PerformOnUpdate()
    ; Reset the number of items unequipped as we unequip more each poll interval.
    _iNumItemsUnequipped = 0
 
+   ; If dialogue targets have been disabled see about re-enabling them.
+   If (0 < _iTemporaryPauseDialogues)
+      _iTemporaryPauseDialogues -= 1
+      If (0 == _iTemporaryPauseDialogues)
+         _bDialogueTargetsEnabled = _qMcm.bModEnableDialogues
+      EndIf
+   EndIf
+
    ; If the player is leashed to a target make sure they are not too far away.
    If (_oLeashTarget)
       ; Play the leash effect to draw leash particles between the player and the leash holder.
@@ -595,10 +720,14 @@ Function PerformOnUpdate()
       ; player's leash to knock her off balance.
       If ((_oLeashTarget As Actor).IsHostileToActor(_aPlayer))
          If (Utility.RandomInt(0, 99) < 20)
-            Log(_oLeashTarget + " yanks your leash and throws you off balance.", DL_CRIT, S_MOD)
+            Log(_oLeashTarget + " yanks your leash and throws you off balance.", DL_CRIT, \
+                DC_LEASH)
             _oLeashTarget.PushActorAway(_aPlayer, -2)
             Utility.Wait(0.5)
             _aPlayer.ForceRemoveRagdollFromWorld()
+
+            ; Damage the player a small amount when this happens.
+            _aPlayer.DamageActorValue("Health", _aPlayer.GetActorValue("Health") * 0.05)
          EndIf
       EndIf
 
@@ -613,23 +742,21 @@ Function PerformOnUpdate()
       If (bCellTransition || (1500 < fDistance))
          If ((!GetBdsmFurniture() || !_bIsFurnitureLocked) && \
              CheckLeashInterruptScene())
-            If (GetPlayerTalkingTo())
-               ; Moving the player to her own location will end the conversation.
-               _aPlayer.MoveTo(_aPlayer)
-            EndIf
 
             _aPlayer.MoveTo(_oLeashTarget, 25, 25, 50)
             ; MoveTo enables fast travel.  Disable it again if necessary.
             If (_iBlockFastTravel)
                Game.EnableFastTravel(False)
             EndIf
-            Log("You feel a great tug on your leash as you are pulled along.", DL_CRIT, S_MOD)
+            Log("You feel a great tug on your leash as you are pulled along.", DL_CRIT, \
+                DC_LEASH)
          EndIf
       ElseIf (_iLeashLength < fDistance)
          ; Only try to drag the player if she is not busy or we can interrupt the scene.
          If (CheckLeashInterruptScene())
             If (!YankLeash())
-               Log("You feel a jerk on your leash as you are pulled roughly.", DL_CRIT, S_MOD)
+               Log("You feel a jerk on your leash as you are pulled roughly.", DL_CRIT, \
+                   DC_LEASH)
             EndIf
          EndIf
       EndIf
@@ -659,7 +786,7 @@ Function PerformOnUpdate()
    If (_bFlagCheckNaked)
       _bFlagCheckNaked = False
 
-      Log("Checking Naked", DL_TRACE, S_MOD)
+      Log("Checking Naked", DL_TRACE, DC_STATUS)
 
       Int iOldStatus = _iNakedStatus
       CheckIsNaked()
@@ -677,13 +804,13 @@ Function PerformOnUpdate()
 
          ; Report the player's status.
          If (NS_NAKED == _iNakedStatus)
-            Log("You are now naked.", DL_INFO, S_MOD)
+            Log("You are now naked.", DL_INFO, DC_STATUS)
          ElseIf (NS_BOTH_PARTIAL > _iNakedStatus)
-            Log("You are (partially) naked.", DL_INFO, S_MOD)
+            Log("You are (partially) naked.", DL_INFO, DC_STATUS)
          ElseIf (NS_BOTH_PARTIAL == _iNakedStatus)
-            Log("You are seductively dressed.", DL_INFO, S_MOD)
+            Log("You are seductively dressed.", DL_INFO, DC_STATUS)
          Else
-            Log("You are now fully dressed.", DL_INFO, S_MOD)
+            Log("You are now fully dressed.", DL_INFO, DC_STATUS)
          EndIf
       EndIf
    EndIf
@@ -691,15 +818,15 @@ Function PerformOnUpdate()
    If (_bFlagCheckCollared)
       _bFlagCheckCollared = False
 
-      Log("Checking Collared", DL_TRACE, S_MOD)
+      Log("Checking Collared", DL_TRACE, DC_STATUS)
 
-      Bool bOldStatus = _bIsCollared
-      _bIsCollared = False
+      Bool bOldStatus = _bIsPlayerCollared
+      _bIsPlayerCollared = False
       If (_aPlayer.WornHasKeyword(_oKeywordZadCollar) || \
           _aPlayer.WornHasKeyword(_oKeywordZbfWornCollar))
-         _bIsCollared = True
+         _bIsPlayerCollared = True
       EndIf
-      ReportStatus("Collared", _bIsCollared, bOldStatus)
+      ReportStatus("Collared", _bIsPlayerCollared, bOldStatus)
    EndIf
 
    ; Sometimes ZBF restraints have wrist cuffs and ankle cuff combinations.  Keep track of the
@@ -712,32 +839,32 @@ Function PerformOnUpdate()
    If (_bFlagCheckArmLocked)
       _bFlagCheckArmLocked = False
 
-      Log("Checking Arms Locked", DL_TRACE, S_MOD)
+      Log("Checking Arms Locked", DL_TRACE, DC_STATUS)
 
-      Bool bOldStatus = _bIsArmLocked
-      _bIsArmLocked = False
+      Bool bOldStatus = _bIsPlayerArmLocked
+      _bIsPlayerArmLocked = False
       If (bWristCuffsKeyword)
-         _bIsArmLocked = True
+         _bIsPlayerArmLocked = True
       ElseIf (_aPlayer.WornHasKeyword(_oKeywordZadArmBinder) || \
               _aPlayer.WornHasKeyword(_oKeywordZadYoke) || \
               _aPlayer.WornHasKeyword(_oKeywordZbfWornYoke))
-         _bIsArmLocked = True
+         _bIsPlayerArmLocked = True
       EndIf
-      ReportStatus("Arm Locked", _bIsArmLocked, bOldStatus)
+      ReportStatus("Arm Locked", _bIsPlayerArmLocked, bOldStatus)
    EndIf
 
    If (_bFlagCheckGagged)
       _bFlagCheckGagged = False
 
-      Log("Checking Gagged", DL_TRACE, S_MOD)
+      Log("Checking Gagged", DL_TRACE, DC_STATUS)
 
-      Bool bOldStatus = _bIsGagged
-      _bIsGagged = False
+      Bool bOldStatus = _bIsPlayerGagged
+      _bIsPlayerGagged = False
       If (_aPlayer.WornHasKeyword(_oKeywordZadGag) || \
           _aPlayer.WornHasKeyword(_oKeywordZbfWornGag))
-         _bIsGagged = True
+         _bIsPlayerGagged = True
       EndIf
-      ReportStatus("Gagged", _bIsGagged, bOldStatus)
+      ReportStatus("Gagged", _bIsPlayerGagged, bOldStatus)
    EndIf
 
    ; The Leg Cuffs Keyword is used in Hobbled and other restraints.  Keep track of it.
@@ -749,7 +876,7 @@ Function PerformOnUpdate()
    If (_bFlagCheckHobbled)
       _bFlagCheckHobbled = False
 
-      Log("Checking Hobbled", DL_TRACE, S_MOD)
+      Log("Checking Hobbled", DL_TRACE, DC_STATUS)
 
       ; Note on the check below:
       ; Sometimes ZBF restraints have wrist cuffs and ankle cuff combinations.
@@ -759,27 +886,27 @@ Function PerformOnUpdate()
       ; Note: ZBF Worn Ankles can be true even for basic non-connected leg cuffs.
       ; _aPlayer.WornHasKeyword(_oKeywordZbfWornAnkles) || \
 
-      Bool bOldStatus = _bIsHobbled
-      _bIsHobbled = False
+      Bool bOldStatus = _bIsPlayerHobbled
+      _bIsPlayerHobbled = False
       If (_aPlayer.WornHasKeyword(_oKeywordZadBoots) || \
           (bWristCuffsKeyword && (_aPlayer.WornHasKeyword(_oKeywordZbfEffectNoMove) || \
                                   _aPlayer.WornHasKeyword(_oKeywordZbfEffectSlowMove))) || \
           (bLegCuffsKeyword && (_aPlayer.WornHasKeyword(_oKeywordZbfEffectNoMove) || \
                                 _aPlayer.WornHasKeyword(_oKeywordZbfEffectNoSprint) || \
                                 _aPlayer.WornHasKeyword(_oKeywordZbfEffectSlowMove))))
-         _bIsHobbled = True
+         _bIsPlayerHobbled = True
       EndIf
-      ReportStatus("Hobbled", _bIsHobbled, bOldStatus)
+      ReportStatus("Hobbled", _bIsPlayerHobbled, bOldStatus)
 
       ; If the player is now hobbled and it should block footwear remove that now.
-      If (_bIsHobbled && !bOldStatus && _qMcm.bBlockHobble && _qMcm.bBlockShoes)
+      If (_bIsPlayerHobbled && !bOldStatus && _qMcm.bBlockHobble && _qMcm.bBlockShoes)
          Armor oFootwear = _aPlayer.GetWornForm(CS_FEET) As Armor
 
          If (IT_COVERINGS == GetItemType(oFootwear))
             ; Make sure the footwear is not on the exception list and remove it.
             If (-1 == _qMcm.aiBlockExceptionsHobble.Find(oFootwear.GetFormID()))
                Log("Your hobble is interfering with your " + oFootwear.GetName() + ".", \
-                   DL_CRIT, S_MOD)
+                   DL_CRIT, DC_EQUIP)
                If (50 > _iNumItemsUnequipped)
                   _aPlayer.UnequipItem(oFootwear, abSilent=True)
                   _iNumItemsUnequipped += 1
@@ -792,7 +919,7 @@ Function PerformOnUpdate()
    If (_bFlagCheckLockedUp)
       _bFlagCheckLockedUp = False
 
-      Log("Checking Locked Up", DL_TRACE, S_MOD)
+      Log("Checking Locked Up", DL_TRACE, DC_STATUS)
 
       Int iOldStatus = _iNumOtherRestraints
       _bHiddenRestraints = False
@@ -805,9 +932,9 @@ Function PerformOnUpdate()
          _iNumOtherRestraints += 1
       EndIf
       ; Belted should really be a separate check but leave it here until we do that.
-      _bIsBelted = (_aPlayer.WornHasKeyword(_oKeywordZadBelt) || \
-                    _aPlayer.WornHasKeyword(_oKeywordZbfWornBelt))
-      If (_bIsBelted || _aPlayer.WornHasKeyword(_oKeywordZadVagina))
+      _bIsPlayerBelted = (_aPlayer.WornHasKeyword(_oKeywordZadBelt) || \
+                          _aPlayer.WornHasKeyword(_oKeywordZbfWornBelt))
+      If (_bIsPlayerBelted || _aPlayer.WornHasKeyword(_oKeywordZadVagina))
          If (_bWaistCovered)
             _bHiddenRestraints = True
          Else
@@ -842,7 +969,7 @@ Function PerformOnUpdate()
             _iNumOtherRestraints += 1
          EndIf
       EndIf
-      If (bLegCuffsKeyword && !_bIsHobbled)
+      If (bLegCuffsKeyword && !_bIsPlayerHobbled)
          szMessage += "Legs "
          _iNumOtherRestraints += 1
       EndIf
@@ -851,8 +978,8 @@ Function PerformOnUpdate()
          _iNumOtherRestraints += 1
       EndIf
       If (_iNumOtherRestraints != iOldStatus)
-         Log("Wearing " + _iNumOtherRestraints + " other restraints.", DL_INFO, S_MOD)
-         Log(szMessage, DL_DEBUG, S_MOD)
+         Log("Wearing " + _iNumOtherRestraints + " other restraints.", DL_INFO, DC_STATUS)
+         Log(szMessage, DL_DEBUG, DC_STATUS)
       EndIf
    EndIf
 EndFunction
@@ -863,10 +990,11 @@ Event OnUpdate()
    ; If the script has not been initialized do that instead of performing the update.
    If (!_fCurrVer)
       OnPlayerLoadGame()
-   Else
-      PerformOnUpdate()
-      Log("Update Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Return
    EndIf
+
+   PerformOnUpdate()
+   Log("Update Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
 
    ; Register for our next update event.
    ; We are registering for each update individually after the previous processing has
@@ -877,20 +1005,20 @@ EndEvent
 
 ; This is called from the player monitor script when an item equipped event is seen.
 Function ItemEquipped(Form oItem, ObjectReference oReference)
-   Log("Equip Event: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Equip Event: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
 
    Int iType = GetItemType(oItem)
    If (!iType)
-      Log("Equip Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Log("Equip Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
       Return
    EndIf
 
    If (IT_RESTRAINT == iType)
       ; Only check each restraint if the player is not already restrained.
-      _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsCollared,  False)
-      _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsArmLocked, False)
-      _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsGagged,    False)
-      _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsHobbled,   False)
+      _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsPlayerCollared,  False)
+      _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsPlayerArmLocked, False)
+      _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsPlayerGagged,    False)
+      _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsPlayerHobbled,   False)
       ; We always have to check for various "other" restraints.
       _bFlagSet = True
       _bFlagCheckLockedUp  = True
@@ -902,7 +1030,7 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
       ; If we are configured to block clothing check that now.
       ; If the nearby master is assisting the player to dress allow her to dress as normal.
       If (IsAllowed(AP_DRESSING_ASSISTED))
-         Log("Equip Done (Assisted): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+         Log("Equip Done (Assisted): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
          Return
       EndIf
 
@@ -912,28 +1040,28 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
       ; First check if we are in a naked or post rape redress timeout.
       If (_fRapeRedressTimeout)
          If (_fRapeRedressTimeout > Utility.GetCurrentGameTime())
-            Log("You are too exhausted from being raped to dress right now.", DL_CRIT, S_MOD)
+            Log("You are too exhausted from being raped to dress right now.", DL_CRIT, DC_EQUIP)
             _fRapeRedressTimeout = Utility.GetCurrentGameTime() + \
                                    ((_qMcm.iModRapeRedressTimeout As Float) / 1440)
             If (50 > _iNumItemsUnequipped)
                _aPlayer.UnequipItem(oItem, abSilent=True)
                _iNumItemsUnequipped += 1
             EndIf
-            Log("Equip Done (Rape): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+            Log("Equip Done (Rape): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
             Return
          EndIf
          _fRapeRedressTimeout = 0
       EndIf
       If (_fNakedRedressTimeout)
          If (_fNakedRedressTimeout > Utility.GetCurrentGameTime())
-            Log("You tried to dress too fast.  Now you have to start again.", DL_CRIT, S_MOD)
+            Log("You tried to dress too fast.  Now you have to start again.", DL_CRIT, DC_EQUIP)
             _fNakedRedressTimeout = Utility.GetCurrentGameTime() + \
                                     ((_qMcm.iModNakedRedressTimeout As Float) / 1440)
             If (50 > _iNumItemsUnequipped)
                _aPlayer.UnequipItem(oItem, abSilent=True)
                _iNumItemsUnequipped += 1
             EndIf
-            Log("Equip Done (Redress): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+            Log("Equip Done (Redress): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
             Return
          EndIf
          _fNakedRedressTimeout = 0
@@ -943,7 +1071,7 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
       String szBlockedBy = "piercings"
 
       ; Keep track of whether arms or nipples piercings should be block.
-      Bool bBlockArms = (_bIsArmLocked && _qMcm.bBlockArms)
+      Bool bBlockArms = (_bIsPlayerArmLocked && _qMcm.bBlockArms)
       Bool bBlockNipple = (_qMcm.bBlockNipple && \
                            (_aPlayer.WornHasKeyword(_oKeywordZadNipple) || \
                             _aPlayer.WornHasKeyword(_oKeywordZadClamps)))
@@ -966,7 +1094,7 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
       ; Check if waist clothing should be blocked.
       If (!bUnequip)
          ; If this item is on the hobble exception list don't consider it blockable.
-         Bool bBlockHobble = (_bIsHobbled && _qMcm.bBlockHobble)
+         Bool bBlockHobble = (_bIsPlayerHobbled && _qMcm.bBlockHobble)
          If (0 <= _qMcm.aiBlockExceptionsHobble.Find(oItem.GetFormID()))
             bBlockHobble = False
          EndIf
@@ -988,7 +1116,7 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
 
       ; Check if footwear should be blocked.
       If (!bUnequip)
-         If (_bIsHobbled && _qMcm.bBlockHobble && _qMcm.bBlockShoes)
+         If (_bIsPlayerHobbled && _qMcm.bBlockHobble && _qMcm.bBlockShoes)
             bUnequip = _qDfwUtil.IsFeetSlot((oItem As Armor).GetSlotMask())
             szBlockedBy = "hobble"
          EndIf
@@ -996,30 +1124,30 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
 
       If (bUnequip)
          Log("You can't equip \"" + oItem.GetName() + "\" over your " + szBlockedBy + ".", \
-             DL_CRIT, S_MOD)
+             DL_CRIT, DC_EQUIP)
          If (50 > _iNumItemsUnequipped)
             _aPlayer.UnequipItem(oItem, abSilent=True)
             _iNumItemsUnequipped += 1
          EndIf
       EndIf
    EndIf
-   Log("Equip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Equip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
 EndFunction
 
 ; This is called from the player monitor script when an item unequipped event is seen.
 Function ItemUnequipped(Form oItem, ObjectReference oReference)
-   Log("Unequip Event: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Unequip Event: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
    Int iType = GetItemType(oItem)
    If (!iType)
-      Log("Unequip Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Log("Unequip Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
       Return
    EndIf
 
    If (IT_RESTRAINT == iType)
-      _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsCollared,  True)
-      _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsArmLocked, True)
-      _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsGagged,    True)
-      _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsHobbled,   True)
+      _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsPlayerCollared,  True)
+      _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsPlayerArmLocked, True)
+      _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsPlayerGagged,    True)
+      _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsPlayerHobbled,   True)
       If (_iNumOtherRestraints)
          _bFlagSet = True
          _bFlagCheckLockedUp  = True
@@ -1034,14 +1162,14 @@ Function ItemUnequipped(Form oItem, ObjectReference oReference)
          ; The problem is if the item is worn but not the keyword.  Check the keyword now.
          Keyword oDeviousKeyword = GetDeviousKeyword(oItem As Armor)
          If (oDeviousKeyword && !_aPlayer.WornHasKeyword(oDeviousKeyword))
-            Log("Trying Devious Fix...", DL_DEBUG, S_MOD)
+            Log("Trying Devious Fix...", DL_DEBUG, DC_EQUIP)
 
             ; Search the inventory for a "Devious Inventory" item with the same keyword.
             Int iIndex = _aPlayer.GetNumItems() - 1
             While (0 <= iIndex)
                ; Check the item is an inventory item, is equipped and has the right keyword.
                Form oInventoryItem = _aPlayer.GetNthForm(iIndex)
-               If (oInventoryItem.HasKeyword(_oKeywordZadInventoryDevice))
+               If (oInventoryItem && oInventoryItem.HasKeyword(_oKeywordZadInventoryDevice))
                   If (oInventoryItem.HasKeyword(_oKeywordZadInventoryDevice) && \
                       _aPlayer.IsEquipped(oInventoryItem) && \
                       (oDeviousKeyword == _qZadLibs.GetDeviceKeyword(oInventoryItem As Armor)))
@@ -1058,7 +1186,7 @@ Function ItemUnequipped(Form oItem, ObjectReference oReference)
       _bFlagCheckNaked = True
       _bFlagSet = True
    EndIf
-   Log("Unequip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Unequip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
 EndFunction
 
 ; This is called from the player monitor script when an enter bleedout event is seen.
@@ -1086,7 +1214,7 @@ Function OnGetUp(ObjectReference oFurniture)
       _oBdsmFurniture = None
       ; If we previously disabled the player's inventory, release it now.
       If (_bInventoryLocked)
-         _bInventoryLocked = True
+         _bInventoryLocked = False
          ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
          Game.EnablePlayerControls(False, False, False, False, False, True,  False,  False)
       EndIf
@@ -1100,7 +1228,7 @@ Function NearbyActorSeen(Actor aActor)
    If (0 <= iIndex)
       ; Add a log here to debug magic effect script isntances that are becoming stray.
       Log("Nearby Not Registered 0x" + _qDfwUtil.ConvertHexToString(aActor.GetFormId(), 8) + \
-          ": " + aActor.GetDisplayName(), DL_TRACE, S_MOD)
+          ": " + aActor.GetDisplayName(), DL_TRACE, DC_NEARBY)
       Return
    EndIf
 
@@ -1109,7 +1237,7 @@ Function NearbyActorSeen(Actor aActor)
    ;       every nearby actor; however, for now it will help diagnose which magic effect script
    ;       instances are becoming stray.
    Log("Registering Nearby 0x" + _qDfwUtil.ConvertHexToString(aActor.GetFormId(), 8) + ": " + \
-       aActor.GetDisplayName(), DL_TRACE, S_MOD)
+       aActor.GetDisplayName(), DL_TRACE, DC_NEARBY)
 
    ; Perform some basic estimations for flags of this actor.
    Int iFlags = AF_ESTIMATE
@@ -1145,6 +1273,7 @@ Function NearbyActorSeen(Actor aActor)
       iFlags = Math.LogicalOr(AF_SLAVE, iFlags)
    ElseIf (_qZbfSlave.IsSlaver(aActor) || aActor.IsInFaction(_oFactionHydraSlaver) || \
        aActor.IsInFaction(_oFactionHydraCaravanSlaver))
+      Log("Nearby Slaver: " + aActor.GetDisplayName(), DL_DEBUG, DC_NEARBY)
       ; Check if the actor deals in trading slaves.  Check this before bondage items as they can
       ; sometimes be wearing restraints too.
       iFlags = Math.LogicalOr(AF_DOMINANT, iFlags)
@@ -1173,6 +1302,7 @@ Function NearbyActorSeen(Actor aActor)
 
       ; If the actor owns a slave mark Him as a slave owner.
       If (_qZbfSlave.IsMaster(aActor))
+         Log("Nearby Slave Owner: " + aActor.GetDisplayName(), DL_DEBUG, DC_NEARBY)
          iFlags = Math.LogicalOr(AF_OWNER, iFlags)
       EndIf
    EndIf
@@ -1184,7 +1314,7 @@ Function NearbyActorSeen(Actor aActor)
 
       If (_aoNearby.Length != _aiNearbyFlags.Length)
          Log("Nearby Added Wrong: " + _aoNearby.Length + " != " + _aiNearbyFlags.Length, \
-             DL_CRIT, S_MOD)
+             DL_ERROR, DC_NEARBY)
       EndIf
 
       MutexRelease(_iNearbyMutex)
@@ -1216,10 +1346,10 @@ Function NearbyActorSeen(Actor aActor)
          ModEvent.Send(iSlaExposureEvent)
 
          Log(aActor.GetDisplayName() + " not aroused (" + iArousal + ").  Adjusted: " + \
-             fNewArousal, DL_DEBUG, S_MOD)
+             fNewArousal, DL_DEBUG, DC_NEARBY)
       EndIf
    EndIf
-   Log("Nearby Seen Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Nearby Seen Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
 EndFunction
 
 Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender)
@@ -1227,7 +1357,8 @@ Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender
       ObjectReference oFurniture = GetBdsmFurniture()
       If (oFurniture)
          Actor aNearby = GetNearestActor()
-         Log(aNearby.GetDisplayName() + " locks you back up in the device.", DL_CRIT, S_MOD)
+         Log(aNearby.GetDisplayName() + " locks you back up in the device.", DL_CRIT, \
+             DC_GENERAL)
          _qZbfSlaveActions.RestrainInDevice(oFurniture, aNearby, S_MOD)
       EndIf
    EndIf
@@ -1299,9 +1430,9 @@ EndFunction
 Function ReportStatus(String szStatusType, Bool bStatus, Bool bOldStatus)
    ; If the status has changed log that information.
    If (bOldStatus && !bStatus)
-      Log("You are no longer " + szStatusType + ".", DL_INFO, S_MOD)
+      Log("You are no longer " + szStatusType + ".", DL_INFO, DC_STATUS)
    ElseIf (!bOldStatus && bStatus)
-      Log("You are now " + szStatusType + ".", DL_INFO, S_MOD)
+      Log("You are now " + szStatusType + ".", DL_INFO, DC_STATUS)
    EndIf
 EndFunction
 
@@ -1469,7 +1600,7 @@ Bool Function IsWeapon(Weapon oWeapon)
 EndFunction
 
 Function CheckIsNaked(Actor aActor=None)
-   Log("Naked Check: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Naked Check: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
    If (!aActor)
       aActor = _aPlayer
    EndIf
@@ -1482,7 +1613,7 @@ Function CheckIsNaked(Actor aActor=None)
    ; First check the player's body piece.  If one is worn they are not naked.
    Form oWornItem = aActor.GetWornForm(CS_BODY)
    If (oWornItem)
-      Log("Body: \"" + oWornItem.GetName() + "\"", DL_DEBUG, S_MOD)
+      Log("Body: \"" + oWornItem.GetName() + "\"", DL_DEBUG, DC_STATUS)
    EndIf
    If (IT_COVERINGS == GetItemType(oWornItem))
       _iNakedStatus = NS_BOTH_COVERED
@@ -1495,7 +1626,7 @@ Function CheckIsNaked(Actor aActor=None)
          _bChestReduced = True
          _bWaistReduced = True
       EndIf
-      Log("Naked Check Done (Covered): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Log("Naked Check Done (Covered): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
       Return
    EndIf
 
@@ -1506,7 +1637,7 @@ Function CheckIsNaked(Actor aActor=None)
    While (!_bChestCovered && (0 <= iIndex))
       oWornItem = aActor.GetWornForm(_qMcm.aiSettingsSlotsChest[iIndex])
       If (oWornItem)
-         Log("Chest: \"" + oWornItem.GetName() + "\"", DL_DEBUG, S_MOD)
+         Log("Chest: \"" + oWornItem.GetName() + "\"", DL_DEBUG, DC_STATUS)
       EndIf
       If (IT_COVERINGS == GetItemType(oWornItem))
          ; If the clothing is "Naked" from SexLab Aroused consider it naked but reduced.
@@ -1525,7 +1656,7 @@ Function CheckIsNaked(Actor aActor=None)
    While (!_bWaistCovered && (0 <= iIndex))
       oWornItem = aActor.GetWornForm(_qMcm.aiSettingsSlotsWaist[iIndex])
       If (oWornItem)
-         Log("Waist: \"" + oWornItem.GetName() + "\"", DL_DEBUG, S_MOD)
+         Log("Waist: \"" + oWornItem.GetName() + "\"", DL_DEBUG, DC_STATUS)
       EndIf
       If (IT_COVERINGS == GetItemType(oWornItem))
          ; If the clothing is "Naked" from SexLab Aroused consider it naked but reduced.
@@ -1563,7 +1694,7 @@ Function CheckIsNaked(Actor aActor=None)
    Else
       _iNakedStatus = NS_NAKED
    EndIf
-   Log("Naked Check Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Naked Check Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
 EndFunction
 
 Function CleanupNearbyList()
@@ -1571,7 +1702,7 @@ Function CleanupNearbyList()
    If (_fNearbyCleanupTime && (Utility.GetCurrentRealTime() < _fNearbyCleanupTime))
       Return
    EndIf
-   Log("Cleaning Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Cleaning Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
 
    Cell oPlayerCell = _aPlayer.GetParentCell()
    Int iIndex = _aoNearby.Length - 1
@@ -1587,7 +1718,7 @@ Function CleanupNearbyList()
          ;       effect script instances are becoming stray.
          Log("Clear Nearby 0x" + \
              _qDfwUtil.ConvertHexToString(_aoNearby[iIndex].GetFormId(), 8) + ": " + \
-             (_aoNearby[iIndex] As Actor).GetDisplayName(), DL_TRACE, S_MOD)
+             (_aoNearby[iIndex] As Actor).GetDisplayName(), DL_TRACE, DC_NEARBY)
 
          ; This actor is too far from the player.  Remove him from the list.
          If (MutexLock(_iNearbyMutex))
@@ -1596,7 +1727,7 @@ Function CleanupNearbyList()
 
             If (_aoNearby.Length != _aiNearbyFlags.Length)
                Log("Nearby Removed Wrong: " + _aoNearby.Length + " != " + \
-                   _aiNearbyFlags.Length, DL_CRIT, S_MOD)
+                   _aiNearbyFlags.Length, DL_CRIT, DC_NEARBY)
             EndIf
 
             MutexRelease(_iNearbyMutex)
@@ -1609,35 +1740,88 @@ Function CleanupNearbyList()
 
    ; Don't try to clean up the nearby list more than every three seconds.
    _fNearbyCleanupTime = Utility.GetCurrentRealTime() + 3
-   Log("Cleaning Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Cleaning Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+EndFunction
+
+Function RemoveKnownActor(Int iIndex)
+   _aoKnown            = _qDfwUtil.RemoveFormFromArray(_aoKnown,         None, iIndex)
+   _afKnownLastSeen    = _qDfwUtil.RemoveFloatFromArray(_afKnownLastSeen, 0.0, iIndex)
+   _aiKnownSignificant = _qDfwUtil.RemoveIntFromArray(_aiKnownSignificant,  0, iIndex)
+   _aiKnownAnger       = _qDfwUtil.RemoveIntFromArray(_aiKnownAnger,        0, iIndex)
+   _aiKnownConfidence  = _qDfwUtil.RemoveIntFromArray(_aiKnownConfidence,   0, iIndex)
+   _aiKnownDominance   = _qDfwUtil.RemoveIntFromArray(_aiKnownDominance,    0, iIndex)
+   _aiKnownInterest    = _qDfwUtil.RemoveIntFromArray(_aiKnownInterest,     0, iIndex)
+   _aiKnownKindness    = _qDfwUtil.RemoveIntFromArray(_aiKnownKindness,     0, iIndex)
 EndFunction
 
 ; This must be called internally as it requires the known list mutex to be locked!
 Function CleanupKnownList()
-   ; This should be a much more elaborate algorithm but for now just delete the first five
-   ; entries.  The oldest to be put on the list.
-   Int iCount = 5
-   Int iIndexToRemove = _aoKnown.Length - 1 - iCount
-   While (iCount)
-      _aoKnown           = _qDfwUtil.RemoveFormFromArray(_aoKnown, None, iIndexToRemove)
-      _afKnownLastSeen   = _qDfwUtil.RemoveFloatFromArray(_afKnownLastSeen, 0.0, iIndexToRemove)
-      _aiKnownSeenCount  = _qDfwUtil.RemoveIntFromArray(_aiKnownSeenCount,  0,   iIndexToRemove)
-      _aiKnownAnger      = _qDfwUtil.RemoveIntFromArray(_aiKnownAnger,      0,   iIndexToRemove)
-      _aiKnownConfidence = _qDfwUtil.RemoveIntFromArray(_aiKnownConfidence, 0,   iIndexToRemove)
-      _aiKnownDominance  = _qDfwUtil.RemoveIntFromArray(_aiKnownDominance,  0,   iIndexToRemove)
-      _aiKnownInterest   = _qDfwUtil.RemoveIntFromArray(_aiKnownInterest,   0,   iIndexToRemove)
-      iCount -= 1
+   Log("Cleaning Known: " + Utility.GetCurrentRealTime(), DL_CRIT, DC_NEARBY)
+   Float fCurrTime = Utility.GetCurrentGameTime()
+
+   ; On the first pass keep track of the max significance seen.
+   ; We can use this in future passes to keep actors that are interacted with often.
+   Int iMaxSignificance = 0
+
+   ; First remove any NPCs that have not been involved in a significant interaction.
+   Int iIndex = _aoKnown.Length - 1
+   While (iIndex)
+      ; Remove any NPCs over 3 hours old which have not been in a significant encounter.
+      If (!_aiKnownSignificant[iIndex] && ((3 / 24) < (fCurrTime - _afKnownLastSeen[iIndex])))
+         RemoveKnownActor(iIndex)
+      ElseIf (iMaxSignificance < _aiKnownSignificant[iIndex])
+         ; Keep track of the highest significance value seen.
+         If (10 <= (_aiKnownSignificant[iIndex] - iMaxSignificance))
+            ; Put a cap on how much we increase this to try to account for outliers.
+            iMaxSignificance += 10
+         Else
+            iMaxSignificance = _aiKnownSignificant[iIndex]
+         EndIf
+      EndIf
+      iIndex -= 1
    EndWhile
+
+   ; For the next pass start with less significant NPCs and steadily increase it.
+   Int iSignificance = 0
+   While ((iSignificance < iMaxSignificance) && (20 <= _aoKnown.Length))
+      ; While we are still above 20 NPCs remove NPCs who are X days old.
+      Int iDays = 6
+      While (iDays && (20 <= _aoKnown.Length))
+         iIndex = _aoKnown.Length - 1
+         While (iIndex)
+            Float fDeltaTime = fCurrTime - _afKnownLastSeen[iIndex]
+            If ((iDays <= fDeltaTime) && ((iSignificance >= !_aiKnownSignificant[iIndex]) && \
+                                          ((3 / 24) < fDeltaTime)))
+               RemoveKnownActor(iIndex)
+            EndIf
+            iIndex -= 1
+         EndWhile
+         iDays -= 1
+      EndWhile
+
+      ; Increase the significance we are looking for for the next pass.
+      If (5 > (iMaxSignificance - iSignificance))
+         iSignificance += 1
+      ElseIf (10 > (iMaxSignificance - iSignificance))
+         iSignificance += 3
+      Else
+         iSignificance += ((iMaxSignificance - iSignificance) / 2)
+      EndIf
+   EndWhile
+
+   ; Finally continue to remove the oldest NPC until the list is down to 20.
+   While (20 <= _aoKnown.Length)
+      RemoveKnownActor(_aoKnown.Length - 1)
+   EndWhile
+   Log("Cleaning Known Done: " + Utility.GetCurrentRealTime(), DL_CRIT, DC_NEARBY)
 EndFunction
 
-Function Log(String szMessage, Int iLevel=0, String szClass="")
-   If (szClass)
-      szMessage = "[" + szClass + "] " + szMessage
-   EndIf
+Function Log(String szMessage, Int iLevel=0, Int iClass=0)
+   szMessage = "[" + S_MOD + "] " + szMessage
 
    ; Log to console.  Not sure why we would want this.
    ;If (_bLogToConsole)
-   ;   MiscUtil.PrintConsole(msg)
+   ;   MiscUtil.PrintConsole(szMessage)
    ;EndIf
 
    ; Log to the papyrus file.
@@ -1646,7 +1830,7 @@ Function Log(String szMessage, Int iLevel=0, String szClass="")
    EndIf
 
    ; Also log to the Notification area of the screen.
-   If (ilevel <= _qMcm.iLogLevelScreen)
+   If (ilevel <= _aiMcmScreenLogLevel[iClass])
       Debug.Notification(szMessage)
    EndIf
 EndFunction
@@ -1675,6 +1859,38 @@ Function UpdatePollingDistance(Int iNewDistance)
    _oDfwNearbyDetectorSpell.SetNthEffectArea(0, iNewDistance)
 EndFunction
 
+; Returns an array of string information about the last dialogue target.
+; This is inteded to be displayed by the MCM menu for diagnostics information.
+String[] Function GetDialogueTargetInfo()
+   String[] szInfo = New String[25]
+   szInfo[00] = "Actor: " + _aCurrTarget.GetDisplayName()
+   szInfo[01] = "_bIsPlayerBound: " + _bIsPlayerBound
+   szInfo[02] = "_bIsPlayerBoundVisible: " + _bIsPlayerBoundVisible
+   szInfo[03] = "_bIsPlayerArmLocked: " + _bIsPlayerArmLocked
+   szInfo[04] = "_bIsPlayerBelted: " + _bIsPlayerBelted
+   szInfo[05] = "_bIsPlayerCollared: " + _bIsPlayerCollared
+   szInfo[06] = "_bIsPlayerGagged: " + _bIsPlayerGagged
+   szInfo[07] = "_bIsPlayerHobbled: " + _bIsPlayerHobbled
+   szInfo[08] = "_bIsPlayersMaster: " + _bIsPlayersMaster
+   szInfo[09] = "_bIsPlayerFurnitureLocked: " + _bIsPlayerFurnitureLocked
+   szInfo[10] = "_bIsActorSlaver: " + _bIsActorSlaver
+   szInfo[11] = "_bIsActorOwner: " + _bIsActorOwner
+   szInfo[12] = "_bIsActorDominant: " + _bIsActorDominant
+   szInfo[13] = "_bIsActorSubmissive: " + _bIsActorSubmissive
+   szInfo[14] = "_bIsActorSlave: " + _bIsActorSlave
+   szInfo[15] = "_bIsActorLeashHolder: " + _bIsActorLeashHolder
+   szInfo[16] = "_iActorAnger: " + _iActorAnger
+   szInfo[17] = "_iActorConfidence: " + _iActorConfidence
+   szInfo[18] = "_iActorDominance: " + _iActorDominance
+   szInfo[19] = "_iActorInterest: " + _iActorInterest
+   szInfo[20] = "_iActorKindness: " + _iActorKindness
+   szInfo[21] = "_iWillingnessToHelp: " + _iWillingnessToHelp
+   szInfo[22] = "_iNakedLevel: " + _iNakedLevel
+   szInfo[23] = "_fActorDistance: " + _fActorDistance
+   szInfo[24] = "_fMasterDistance: " + _fMasterDistance
+   Return szInfo
+EndFunction
+
 Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bool bOverride)
    If (!_aMasterClose || bOverride)
       Actor aOldMaster = _aMasterClose
@@ -1684,7 +1900,7 @@ Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bo
       _iPermissionsClose = iPermissions
       If (aOldMaster)
          Log("Overriding " + aOldMaster.GetDisplayName() + " (" + szOldMod + ")", \
-             DL_CRIT, S_MOD)
+             DL_INFO, DC_MASTER)
          ; If we were overriding a master send out a mod event to notify the old mod.
          Int iModEvent = ModEvent.Create("DFW_NewMaster")
          If (iModEvent)
@@ -1695,7 +1911,7 @@ Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bo
                Utility.Wait(0.1)
             Else
                Log("Failed to send Event DFW_NewMaster(" + szOldMod + ", " + \
-                   aOldMaster.GetDisplayName() + ")", DL_CRIT, S_MOD)
+                   aOldMaster.GetDisplayName() + ")", DL_ERROR, DC_MASTER)
             EndIf
          EndIf
          Return WARNING
@@ -1703,7 +1919,7 @@ Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bo
       Return SUCCESS
    EndIf
    Log("Existing Master " + _aMasterClose.GetDisplayName() + " (" + _aMasterModClose + ")", \
-       DL_CRIT, S_MOD)
+       DL_ERROR, DC_MASTER)
    Return FAIL
 EndFunction
 
@@ -1716,13 +1932,13 @@ Int Function SetMasterDistant(Actor aNewMaster, Int iPermissions, String szMod, 
       _iPermissionsDistant = iPermissions
       If (aOldMaster)
          Log("Overriding " + aOldMaster.GetDisplayName() + " (" + szOldMod + ")", \
-             DL_CRIT, S_MOD)
+             DL_INFO, DC_MASTER)
          Return WARNING
       EndIf
       Return SUCCESS
    EndIf
    Log("Existing Master " + _aMasterDistant.GetDisplayName() + " (" + _aMasterModDistant \
-       + ")", DL_CRIT, S_MOD)
+       + ")", DL_ERROR, DC_MASTER)
    Return FAIL
 EndFunction
 
@@ -1732,13 +1948,49 @@ EndFunction
 ;***********************************************************************************************
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; Basic API Documentation:
+;          --- General Functions ---
 ;          String GetModVersion()
+;            Bool IsPlayerCriticallyBusy(Bool bIncludeBleedout)
+;             Int SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs)
+;                 SceneDone(String szSceneName)
+;          String GetCurrentScene()
+;                 BlockHealthRegen()
+;                 RestoreHealthRegen()
+;                 BlockMagickaRegen()
+;                 RestoreMagickaRegen()
+;                 DisableMagicka(Bool bDisable)
+;                 BlockStaminaRegen()
+;                 RestoreStaminaRegen()
+;                 DisableStamina(Bool bDisable)
+;                 BlockFastTravel()
+;                 RestoreFastTravel()
+;                 BlockMovement()
+;                 RestoreMovement()
+;                 BlockFighting()
+;                 RestoreFighting()
+;                 BlockCameraSwitch()
+;                 RestoreCameraSwitch()
+;                 BlockLooking()
+;                 RestoreLooking()
+;                 BlockSneaking()
+;                 RestoreSneaking()
+;                 BlockMenu()
+;                 RestoreMenu()
+;                 BlockActivate()
+;                 RestoreActivate()
+;                 BlockJournal()
+;                 RestoreJournal()
+;          --- Master ---
 ;           Actor GetMaster(Int iMasterDistance, Int iInstance)
 ;          String GetMasterMod(Int iMasterDistance, Int iInstance)
 ;             Int SetMaster(Actor aNewMaster, String szMod, Int iPermissions,
 ;                           Int iMasterDistance, Bool bOverride)
 ;             Int ClearMaster(Actor aMaster, Bool bEscaped)
 ;             Int ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant, Bool bOverride)
+;                 AddPermission(Actor aMaster, Int iPermissionMask)
+;                 RemovePermission(Actor aMaster, Int iPermissionMask)
+;            Bool IsAllowed(Int iAction)
+;          --- Player Status ---
 ;             Int GetNakedLevel()
 ;            Bool IsPlayerBound(Bool bIncludeHidden, Bool bOnlyLocked)
 ;            Bool IsPlayerArmLocked()
@@ -1748,36 +2000,36 @@ EndFunction
 ;            Bool IsPlayerHobbled()
 ; ObjectReference GetBdsmFurniture()
 ;                 SetBdsmFurnitureLocked(Bool bLocked)
+;            Bool IsBdsmFurnitureLocked()
 ;             Int GetVulnerability(Actor aActor)
+;             Int GetWeaponLevel()
+;          --- Nearby Actors ---
 ;          Form[] GetNearbyActorList(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
 ;           Int[] GetNearbyActorFlags()
 ;           Actor GetRandomActor(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
 ;           Actor GetNearestActor(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
 ;            Bool IsActorNearby(Actor aActor)
 ;           Actor GetPlayerTalkingTo()
+;          --- Leash ---
 ;                 SetLeashTarget(ObjectReference oLeashTarget)
 ;                 SetLeashLength(Int iLength)
 ;                 YankLeash()
-;            Bool IsPlayerCriticallyBusy(Bool bIncludeBleedout)
-;                 BlockHealthRegen()
-;                 RestoreHealthRegen()
-;                 BlockMagickaRegen()
-;                 RestoreMagickaRegen()
-;                 DisableMagicka(Bool bDisable)
-;                 BlockStaminaRegen()
-;                 RestoreStaminaRegen()
-;                 DisableStamina(Bool bDisable)
-;            Bool IsAllowed(Int iAction)
-;                 AddPermission(Actor aMaster, Int iPermissionMask)
-;                 RemovePermission(Actor aMaster, Int iPermissionMask)
-;             Int GetActorAnger(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
-;             Int IncActorAnger(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
-;             Int GetActorConfidence(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
-;             Int IncActorConfidence(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
-;             Int GetActorDominance(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
-;             Int IncActorDominance(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
-;             Int GetActorInterest(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
-;             Int IncActorInterest(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded)
+;             Int YankLeashWait(Int iTimeoutMs)
+;          --- NPC Disposition ---
+;             Int GetActorAnger(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int IncActorAnger(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int GetActorConfidence(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int IncActorConfidence(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int GetActorDominance(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int IncActorDominance(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int GetActorInterest(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int IncActorInterest(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int GetActorKindness(Actor aActor, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int IncActorKindness(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue, Bool bCreateAsNeeded, Bool bSignificant)
+;             Int GetActorSignificance(Actor aActor)
+;                 PrepareActorDialogue(Actor aActor)
+;                 TemporarilyPauseDialogueTargets(Int iSeconds)
+;          --- Mod Events ---
 ;        ModEvent DFW_NewMaster(String szOldMod, Actor aOldMaster)
 ;                 *** Warning: The following event is triggered often.  Handling it should be fast! ***
 ;        ModEvent DFW_NearbyActor(Int iFlags, Actor aActor)
@@ -1786,7 +2038,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.08"
+   Return "1.09"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -1878,7 +2130,7 @@ Function DisableMagicka(Bool bDisable=True)
    If (bDisable)
       ; If this is the first mod to disable magica disable it now.
       If (0 == _iDisableMagicka)
-         _aPlayer.SetActorValue("MagickaRate", 0)
+         _aPlayer.DamageActorValue("MagickaRate", _aPlayer.GetActorValue("MagickaRate"))
          _aPlayer.DamageActorValue("Magicka", _aPlayer.GetActorValue("Magicka"))
       EndIf
 
@@ -1919,7 +2171,7 @@ Function DisableStamina(Bool bDisable=True)
    If (bDisable)
       ; If this is the first mod to disable magica disable it now.
       If (0 == _iDisableStamina)
-         _aPlayer.SetActorValue("StaminaRate", 0)
+         _aPlayer.DamageActorValue("StaminaRate", _aPlayer.GetActorValue("StaminaRate"))
          _aPlayer.DamageActorValue("Stamina", _aPlayer.GetActorValue("Stamina"))
       EndIf
 
@@ -1930,7 +2182,7 @@ Function DisableStamina(Bool bDisable=True)
 
    ; If no more mods have regeneration blocked restore it completely.
    If (0 == _iDisableStamina)
-      _aPlayer.RestoreActorValue("MagickaRate", 10000)
+      _aPlayer.RestoreActorValue("StaminaRate", 10000)
       ; If some mods have regeneration blocked dampen it.
       If (_iBlockStaminaRegen)
          _aPlayer.DamageActorValue("StaminaRate", _aPlayer.GetActorValue("StaminaRate") * 0.99)
@@ -2149,7 +2401,7 @@ Int Function SetMaster(Actor aNewMaster, String szMod, Int iPermissions, \
    If (aNewMaster)
       szName = aNewMaster.GetDisplayName()
    EndIf
-   Log("New Master [" + szMod + "]-" + iMasterDistance + ": " + szName, DL_INFO, S_MOD)
+   Log("New Master [" + szMod + "]-" + iMasterDistance + ": " + szName, DL_INFO, DC_MASTER)
 
    ; If a distant master is specified set our local "distant master" variable.
    Int iStatus
@@ -2172,7 +2424,7 @@ Int Function ClearMaster(Actor aMaster, Bool bEscaped=False)
    If (aMaster)
       szName = aMaster.GetDisplayName()
    EndIf
-   Log("Clearing Master: " + szName, DL_INFO, S_MOD)
+   Log("Clearing Master: " + szName, DL_INFO, DC_MASTER)
 
    ; Clear the Master with the ZAZ Animation Pack as well.
    aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionMaster)
@@ -2205,18 +2457,18 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
    If (aMaster)
       szName = aMaster.GetDisplayName()
    EndIf
-   Log("Changing Master Distance: " + szName, DL_INFO, S_MOD)
+   Log("Changing Master Distance: " + szName, DL_INFO, DC_MASTER)
 
    If (bMoveToDistant)
       ; If the specified Master is not close we can't move him to a distant master.
       If (_aMasterClose != aMaster)
          If (_aMasterDistant != aMaster)
             Log("Current Master differs " + _aMasterClose.GetDisplayName() + " (" + \
-                _aMasterModClose + ")", DL_ERROR, S_MOD)
+                _aMasterModClose + ")", DL_ERROR, DC_MASTER)
             Return FAIL
          EndIf
          ; It is only a warning if the specified Master is already distant.
-         Log("Already Distant.", DL_DEBUG, S_MOD)
+         Log("Already Distant.", DL_DEBUG, DC_MASTER)
          Return WARNING
       EndIf
 
@@ -2232,11 +2484,11 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
    If (_aMasterDistant != aMaster)
       If (_aMasterClose != aMaster)
          Log("Current Master differs " + _aMasterDistant.GetDisplayName() + " (" + \
-             _aMasterModDistant + ")", DL_ERROR, S_MOD)
+             _aMasterModDistant + ")", DL_ERROR, DC_MASTER)
          Return FAIL
       EndIf
       ; It is only a warning if the specified Master is already close.
-      Log("Already Close.", DL_DEBUG, S_MOD)
+      Log("Already Close.", DL_DEBUG, DC_MASTER)
       Return WARNING
    EndIf
 
@@ -2286,8 +2538,8 @@ EndFunction
 
 ; Note: Currently bOnlyLocked is not supported.
 Bool Function IsPlayerBound(Bool bIncludeHidden=False, Bool bOnlyLocked=False)
-   If (_bIsCollared || _bIsArmLocked        || _bIsGagged || \
-       _bIsHobbled  || _iNumOtherRestraints || \
+   If (_bIsPlayerCollared || _bIsPlayerArmLocked  || _bIsPlayerGagged || \
+       _bIsPlayerHobbled  || _iNumOtherRestraints || \
        (_bHiddenRestraints && bIncludeHidden))
       Return True
    EndIf
@@ -2295,23 +2547,23 @@ Bool Function IsPlayerBound(Bool bIncludeHidden=False, Bool bOnlyLocked=False)
 EndFunction
 
 Bool Function IsPlayerArmLocked()
-   Return _bIsArmLocked
+   Return _bIsPlayerArmLocked
 EndFunction
 
 Bool Function IsPlayerBelted()
-   Return _bIsBelted
+   Return _bIsPlayerBelted
 EndFunction
 
 Bool Function IsPlayerCollared()
-   Return _bIsCollared
+   Return _bIsPlayerCollared
 EndFunction
 
 Bool Function IsPlayerGagged()
-   Return _bIsGagged
+   Return _bIsPlayerGagged
 EndFunction
 
 Bool Function IsPlayerHobbled()
-   Return _bIsHobbled
+   Return _bIsPlayerHobbled
 EndFunction
 
 ; The DFW uses OnSit() and OnGetUp() events to keep track of _oBdsmFurniture.  There are some
@@ -2351,7 +2603,7 @@ EndFunction
 
 ; Never returns more than 100.
 Int Function GetVulnerability(Actor aActor=None)
-   Log("Get Vulnerability: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Vulnerability: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
    If (!aActor)
       aActor = _aPlayer
    EndIf
@@ -2374,17 +2626,17 @@ Int Function GetVulnerability(Actor aActor=None)
          ; Both slots are worn but reduced.
          iVulnerability += (_qMcm.iVulnerabilityNude * _qMcm.iVulnerabilityNakedReduce / 100)
       EndIf
-      If (_bIsCollared)
+      If (_bIsPlayerCollared)
          iVulnerability += _qMcm.iVulnerabilityCollar
       EndIf
-      If (_bIsArmLocked)
+      If (_bIsPlayerArmLocked)
          iVulnerability += _qMcm.iVulnerabilityBinder
       EndIf
-      If (_bIsGagged)
+      If (_bIsPlayerGagged)
          iVulnerability += _qMcm.iVulnerabilityGagged
       EndIf
       Int iNumRestraints = _iNumOtherRestraints
-      If (_bIsHobbled)
+      If (_bIsPlayerHobbled)
          iNumRestraints += 1
       EndIf
       iVulnerability += (iNumRestraints * _qMcm.iVulnerabilityRestraints)
@@ -2395,7 +2647,7 @@ Int Function GetVulnerability(Actor aActor=None)
          iVulnerability += _qMcm.iVulnerabilityNight
       EndIf
    Else
-      Log("Vulnerability for NPCs not implemented.", DL_INFO, S_MOD)
+      Log("Vulnerability for NPCs not implemented.", DL_ERROR, DC_STATUS)
    EndIf
 
    ; Todo: Make BDSM furniture MCM configurable.
@@ -2403,10 +2655,12 @@ Int Function GetVulnerability(Actor aActor=None)
       iVulnerability += _qMcm.iVulnerabilityFurniture
    EndIf
 
-   Log("Vulnerability: " + iVulnerability, DL_DEBUG, S_MOD)
+   Log("Vulnerability: " + iVulnerability, DL_DEBUG, DC_STATUS)
    If (100 < iVulnerability)
-      Return 100
+      iVulnerability = 100
    EndIf
+   ; Set the condition variable so quest dialogues have access to how vulnerble the player is.
+   _iVulnerability = iVulnerability
    Return iVulnerability
 EndFunction
 
@@ -2419,14 +2673,14 @@ Int Function GetWeaponLevel()
    Weapon oWeaponRight = _aPlayer.GetEquippedWeapon()
    If (IsWeapon(oWeaponRight))
       Float fSkill = _aPlayer.GetActorValue(oWeaponRight.GetSkill())
-;      Log("W-R: E(" + oWeaponRight.GetEnchantmentValue() + ") D(" + oWeaponRight.GetBaseDamage() + ") " + oWeaponRight.GetSkill() + "(" + fSkill + ")", DL_CRIT, S_MOD)
+;      Log("W-R: E(" + oWeaponRight.GetEnchantmentValue() + ") D(" + oWeaponRight.GetBaseDamage() + ") " + oWeaponRight.GetSkill() + "(" + fSkill + ")", DL_CRIT, DC_STATUS)
       fRightHand = ((25 As Float) * (oWeaponRight.GetBaseDamage() * fSkill / 10) / (_aPlayer.GetLevel() * 2))
    EndIf
 
    Weapon oWeaponLeft = _aPlayer.GetEquippedWeapon(True)
    If (IsWeapon(oWeaponLeft))
       Float fSkill = _aPlayer.GetActorValue(oWeaponLeft.GetSkill())
-;      Log("W-R: E(" + oWeaponLeft.GetEnchantmentValue() + ") D(" + oWeaponLeft.GetBaseDamage() + ") " + oWeaponLeft.GetSkill() + "(" + fSkill + ")", DL_CRIT, S_MOD)
+;      Log("W-R: E(" + oWeaponLeft.GetEnchantmentValue() + ") D(" + oWeaponLeft.GetBaseDamage() + ") " + oWeaponLeft.GetSkill() + "(" + fSkill + ")", DL_CRIT, DC_STATUS)
       fLeftHand = ((25 As Float) * (oWeaponLeft.GetBaseDamage() * fSkill / 10) / (_aPlayer.GetLevel() * 2))
    EndIf
 
@@ -2442,12 +2696,12 @@ Int Function GetWeaponLevel()
          iTotalEffects -= 1
       EndWhile
 
-;      Log("Shl: E(" + fTotalMagnitude + ") A(" + oShield.GetArmorRating() + ") S(" + _aPlayer.GetActorValue("Block") + ")", DL_CRIT, S_MOD)
+;      Log("Shl: E(" + fTotalMagnitude + ") A(" + oShield.GetArmorRating() + ") S(" + _aPlayer.GetActorValue("Block") + ")", DL_CRIT, DC_STATUS)
       fTotalValue += ((10 As Float) * oShield.GetArmorRating() / (_aPlayer.GetLevel() * 2))
       fTotalValue += ((15 As Float) * _aPlayer.GetActorValue("Block") / (_aPlayer.GetLevel() * 2))
    EndIf
 ;   If (fTotalValue)
-;      Log("Weapon Level: " + fLeftHand + " + " + fRightHand + " = " + fTotalValue, DL_CRIT, S_MOD)
+;      Log("Weapon Level: " + fLeftHand + " + " + fRightHand + " = " + fTotalValue, DL_CRIT, DC_STATUS)
 ;   EndIf
    Return (fTotalValue As Int)
 EndFunction
@@ -2459,7 +2713,7 @@ EndFunction
 ; New actors are excluded by default.
 Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, \
                                    Int iExcludeFlags=0)
-   Log("Get Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
    ; Clean up the actor list before we return elements from it.
    ; Note: The cleanup has it's own throttle mechanism preventing it from running all the time.
    CleanupNearbyList()
@@ -2467,7 +2721,7 @@ Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, 
    ; If there is no filtering just return the known list.
    If (!iIncludeFlags && !iExcludeFlags && !fMaxDistance)
       _aiRecentFlags = _aiNearbyFlags
-      Log("Get Nearby Done (Simple): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Log("Get Nearby Done (Simple): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
       Return _aoNearby
    EndIf
 
@@ -2499,7 +2753,7 @@ Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, 
    ; Fill in the flags from the recent GetNearbyActorsList() before returning.  See note above.
    _aiRecentFlags = aiTempFlags
 
-   Log("Get Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
    Return aoSubList
 EndFunction
 
@@ -2513,24 +2767,24 @@ Int[] Function GetNearbyActorFlags()
 EndFunction
 
 Actor Function GetRandomActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
-   Log("Get Random: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Random: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
    Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
    Int iCount = aoNearbyList.Length
    If (iCount)
       Int iRandomIndex = Utility.RandomInt(0, iCount - 1)
-      Log("Get Random Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Log("Get Random Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
       Return (aoNearbyList[iRandomIndex] As Actor)
    EndIf
-   Log("Get Random Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Random Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
    Return None
 EndFunction
 
 Actor Function GetNearestActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
-   Log("Get Nearest: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Nearest: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
    Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
    Int iIndex = aoNearbyList.Length - 1
    If (0 > iIndex)
-      Log("Get Nearest Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+      Log("Get Nearest Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
       Return None
    EndIf
 
@@ -2546,7 +2800,7 @@ Actor Function GetNearestActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int 
          aNearest = aCurrent
       EndIf
    EndWhile
-   Log("Get Nearest Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Nearest Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
    Return aNearest
 EndFunction
 
@@ -2556,17 +2810,17 @@ Bool Function IsActorNearby(Actor aActor)
 EndFunction
 
 Actor Function GetPlayerTalkingTo()
-   Log("Get Talking: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Talking: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
    Int iIndex = _aoNearby.Length - 1
    While (0 <= iIndex)
       Actor aActor = (_aoNearby[iIndex] As Actor)
       If (aActor.IsInDialogueWithPlayer())
-         Log("Get Talking Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+         Log("Get Talking Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
          Return aActor
       EndIf
       iIndex -= 1
    EndWhile
-   Log("Get Talking Done: " + Utility.GetCurrentRealTime(), DL_TRACE, S_MOD)
+   Log("Get Talking Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
    Return None
 EndFunction
 
@@ -2583,9 +2837,10 @@ Function SetLeashLength(Int iLength)
 EndFunction
 
 Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
-                       Bool bInterruptScene=True)
+                       Bool bInterruptScene=True, Bool bInterruptLeashTarget=False)
    ; Use a simplified mutex to make sure the leash isn't yanked twice at the same time.
-   If (_bYankingLeash)
+   ; Also fail the request if there is no current leash target.
+   If (_bYankingLeash || !_oLeashTarget)
       Return FAIL
    EndIf
    _bYankingLeash = True
@@ -2597,7 +2852,15 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
       Return WARNING
    EndIf
 
+   ; If the player is in conversation with the leash target don't yank the leash.
+   ; It would interrupt the conversation.
+   Actor aLeashTarget = (_oLeashTarget As Actor)
    Actor aPlayerTalkingTo = GetPlayerTalkingTo()
+   If (!bInterruptLeashTarget && (aLeashTarget == aPlayerTalkingTo))
+      _bYankingLeash = False
+      Return WARNING
+   EndIf
+
    If (aPlayerTalkingTo && (aPlayerTalkingTo != _oLeashTarget))
       ; Moving the player to her own location will end the conversation.
       _aPlayer.MoveTo(_aPlayer)
@@ -2608,7 +2871,6 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
    EndIf
 
    ; Keep track of whether there are movement issues with the leash (player hobbled, etc.).
-   Actor aLeashTarget = (_oLeashTarget As Actor)
    Bool bMovementIssues = (IsActor(_oLeashTarget) && \
                            (aLeashTarget.IsRunning() || aLeashTarget.IsSprinting() || \
                             _aPlayer.WornHasKeyword(_oKeywordZbfEffectNoMove) || \
@@ -2653,7 +2915,6 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
       _qDfwUtil.TeleportToward(_oLeashTarget, 10)
       Utility.Wait(0.25)
       _aPlayer.StopTranslation()
-      _aPlayer.SetMotionType(7)
       _aPlayer.PlayIdle(_oIdleStop_Loose)
 
       ; Reset the player's damage resistance.
@@ -2703,11 +2964,11 @@ EndFunction
 
 ;----------------------------------------------------------------------------------------------
 ; API: NPC Disposition
-Int Function GetActorAnger(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+Int Function GetActorAnger(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
    Return IncActorAnger(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
 EndFunction
 
-Int Function IncActorAnger(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+Int Function IncActorAnger(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
    Float fCurrTime = Utility.GetCurrentGameTime()
    Int iValue = 50
    If (MutexLock(_iKnownMutex))
@@ -2723,20 +2984,24 @@ Int Function IncActorAnger(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxV
 
             _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
             _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
-            _aiKnownSeenCount  = _qDfwUtil.AddIntToArray(_aiKnownSeenCount,  1,         True)
             _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      iValue,    True)
             _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, -1,        True)
             _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  -1,        True)
             _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   -1,        True)
+            _aiKnownKindness   = _qDfwUtil.AddIntToArray(_aiKnownKindness,   -1,        True)
+            If (bSignificant)
+               _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, 1, True)
+            EndIf
          EndIf
       Else
-         ; Only update the last seen time if 30 game minutes have passed since the last check.
-         If (fCurrTime > _afKnownLastSeen[iIndex] + (30 / 60 / 24))
-            _aiKnownSeenCount[iIndex] = _aiKnownSeenCount[iIndex] + 1
-            ; Only update the last seen time if 30 minutes have passed to avoid constantly
-            ; updating the last seen time and never updating the last seen count.
-            _afKnownLastSeen[iIndex]  = fCurrTime
+         ; If this is a significant interaction make a note of it.
+         If (bSignificant)
+            _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, \
+                                                          _aiKnownSignificant[iIndex] + 1, True)
          EndIf
+
+         ; Keep track of when this NPC was last seen.
+         _afKnownLastSeen[iIndex]  = fCurrTime
 
          ; Keep track of the disposition value to be returned.
          iValue = _aiKnownAnger[iIndex]
@@ -2764,11 +3029,11 @@ Int Function IncActorAnger(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxV
    Return iValue
 EndFunction
 
-Int Function GetActorConfidence(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+Int Function GetActorConfidence(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
    Return IncActorConfidence(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
 EndFunction
 
-Int Function IncActorConfidence(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+Int Function IncActorConfidence(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
    Float fCurrTime = Utility.GetCurrentGameTime()
    Int iValue = 50
    If (MutexLock(_iKnownMutex))
@@ -2784,20 +3049,24 @@ Int Function IncActorConfidence(Actor aActor, Int iDelta, Int iMinValue=50, Int 
 
             _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
             _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
-            _aiKnownSeenCount  = _qDfwUtil.AddIntToArray(_aiKnownSeenCount,  1,         True)
             _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      -1,        True)
             _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, iValue,    True)
             _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  -1,        True)
             _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   -1,        True)
+            _aiKnownKindness   = _qDfwUtil.AddIntToArray(_aiKnownKindness,   -1,        True)
+            If (bSignificant)
+               _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, 1, True)
+            EndIf
          EndIf
       Else
-         ; Only update the last seen time if 30 game minutes have passed since the last check.
-         If (fCurrTime > _afKnownLastSeen[iIndex] + (30 / 60 / 24))
-            _aiKnownSeenCount[iIndex] = _aiKnownSeenCount[iIndex] + 1
-            ; Only update the last seen time if 30 minutes have passed to avoid constantly
-            ; updating the last seen time and never updating the last seen count.
-            _afKnownLastSeen[iIndex]  = fCurrTime
+         ; If this is a significant interaction make a note of it.
+         If (bSignificant)
+            _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, \
+                                                          _aiKnownSignificant[iIndex] + 1, True)
          EndIf
+
+         ; Keep track of when this NPC was last seen.
+         _afKnownLastSeen[iIndex]  = fCurrTime
 
          ; Keep track of the disposition value to be returned.
          iValue = _aiKnownConfidence[iIndex]
@@ -2825,11 +3094,11 @@ Int Function IncActorConfidence(Actor aActor, Int iDelta, Int iMinValue=50, Int 
    Return iValue
 EndFunction
 
-Int Function GetActorDominance(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+Int Function GetActorDominance(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
    Return IncActorDominance(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
 EndFunction
 
-Int Function IncActorDominance(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+Int Function IncActorDominance(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
    Float fCurrTime = Utility.GetCurrentGameTime()
    Int iValue = 50
    If (MutexLock(_iKnownMutex))
@@ -2845,20 +3114,24 @@ Int Function IncActorDominance(Actor aActor, Int iDelta, Int iMinValue=50, Int i
 
             _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
             _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
-            _aiKnownSeenCount  = _qDfwUtil.AddIntToArray(_aiKnownSeenCount,  1,         True)
             _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      -1,        True)
             _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, -1,        True)
             _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  iValue,    True)
             _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   -1,        True)
+            _aiKnownKindness   = _qDfwUtil.AddIntToArray(_aiKnownKindness,   -1,        True)
+            If (bSignificant)
+               _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, 1, True)
+            EndIf
          EndIf
       Else
-         ; Only update the last seen time if 30 game minutes have passed since the last check.
-         If (fCurrTime > _afKnownLastSeen[iIndex] + (30 / 60 / 24))
-            _aiKnownSeenCount[iIndex] = _aiKnownSeenCount[iIndex] + 1
-            ; Only update the last seen time if 30 minutes have passed to avoid constantly
-            ; updating the last seen time and never updating the last seen count.
-            _afKnownLastSeen[iIndex]  = fCurrTime
+         ; If this is a significant interaction make a note of it.
+         If (bSignificant)
+            _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, \
+                                                          _aiKnownSignificant[iIndex] + 1, True)
          EndIf
+
+         ; Keep track of when this NPC was last seen.
+         _afKnownLastSeen[iIndex]  = fCurrTime
 
          ; Keep track of the disposition value to be returned.
          iValue = _aiKnownDominance[iIndex]
@@ -2886,11 +3159,11 @@ Int Function IncActorDominance(Actor aActor, Int iDelta, Int iMinValue=50, Int i
    Return iValue
 EndFunction
 
-Int Function GetActorInterest(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+Int Function GetActorInterest(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
    Return IncActorInterest(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
 EndFunction
 
-Int Function IncActorInterest(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False)
+Int Function IncActorInterest(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
    Float fCurrTime = Utility.GetCurrentGameTime()
    Int iValue = 50
    If (MutexLock(_iKnownMutex))
@@ -2906,20 +3179,24 @@ Int Function IncActorInterest(Actor aActor, Int iDelta, Int iMinValue=50, Int iM
 
             _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
             _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
-            _aiKnownSeenCount  = _qDfwUtil.AddIntToArray(_aiKnownSeenCount,  1,         True)
             _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      -1,        True)
             _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, -1,        True)
             _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  -1,        True)
             _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   iValue,    True)
+            _aiKnownKindness   = _qDfwUtil.AddIntToArray(_aiKnownKindness,   -1,        True)
+            If (bSignificant)
+               _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, 1, True)
+            EndIf
          EndIf
       Else
-         ; Only update the last seen time if 30 game minutes have passed since the last check.
-         If (fCurrTime > _afKnownLastSeen[iIndex] + (30 / 60 / 24))
-            _aiKnownSeenCount[iIndex] = _aiKnownSeenCount[iIndex] + 1
-            ; Only update the last seen time if 30 minutes have passed to avoid constantly
-            ; updating the last seen time and never updating the last seen count.
-            _afKnownLastSeen[iIndex]  = fCurrTime
+         ; If this is a significant interaction make a note of it.
+         If (bSignificant)
+            _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, \
+                                                          _aiKnownSignificant[iIndex] + 1, True)
          EndIf
+
+         ; Keep track of when this NPC was last seen.
+         _afKnownLastSeen[iIndex]  = fCurrTime
 
          ; Keep track of the disposition value to be returned.
          iValue = _aiKnownInterest[iIndex]
@@ -2945,5 +3222,179 @@ Int Function IncActorInterest(Actor aActor, Int iDelta, Int iMinValue=50, Int iM
       MutexRelease(_iKnownMutex)
    EndIf
    Return iValue
+EndFunction
+
+Int Function GetActorKindness(Actor aActor, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
+   Return IncActorKindness(aActor, 0, iMinValue, iMaxValue, bCreateAsNeeded)
+EndFunction
+
+Int Function IncActorKindness(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, Bool bCreateAsNeeded=False, Bool bSignificant=False)
+   Float fCurrTime = Utility.GetCurrentGameTime()
+   Int iValue = 50
+   If (MutexLock(_iKnownMutex))
+      Int iIndex = _aoKnown.Find(aActor)
+      If (-1 == iIndex)
+         If (bCreateAsNeeded)
+            ; If there are 30 known actors, trim the list.
+            If (30 <= _aoKnown.Length)
+               CleanupKnownList()
+            EndIf
+
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+
+            _aoKnown           = _qDfwUtil.AddFormToArray(_aoKnown,          aActor,    True)
+            _afKnownLastSeen   = _qDfwUtil.AddFloatToArray(_afKnownLastSeen, fCurrTime, True)
+            _aiKnownAnger      = _qDfwUtil.AddIntToArray(_aiKnownAnger,      -1,        True)
+            _aiKnownConfidence = _qDfwUtil.AddIntToArray(_aiKnownConfidence, -1,        True)
+            _aiKnownDominance  = _qDfwUtil.AddIntToArray(_aiKnownDominance,  -1,        True)
+            _aiKnownInterest   = _qDfwUtil.AddIntToArray(_aiKnownInterest,   -1,        True)
+            _aiKnownKindness   = _qDfwUtil.AddIntToArray(_aiKnownKindness,   iValue,    True)
+            If (bSignificant)
+               _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, 1, True)
+            EndIf
+         EndIf
+      Else
+         ; If this is a significant interaction make a note of it.
+         If (bSignificant)
+            _aiKnownSignificant = _qDfwUtil.AddIntToArray(_aiKnownSignificant, \
+                                                          _aiKnownSignificant[iIndex] + 1, True)
+         EndIf
+
+         ; Keep track of when this NPC was last seen.
+         _afKnownLastSeen[iIndex]  = fCurrTime
+
+         ; Keep track of the disposition value to be returned.
+         iValue = _aiKnownKindness[iIndex]
+
+         If (-1 != iValue)
+            ; Only try to modify the value if it starts within the min/max range.
+            If ((iMinValue < iValue) && (iMaxValue > iValue))
+               iValue += iDelta
+               If (iMinValue > iValue)
+                  iValue = iMinValue
+               ElseIf (iMaxValue < iValue)
+                  iValue = iMaxValue
+               EndIf
+               _aiKnownKindness[iIndex] = iValue
+            EndIf
+         ElseIf (-1 != iMinValue)
+            ; If we have not evaluated the actor's disposition yet do so now.
+            iValue = Utility.RandomInt(iMinValue, iMaxValue) + iDelta
+            _aiKnownKindness[iIndex] = iValue
+         EndIf
+      EndIf
+
+      MutexRelease(_iKnownMutex)
+   EndIf
+   Return iValue
+EndFunction
+
+; Returns how many times this actor has been flagged as "significant".
+Int Function GetActorSignificance(Actor aActor)
+   Int iValue = 0
+   If (MutexLock(_iKnownMutex))
+      Int iIndex = _aoKnown.Find(aActor)
+      If (-1 == iIndex)
+         iValue = _aiKnownSignificant[iIndex]
+      EndIf
+      MutexRelease(_iKnownMutex)
+   EndIf
+   Return iValue
+EndFunction
+
+; Fills in all dialogue condition variables based on the actor specified.
+Function PrepareActorDialogue(ObjectReference oActor)
+   Actor aActor = (oActor As Actor)
+
+   ; First set all variables that don't depend on the other actor.
+   Log("Preparing Dialog: " + aActor.GetDisplayName(), DL_INFO, DC_GENERAL)
+   _bIsPlayerBound           = IsPlayerBound(True)
+   _bIsPlayerBoundVisible    = IsPlayerBound()
+   _bIsPlayerFurnitureLocked = (_bIsFurnitureLocked && GetBdsmFurniture())
+   _iNakedLevel              = _iNakedStatus
+
+   ; Then try to get actor information from the nearby actor list.
+   Int iIndex = -1
+   Int iActorFlags = 0x00000000
+   If (MutexLock(_iNearbyMutex))
+      iIndex = _aoNearby.Find(oActor)
+      If (-1 != iIndex)
+         iActorFlags = _aiNearbyFlags[iIndex]
+      EndIf
+
+      MutexRelease(_iNearbyMutex)
+   EndIf
+
+   ; If the actor is not yet resgistered nearby wait until he is.
+   If ((-1 == iIndex) && (3 > _iPrepareDialogAttempts))
+      _iPrepareDialogAttempts += 1
+      Return
+   EndIf
+   _iPrepareDialogAttempts = 0
+
+   ; Identify this actor as the current dialogue target.
+   If (_aCurrTarget)
+      _aCurrTarget.RemoveFromFaction(_oFactionDfwDialogueTarget)
+   EndIf
+   _aCurrTarget = aActor
+   aActor.AddToFaction(_oFactionDfwDialogueTarget)
+
+   _bIsPlayersMaster    = ((aActor == GetMaster(MD_CLOSE)) || \
+                           (aActor == GetMaster(MD_DISTANT)))
+   _bIsActorLeashHolder = (aActor == _oLeashTarget)
+   _iActorAnger         = GetActorAnger(aActor,      20, 80, bCreateAsNeeded=True)
+   _iActorConfidence    = GetActorConfidence(aActor, 20, 80, bCreateAsNeeded=True)
+   _iActorDominance     = GetActorDominance(aActor,  20, 80, bCreateAsNeeded=True)
+   _iActorInterest      = GetActorInterest(aActor,   20, 80, bCreateAsNeeded=True)
+   _iActorKindness      = GetActorKindness(aActor,   20, 80, bCreateAsNeeded=True)
+
+   _iWillingnessToHelp = ((_iActorKindness * 40) + \
+                          ((100 - _iActorAnger) * 25) + \
+                          ((100 - _iActorDominance) * 20) + \
+                          ((100 - _iActorConfidence) * 15)) / 100
+
+   _fActorDistance      = aActor.GetDistance(_aPlayer)
+   _fMasterDistance     = 99999
+   If (_aMasterClose)
+      _fMasterDistance  = aActor.GetDistance(_aMasterClose)
+   EndIf
+
+   _bIsActorSlaver      = False
+   _bIsActorOwner       = False
+   _bIsActorDominant    = False
+   _bIsActorSubmissive  = False
+   _bIsActorSlave       = False
+
+   If (iActorFlags)
+      _bIsActorSlaver     = (Math.LogicalAnd(iActorFlags, AF_SLAVE_TRADER) As Bool)
+      _bIsActorOwner      = (Math.LogicalAnd(iActorFlags, AF_OWNER) As Bool)
+      _bIsActorDominant   = (Math.LogicalAnd(iActorFlags, AF_DOMINANT) As Bool)
+      _bIsActorSubmissive = (Math.LogicalAnd(iActorFlags, AF_SUBMISSIVE) As Bool)
+      _bIsActorSlave      = (Math.LogicalAnd(iActorFlags, AF_SLAVE) As Bool)
+
+      ; Some NPCs are more willing to help the player than others.
+      If (Math.LogicalAnd(iActorFlags, AF_GUARDS))
+         _iWillingnessToHelp += 10
+      EndIf
+      If (Math.LogicalAnd(iActorFlags, AF_MERCHANTS))
+         _iWillingnessToHelp += 3
+      EndIf
+      If (Math.LogicalAnd(iActorFlags, AF_BDSM_AWARE))
+         _iWillingnessToHelp -= 25
+      EndIf
+   EndIf
+EndFunction
+
+; This function allows temporary dialogues to be paused from a script.  This can be used to
+; allow short one or two sentence interractions to occur without being interrupted by the
+; greeting.  Perhaps such dialogues should be made as "Hello" dialogues but I haven't done
+; enough experimenting to determine that yet.
+Function TemporarilyPauseDialogueTargets(Int iSeconds)
+   If (iSeconds)
+      iSeconds = 5
+   EndIf
+   
+   _iTemporaryPauseDialogues = Math.Ceiling((iSeconds As Float) / _qMcm.fSettingsPollTime)
+   _bDialogueTargetsEnabled = False
 EndFunction
 

@@ -87,6 +87,8 @@ Bool _bDefBlockLeash
 Bool _bDefSetDeviousFix
 Bool _bDefModLeashVisible
 Bool _bDefLeashInterrupt
+Bool _bDefEnableDialogues
+Bool _bDefBlockOnGameLoad
 Bool Property bBlockNipple Auto
 Bool Property bBlockVagina Auto
 Bool Property bBlockHobble Auto
@@ -97,6 +99,8 @@ Bool Property bBlockLeash  Auto
 Bool Property bSettingsDetectUnequip Auto
 Bool Property bModLeashVisible       Auto
 Bool Property bModLeashInterrupt     Auto
+Bool Property bModEnableDialogues    Auto
+Bool Property bModBlockOnGameLoad    Auto
 
 ; *** Float Slider Options ***
 Float _fDefSetPollTime
@@ -120,7 +124,12 @@ Int _iDefSlaAdjustedMin
 Int _iDefSlaAdjustedMax
 Int _iDefLeashDamage
 Int _iDefLogLevel
-Int _iDefLogLevelScreen
+Int _iDefLogLevelScreenGeneral
+Int _iDefLogLevelScreenStatus
+Int _iDefLogLevelScreenMaster
+Int _iDefLogLevelScreenNearby
+Int _iDefLogLevelScreenLeash
+Int _iDefLogLevelScreenEquip
 Int _iDefVulNakedReduce
 Int Property iSettingsSecurity         Auto
 Int Property iSettingsPollNearby       Auto
@@ -140,7 +149,12 @@ Int Property iModSlaAdjustedMin        Auto
 Int Property iModSlaAdjustedMax        Auto
 Int Property iModLeashDamage           Auto
 Int Property iLogLevel                 Auto
-Int Property iLogLevelScreen           Auto
+Int Property iLogLevelScreenGeneral    Auto
+Int Property iLogLevelScreenStatus     Auto
+Int Property iLogLevelScreenMaster     Auto
+Int Property iLogLevelScreenNearby     Auto
+Int Property iLogLevelScreenLeash      Auto
+Int Property iLogLevelScreenEquip      Auto
 Int Property iVulnerabilityNakedReduce Auto
 
 ; *** Enumeration Options ***
@@ -184,7 +198,7 @@ Function InitScript()
    ; Very basic initialization.
    If (1 > CurrentVersion)
       _aPlayer = Game.GetPlayer()
-      _qFramework = (Self As Quest) As dfwDeviousFramework
+      _qFramework = ((Self As Quest) As dfwDeviousFramework)
 
       Pages = New String[6]
       Pages[0] = "Framework Settings"
@@ -296,15 +310,13 @@ Function InitScript()
       _bInfoForPlayer = True
 
       ; Block List Exceptions
-      _qDfwUtil = (Self As Quest) As dfwUtil
+      _qDfwUtil = ((Self As Quest) As dfwUtil)
       aiSettingsSlotsChest = New Int[2]
       aiSettingsSlotsChest[0] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsChest[0])
       aiSettingsSlotsChest[1] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsChest[1])
       aiSettingsSlotsWaist = New Int[2]
       aiSettingsSlotsWaist[0] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsWaist[0])
       aiSettingsSlotsWaist[1] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsWaist[1])
-
-      aiBlockExceptionsHobble = None
    EndIf
 
    If (4 > CurrentVersion)
@@ -348,13 +360,35 @@ Function InitScript()
 
       ; Also in this version I added furniture status which come from the ZAZ Animation Pack.
       _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
+   EndIf
 
-      ; Also decrease the screen logging level.
-      _iDefLogLevelScreen = 2
-      iLogLevelScreen     = _iDefLogLevelScreen
+   ; Separated logging into different classes.
+   If (8 > CurrentVersion)
+      _iDefLogLevelScreenGeneral = 3
+      _iDefLogLevelScreenStatus  = 3
+      _iDefLogLevelScreenMaster  = 3
+      _iDefLogLevelScreenNearby  = 3
+      _iDefLogLevelScreenLeash   = 3
+      _iDefLogLevelScreenEquip   = 3
+
+      iLogLevelScreenGeneral = _iDefLogLevelScreenGeneral
+      iLogLevelScreenStatus  = _iDefLogLevelScreenStatus
+      iLogLevelScreenMaster  = _iDefLogLevelScreenMaster
+      iLogLevelScreenNearby  = _iDefLogLevelScreenNearby
+      iLogLevelScreenLeash   = _iDefLogLevelScreenLeash
+      iLogLevelScreenEquip   = _iDefLogLevelScreenEquip
+   EndIf
+
+   If (9 > CurrentVersion)
+      _bDefBlockOnGameLoad = False
+      bModBlockOnGameLoad = _bDefBlockOnGameLoad
+   EndIf
+
+   If (10 > CurrentVersion)
+      _bDefEnableDialogues = True
+      bModEnableDialogues = _bDefEnableDialogues
    EndIf
 EndFunction
-
 
 Event OnConfigInit()
    InitScript()
@@ -371,7 +405,17 @@ Int Function GetVersion()
    ; Reset the version number.
    ; CurrentVersion = 2
 
-   Return 7
+   ; Print a notifiaction of when this function is called so we can have more confidence that
+   ; it behaves as we think it behaves (once per game load).
+   Debug.Notification("[DFW-MCM] Checking Version.")
+
+   ; Update all quest variables upon loading each game.
+   ; There are too many things that can cause them to become invalid.
+   _qFramework = ((Self As Quest) As dfwDeviousFramework)
+   _qDfwUtil = ((Self As Quest) As dfwUtil)
+   _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
+
+   Return 9
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -487,6 +531,14 @@ Bool Function IsSecure()
 
    ; Otherwise the menus are secure if the player is bound.
    Return _qFramework.IsPlayerBound(True)
+EndFunction
+
+Function SendSettingChangedEvent(String sCategory)
+   Int iModEvent = ModEvent.Create("DFW_MCM_Changed")
+   If (iModEvent)
+      ModEvent.PushString(iModEvent, sCategory)
+      ModEvent.Send(iModEvent)
+   EndIf
 EndFunction
 
 Function PresentInformation(String[] aszInfo, String szHeader)
@@ -651,9 +703,13 @@ Function DisplayModFeaturesPage(Bool bSecure)
 
    AddEmptyOption()
    AddHeaderOption("SexLab Aroused Base")
-   AddSliderOptionST("ST_MOD_SLA_THRESHOLD", "Initial Threshold", iModSlaThreshold, a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_SLA_MIN",       "Minimum Adjusted Arousal", iModSlaAdjustedMin, a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_SLA_MAX",       "Maximum Adjusted Arousal", iModSlaAdjustedMax, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_SLA_THRESHOLD",   "Initial Threshold", iModSlaThreshold, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_SLA_MIN",         "Minimum Adjusted Arousal", iModSlaAdjustedMin, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_SLA_MAX",         "Maximum Adjusted Arousal", iModSlaAdjustedMax, a_flags=iFlags)
+
+   AddEmptyOption()
+   AddToggleOptionST("ST_MOD_ENABLE_DIALOGUE", "Enable Greeting Dialogues", bModEnableDialogues)
+   AddToggleOptionST("ST_MOD_LOAD_BLOCK",      "Block Controls on Game Load", bModBlockOnGameLoad, a_flags=iFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -681,11 +737,12 @@ Function DisplayStatusPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddToggleOptionST("ST_INFO_FOR_PLAYER", "Use Player for Info",    _bInfoForPlayer)
-   AddToggleOptionST("ST_INFO_FACTIONS",   "Show Player Factions",   False)
-   AddToggleOptionST("ST_INFO_NEARBY",     "Show Nearby Actors",     False)
-   AddToggleOptionST("ST_INFO_KNOWN",      "Show Known Actors",      False)
-   AddToggleOptionST("ST_INFO_DEBUG",      "Show Debug Information", False)
+   AddToggleOptionST("ST_INFO_FOR_PLAYER", "Use Player for Info",       _bInfoForPlayer)
+   AddToggleOptionST("ST_INFO_FACTIONS",   "Show Player Factions",      False)
+   AddToggleOptionST("ST_INFO_NEARBY",     "Show Nearby Actors",        False)
+   AddToggleOptionST("ST_INFO_KNOWN",      "Show Known Actors",         False)
+   AddToggleOptionST("ST_INFO_DEBUG",      "Show Debug Information",    False)
+   AddToggleOptionST("ST_INFO_DIALOGUE",   "Show Last Dialogue Target", False)
 
    AddEmptyOption()
    AddHeaderOption("Vulnerability")
@@ -812,8 +869,18 @@ Function DisplayDebugPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddSliderOptionST("ST_DBG_LEVEL",  "Log Level",        iLogLevel)
-   AddSliderOptionST("ST_DBG_SCREEN", "Log Level Screen", iLogLevelScreen)
+   AddSliderOptionST("ST_DBG_LEVEL",    "Log Level (File)",            iLogLevel)
+   AddSliderOptionST("ST_DBG_GENERAL",  "Screen - General",            iLogLevelScreenGeneral)
+   AddSliderOptionST("ST_DBG_STATUS",   "Screen - Player Status",      iLogLevelScreenStatus)
+   AddSliderOptionST("ST_DBG_MASTER",   "Screen - Masters",            iLogLevelScreenMaster)
+   AddSliderOptionST("ST_DBG_NEARBY",   "Screen - Nearby NPCs",        iLogLevelScreenNearby)
+   AddSliderOptionST("ST_DBG_LEASH",    "Screen - Leash",              iLogLevelScreenLeash)
+   AddSliderOptionST("ST_DBG_EQUIP",    "Screen - Equipping/Blocking", iLogLevelScreenEquip)
+
+   ; Start on the second column.
+   SetCursorPosition(1)
+
+   AddTextOptionST("ST_DBG_YANK_LEASH", "Yank Leash", "Do It Now")
 EndFunction
 
 
@@ -1557,6 +1624,48 @@ State ST_MOD_SLA_MAX
    EndEvent
 EndState
 
+State ST_MOD_ENABLE_DIALOGUE
+   Event OnSelectST()
+      bModEnableDialogues = !bModEnableDialogues
+      SetToggleOptionValueST(bModEnableDialogues)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("ModFeatures")
+   EndEvent
+
+   Event OnDefaultST()
+      bModEnableDialogues = _bDefEnableDialogues
+      SetToggleOptionValueST(bModEnableDialogues)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("ModFeatures")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The greetings dialogues are a feature that I think may greatly improve dialogues in mods.\n" +\
+                  "Please leave this enabled as much as you can and evaluate whether this is an acceptable addition to the game.\n" +\
+                  "This feature gathers a significant amount of info about the NPC and makes it available to all mod dialogues.")
+   EndEvent
+EndState
+
+State ST_MOD_LOAD_BLOCK
+   Event OnSelectST()
+      bModBlockOnGameLoad = !bModBlockOnGameLoad
+      SetToggleOptionValueST(bModBlockOnGameLoad)
+   EndEvent
+
+   Event OnDefaultST()
+      bModBlockOnGameLoad = _bDefBlockOnGameLoad
+      SetToggleOptionValueST(bModBlockOnGameLoad)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Toggles whether control features should be re-blocked on loading a game.\n" +\
+                  "This applies to health/magika/stamina/fast travel/fighting/camera/sneaking/menus/activations/journal.\n" +\
+                  "Controls will only be blocked if a feature blocked them before the save.  Disable if you are having problems.")
+   EndEvent
+EndState
+
 State ST_MOD_NIPPLE
    Event OnSelectST()
       bBlockNipple = !bBlockNipple
@@ -1909,10 +2018,12 @@ State ST_INFO_KNOWN
       While (iIndex < iCount)
          Actor aActor = (aaKnown[iIndex] As Actor)
          aszInfo = _qDfwUtil.AddStringToArray(aszInfo, iIndex + ": " + \
-            aActor.GetDisplayName() + " A(" + _qFramework.GetActorAnger(aActor, -1) + \
-                                     ") C(" + _qFramework.GetActorConfidence(aActor, -1) + \
-                                     ") D(" + _qFramework.GetActorDominance(aActor, -1) + \
-                                     ") I(" + _qFramework.GetActorInterest(aActor, -1) + ")")
+            aActor.GetDisplayName() + "-" + _qFramework.GetActorSignificance(aActor) + \
+                                      " A:" + _qFramework.GetActorAnger(aActor, -1) + \
+                                      " C:" + _qFramework.GetActorConfidence(aActor, -1) + \
+                                      " D:" + _qFramework.GetActorDominance(aActor, -1) + \
+                                      " I:" + _qFramework.GetActorInterest(aActor, -1) + \
+                                      " K:" + _qFramework.GetActorKindness(aActor, -1))
          iIndex += 1
       EndWhile
 
@@ -1922,7 +2033,7 @@ State ST_INFO_KNOWN
 
    Event OnHighlightST()
       SetInfoText("Display disposition of actors who have recently been in contact with the player.\n" +\
-                  "A: Anger  C: Confidence  D: Dominance  I: Interest")
+                  "-Significance  A:Anger  C:Confidence  D:Dominance  I:Interest  K:Kindness")
    EndEvent
 EndState
 
@@ -1946,6 +2057,19 @@ State ST_INFO_DEBUG
 
    Event OnHighlightST()
       SetInfoText("Display debug information.")
+   EndEvent
+EndState
+
+State ST_INFO_DIALOGUE
+   Event OnSelectST()
+      String[] aszInfo = _qFramework.GetDialogueTargetInfo()
+
+      ; Display the information for the user.
+      PresentInformation(aszInfo, "Dialogue Target Info")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Displays information the framework gathered for the last dialogue target.")
    EndEvent
 EndState
 
@@ -1978,28 +2102,206 @@ State ST_DBG_LEVEL
    EndEvent
 EndState
 
-State ST_DBG_SCREEN
+State ST_DBG_GENERAL
    Event OnSliderOpenST()
-      SetSliderDialogStartValue(iLogLevelScreen)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreen)
+      SetSliderDialogStartValue(iLogLevelScreenGeneral)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenGeneral)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreen = fValue As Int
-      SetSliderOptionValueST(iLogLevelScreen)
+      iLogLevelScreenGeneral = fValue As Int
+      SetSliderOptionValueST(iLogLevelScreenGeneral)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreen = _iDefLogLevelScreen
-      SetSliderOptionValueST(iLogLevelScreen)
+      iLogLevelScreenGeneral = _iDefLogLevelScreenGeneral
+      SetSliderOptionValueST(iLogLevelScreenGeneral)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen.\n" +\
+      SetInfoText("Set the level of messages that go to the screen for general messages.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
-                  "This should be Critical to reduce clutter on your screen but still get event messages.")
+                  "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_STATUS
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenStatus)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenStatus)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenStatus = fValue As Int
+      SetSliderOptionValueST(iLogLevelScreenStatus)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenStatus = _iDefLogLevelScreenStatus
+      SetSliderOptionValueST(iLogLevelScreenStatus)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level of messages that go to the screen for player status related messages.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_MASTER
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenMaster)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenMaster)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenMaster = fValue As Int
+      SetSliderOptionValueST(iLogLevelScreenMaster)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenMaster = _iDefLogLevelScreenMaster
+      SetSliderOptionValueST(iLogLevelScreenMaster)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level of messages that go to the screen for messages related to DFW registered Masters.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_NEARBY
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenNearby)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenNearby)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenNearby = fValue As Int
+      SetSliderOptionValueST(iLogLevelScreenNearby)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenNearby = _iDefLogLevelScreenNearby
+      SetSliderOptionValueST(iLogLevelScreenNearby)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level of messages that go to the screen for messages related to nearby NPCs.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_LEASH
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenLeash)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenLeash)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenLeash = fValue As Int
+      SetSliderOptionValueST(iLogLevelScreenLeash)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenLeash = _iDefLogLevelScreenLeash
+      SetSliderOptionValueST(iLogLevelScreenLeash)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level of messages that go to the screen for leash related messages.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_EQUIP
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenEquip)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenEquip)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenEquip = fValue As Int
+      SetSliderOptionValueST(iLogLevelScreenEquip)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenEquip = _iDefLogLevelScreenEquip
+      SetSliderOptionValueST(iLogLevelScreenEquip)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level of messages that go to the screen for messages about equipment and equipment blocking.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_YANK_LEASH
+   Event OnSelectST()
+      _qFramework.YankLeash(0, _qFramework.LS_DRAG, bInterruptLeashTarget=True)
+      SetTextOptionValueST("Done")
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Do It Now")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Sometimes with the \"Drag\" leash the player can get caught bobbing back and forth.\n" + \
+                  "Most of the time this issue will correct itself.  In the odd case that it doesn't, performing\n" +\
+                  "a manual yank of the leash will should fix this issue.")
    EndEvent
 EndState
 
