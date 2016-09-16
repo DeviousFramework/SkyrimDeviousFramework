@@ -146,11 +146,10 @@ Function UpdateScript()
    ; Very basic initialization.
    If (1 > CurrentVersion)
       _aPlayer = Game.GetPlayer()
+      _qFramework  = (Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework)
       _qDfwSupport = ((Self As Quest) As dfwsDfwSupport)
-      _qFramework = (Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework)
-      _qDfwUtil = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
-      _qDfwMcm = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
-
+      _qDfwUtil    = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
+      _qDfwMcm     = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
    EndIf
 
    ; Historical configuration...
@@ -250,6 +249,17 @@ Int Function GetVersion()
    ;If (4 < CurrentVersion)
    ;   CurrentVersion = 4
    ;EndIf
+
+   ; Print a notifiaction of when this function is called so we can have more confidence that
+   ; it behaves as we think it behaves (once per game load).
+   Debug.Notification("[DFWS-MCM] Checking Version.")
+
+   ; Update all quest variables upon loading each game.
+   ; There are too many things that can cause them to become invalid.
+   _qFramework  = (Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework)
+   _qDfwSupport = ((Self As Quest) As dfwsDfwSupport)
+   _qDfwUtil    = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
+   _qDfwMcm     = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
    Return 6
 EndFunction

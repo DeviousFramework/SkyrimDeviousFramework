@@ -47,10 +47,9 @@ Event OnObjectEquipped(Form oItem, ObjectReference oReference)
 EndEvent
 
 Event OnPlayerLoadGame()
-   ; Make sure we have a valid reference to the main devious framework script.
-   If (!_qFramework)
-      _qFramework = Self.GetOwningQuest() As dfwDeviousFramework
-   EndIf
+   ; Update all quest variables upon loading each game.
+   ; There are too many things that can cause them to become invalid.
+   _qFramework = (Self.GetOwningQuest() As dfwDeviousFramework)
 
    ; Forward this event to the main devious framework script.
    _qFramework.OnPlayerLoadGame()
@@ -59,7 +58,7 @@ EndEvent
 Event OnEnterBleedout()
    ; Make sure we have a valid reference to the main devious framework script.
    If (!_qFramework)
-      _qFramework = Self.GetOwningQuest() As dfwDeviousFramework
+      _qFramework = (Self.GetOwningQuest() As dfwDeviousFramework)
    EndIf
 
    _qFramework.EnteredBleedout()
@@ -68,7 +67,7 @@ EndEvent
 Event OnSit(ObjectReference oFurniture)
    ; Make sure we have a valid reference to the main devious framework script.
    If (!_qFramework)
-      _qFramework = Self.GetOwningQuest() As dfwDeviousFramework
+      _qFramework = (Self.GetOwningQuest() As dfwDeviousFramework)
    EndIf
 
    _qFramework.OnSit(oFurniture)
@@ -77,7 +76,7 @@ EndEvent
 Event OnGetUp(ObjectReference oFurniture)
    ; Make sure we have a valid reference to the main devious framework script.
    If (!_qFramework)
-      _qFramework = Self.GetOwningQuest() As dfwDeviousFramework
+      _qFramework = (Self.GetOwningQuest() As dfwDeviousFramework)
    EndIf
 
    _qFramework.OnGetUp(oFurniture)
