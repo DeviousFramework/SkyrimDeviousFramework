@@ -87,7 +87,6 @@ Bool _bDefBlockLeash
 Bool _bDefSetDeviousFix
 Bool _bDefModLeashVisible
 Bool _bDefLeashInterrupt
-Bool _bDefEnableDialogues
 Bool _bDefBlockOnGameLoad
 Bool Property bBlockNipple Auto
 Bool Property bBlockVagina Auto
@@ -99,7 +98,6 @@ Bool Property bBlockLeash  Auto
 Bool Property bSettingsDetectUnequip Auto
 Bool Property bModLeashVisible       Auto
 Bool Property bModLeashInterrupt     Auto
-Bool Property bModEnableDialogues    Auto
 Bool Property bModBlockOnGameLoad    Auto
 
 ; *** Float Slider Options ***
@@ -117,11 +115,16 @@ Int _iDefVulRestraints
 Int _iDefVulLeashed
 Int _iDefVulFurniture
 Int _iDefVulNight
-Int _iDefNakedRedressTimeout
+Int _iDefWillingGuards
+Int _iDefWillingMerchants
+Int _iDefWillingBdsm
 Int _iDefRapeRedressTimeout
+Int _iDefNakedRedressTimeout
 Int _iDefSlaThreshold
 Int _iDefSlaAdjustedMin
 Int _iDefSlaAdjustedMax
+Int _iDefDialogueTargetStyle
+Int _iDefDialogueTargetRetries
 Int _iDefLeashDamage
 Int _iDefLogLevel
 Int _iDefLogLevelScreenGeneral
@@ -130,6 +133,7 @@ Int _iDefLogLevelScreenMaster
 Int _iDefLogLevelScreenNearby
 Int _iDefLogLevelScreenLeash
 Int _iDefLogLevelScreenEquip
+Int _iDefLogLevelScreenArousal
 Int _iDefVulNakedReduce
 Int Property iSettingsSecurity         Auto
 Int Property iSettingsPollNearby       Auto
@@ -142,11 +146,16 @@ Int Property iVulnerabilityRestraints  Auto
 Int Property iVulnerabilityLeashed     Auto
 Int Property iVulnerabilityFurniture   Auto
 Int Property iVulnerabilityNight       Auto
-Int Property iModNakedRedressTimeout   Auto
+Int Property iDispWillingGuards        Auto
+Int Property iDispWillingMerchants     Auto
+Int Property iDispWillingBdsm          Auto
 Int Property iModRapeRedressTimeout    Auto
+Int Property iModNakedRedressTimeout   Auto
 Int Property iModSlaThreshold          Auto
 Int Property iModSlaAdjustedMin        Auto
 Int Property iModSlaAdjustedMax        Auto
+Int Property iModDialogueTargetStyle   Auto
+Int Property iModDialogueTargetRetries Auto
 Int Property iModLeashDamage           Auto
 Int Property iLogLevel                 Auto
 Int Property iLogLevelScreenGeneral    Auto
@@ -155,6 +164,7 @@ Int Property iLogLevelScreenMaster     Auto
 Int Property iLogLevelScreenNearby     Auto
 Int Property iLogLevelScreenLeash      Auto
 Int Property iLogLevelScreenEquip      Auto
+Int Property iLogLevelScreenArousal    Auto
 Int Property iVulnerabilityNakedReduce Auto
 
 ; *** Enumeration Options ***
@@ -203,7 +213,7 @@ Function InitScript()
       Pages = New String[6]
       Pages[0] = "Framework Settings"
       Pages[1] = "Vulnerability"
-      Pages[2] = "NPC Confidence"
+      Pages[2] = "NPC Disposition"
       Pages[3] = "Mod Features"
       Pages[4] = "Status"
       Pages[5] = "Debug"
@@ -251,8 +261,8 @@ Function InitScript()
       iVulnerabilityGagged      = _iDefVulGagged
       iVulnerabilityRestraints  = _iDefVulRestraints
       iVulnerabilityNight       = _iDefVulNight
-      iModNakedRedressTimeout   = _iDefNakedRedressTimeout
       iModRapeRedressTimeout    = _iDefRapeRedressTimeout
+      iModNakedRedressTimeout   = _iDefNakedRedressTimeout
       iLogLevel                 = _iDefLogLevel
 
       _aszSlotList = New String[32]
@@ -385,8 +395,30 @@ Function InitScript()
    EndIf
 
    If (10 > CurrentVersion)
-      _bDefEnableDialogues = True
-      bModEnableDialogues = _bDefEnableDialogues
+      _iDefDialogueTargetStyle = _qFramework.DS_MANUAL
+      iModDialogueTargetStyle = _iDefDialogueTargetStyle
+   EndIf
+
+   If (11 > CurrentVersion)
+      ; Renamed the NPC Confidence page.
+      Pages[2] = "NPC Disposition"
+
+      _iDefWillingGuards    =  10
+      _iDefWillingMerchants =   3
+      _iDefWillingBdsm      = -25
+
+      iDispWillingGuards    = _iDefWillingGuards
+      iDispWillingMerchants = _iDefWillingMerchants
+      iDispWillingBdsm      = _iDefWillingBdsm
+
+      _iDefLogLevelScreenArousal = 3
+      iLogLevelScreenArousal     = _iDefLogLevelScreenArousal
+
+      _iDefDialogueTargetRetries = 0
+      iModDialogueTargetRetries  = _iDefDialogueTargetRetries
+
+      ; Make sure to synchronize data in the main script as well.
+      SendSettingChangedEvent()
    EndIf
 EndFunction
 
@@ -403,11 +435,9 @@ EndEvent
 ; Unrelated to the Devious Framework Version.
 Int Function GetVersion()
    ; Reset the version number.
-   ; CurrentVersion = 2
-
-   ; Print a notifiaction of when this function is called so we can have more confidence that
-   ; it behaves as we think it behaves (once per game load).
-   Debug.Notification("[DFW-MCM] Checking Version.")
+   ;If (10 < CurrentVersion)
+   ;   CurrentVersion = 10
+   ;EndIf
 
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
@@ -415,7 +445,7 @@ Int Function GetVersion()
    _qDfwUtil = ((Self As Quest) As dfwUtil)
    _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
 
-   Return 9
+   Return 11
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -438,6 +468,51 @@ String Function LeashStyleToString(Int iStyle)
    ElseIf (_qFramework.LS_TELEPORT == iStyle)
       Return "Teleport"
    EndIf
+EndFunction
+
+String Function DialogueStyleToString(Int iStyle)
+   If (_qFramework.DS_OFF == iStyle)
+      Return "Off"
+   ElseIf (_qFramework.DS_AUTO == iStyle)
+      Return "Automatic"
+   ElseIf (_qFramework.DS_MANUAL == iStyle)
+      Return "Manual"
+   EndIf
+EndFunction
+
+String Function GetFactionName(Faction oFaction)
+   String szFactionName = oFaction.GetName()
+   If (!szFactionName)
+      Int iFormId = oFaction.GetFormID()
+      If (0x00000DB1 == iFormId)
+         szFactionName = "Player Faction"
+      ElseIf (0x0001BCC0 == iFormId)
+         szFactionName = "Bandit Faction"
+      ElseIf (0x0009C754 == iFormId)
+         szFactionName = "Windhelm Blacksmith"
+      ElseIf (0x0009DA3C == iFormId)
+         szFactionName = "Rustleif's House"
+      ElseIf (0x0009DD4F == iFormId)
+         szFactionName = "MS09 Player Ally"
+      ElseIf (0x000E3609 == iFormId)
+         szFactionName = "Druadach Redoubt"
+      ElseIf (0x000F18E9 == iFormId)
+         szFactionName = "Kolskeggr Pavo"
+      ElseIf (0x000F18EA == iFormId)
+         szFactionName = "Markarth Ghorza"
+      ElseIf (0x000F2073 == iFormId)
+         szFactionName = "Player Bed"
+      ElseIf (0x000F7630 == iFormId)
+         szFactionName = "Civil War Finale Allies"
+      ElseIf (0x00105D13 == iFormId)
+         szFactionName = "WE Aggressive Adventurer"
+      ElseIf (0x0010F5A0 == iFormId)
+         szFactionName = "Companions Training Special Combat Hate"
+      Else
+         szFactionName = "0x" + _qDfwUtil.ConvertHexToString(iFormId, 8)
+      EndIf
+   EndIf
+   Return szFactionName
 EndFunction
 
 String[] Function CreateWornOptions(String szFirstEntry, Actor oActor=None, \
@@ -533,7 +608,7 @@ Bool Function IsSecure()
    Return _qFramework.IsPlayerBound(True)
 EndFunction
 
-Function SendSettingChangedEvent(String sCategory)
+Function SendSettingChangedEvent(String sCategory="")
    Int iModEvent = ModEvent.Create("DFW_MCM_Changed")
    If (iModEvent)
       ModEvent.PushString(iModEvent, sCategory)
@@ -621,8 +696,8 @@ Event OnPageReset(String szRequestedPage)
 
    If ("Vulnerability" == szPage)
       DisplayVulnerabilityPage(bSecure)
-   ElseIf ("NPC Confidence" == szPage)
-      DisplayVulnerabilityPage(bSecure)
+   ElseIf ("NPC Disposition" == szPage)
+      DisplayNpcDispositionPage(bSecure)
    ElseIf ("Mod Features" == szPage)
       DisplayModFeaturesPage(bSecure)
    ElseIf ("Status" == szPage)
@@ -686,6 +761,21 @@ Function DisplayVulnerabilityPage(Bool bSecure)
    AddSliderOptionST("ST_VUL_REDUCE", "Naked Armour Reduces Vulnerability", iVulnerabilityNakedReduce, a_flags=iFlags)
 EndFunction
 
+Function DisplayNpcDispositionPage(Bool bSecure)
+   Int iFlags = OPTION_FLAG_NONE
+   If (bSecure)
+      iFlags = OPTION_FLAG_DISABLED
+   EndIf
+
+   AddHeaderOption("Willingness To Help")
+   AddSliderOptionST("ST_DISP_WILL_GUARDS",    "Guard Adjustments",          iDispWillingGuards,    a_flags=iFlags)
+   AddSliderOptionST("ST_DISP_WILL_MERCHANTS", "Merchant Adjustments",       iDispWillingMerchants, a_flags=iFlags)
+   AddSliderOptionST("ST_DISP_WILL_BDSM",      "Slaver & slave Adjustments", iDispWillingBdsm,      a_flags=iFlags)
+
+   ; Start on the second column.
+   ;SetCursorPosition(1)
+EndFunction
+
 Function DisplayModFeaturesPage(Bool bSecure)
    Int iFlags = OPTION_FLAG_NONE
    If (bSecure)
@@ -693,23 +783,25 @@ Function DisplayModFeaturesPage(Bool bSecure)
    EndIf
 
    AddHeaderOption("Redress Timeouts")
-   AddSliderOptionST("ST_MOD_RAPE_REDRESS",    "Post Rape Redress Timeout", iModRapeRedressTimeout,  a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_NAKED_REDRESS",   "Naked Redress Timeout",     iModNakedRedressTimeout, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_RAPE_REDRESS",     "Post Rape Redress Timeout", iModRapeRedressTimeout,  a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_NAKED_REDRESS",    "Naked Redress Timeout",     iModNakedRedressTimeout, a_flags=iFlags)
    AddHeaderOption("Leash Configuration")
-   AddTextOptionST("ST_MOD_LEASH_STYLE",       "Leash Style", LeashStyleToString(iModLeashStyle))
-   AddToggleOptionST("ST_MOD_LEASH_VISIBLE",   "Leash Visible", bModLeashVisible)
-   AddToggleOptionST("ST_MOD_LEASH_INTERRUPT", "Leash Interrupt", bModLeashInterrupt)
-   AddSliderOptionST("ST_MOD_LEASH_DAMAGE",    "Damage When Jerked", iModLeashDamage,  a_flags=iFlags)
+   AddTextOptionST("ST_MOD_LEASH_STYLE",        "Leash Style", LeashStyleToString(iModLeashStyle))
+   AddToggleOptionST("ST_MOD_LEASH_VISIBLE",    "Leash Visible", bModLeashVisible)
+   AddToggleOptionST("ST_MOD_LEASH_INTERRUPT",  "Leash Interrupt", bModLeashInterrupt)
+   AddSliderOptionST("ST_MOD_LEASH_DAMAGE",     "Damage When Jerked", iModLeashDamage,  a_flags=iFlags)
 
    AddEmptyOption()
    AddHeaderOption("SexLab Aroused Base")
-   AddSliderOptionST("ST_MOD_SLA_THRESHOLD",   "Initial Threshold", iModSlaThreshold, a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_SLA_MIN",         "Minimum Adjusted Arousal", iModSlaAdjustedMin, a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_SLA_MAX",         "Maximum Adjusted Arousal", iModSlaAdjustedMax, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_SLA_THRESHOLD",    "Initial Threshold", iModSlaThreshold, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_SLA_MIN",          "Minimum Adjusted Arousal", iModSlaAdjustedMin, a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_SLA_MAX",          "Maximum Adjusted Arousal", iModSlaAdjustedMax, a_flags=iFlags)
 
    AddEmptyOption()
-   AddToggleOptionST("ST_MOD_ENABLE_DIALOGUE", "Enable Greeting Dialogues", bModEnableDialogues)
-   AddToggleOptionST("ST_MOD_LOAD_BLOCK",      "Block Controls on Game Load", bModBlockOnGameLoad, a_flags=iFlags)
+   AddToggleOptionST("ST_MOD_LOAD_BLOCK",        "Block Controls on Game Load", bModBlockOnGameLoad, a_flags=iFlags)
+   AddTextOptionST("ST_MOD_ENABLE_DIALOGUE",     "Greeting Dialogue Style", DialogueStyleToString(iModDialogueTargetStyle))
+   AddSliderOptionST("ST_MOD_DIALOGUE_RETRIES",  "Dialogue Target Retries", iModDialogueTargetRetries)
+      iModDialogueTargetRetries  = _iDefDialogueTargetRetries
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -737,19 +829,20 @@ Function DisplayStatusPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddToggleOptionST("ST_INFO_FOR_PLAYER", "Use Player for Info",       _bInfoForPlayer)
-   AddToggleOptionST("ST_INFO_FACTIONS",   "Show Player Factions",      False)
-   AddToggleOptionST("ST_INFO_NEARBY",     "Show Nearby Actors",        False)
-   AddToggleOptionST("ST_INFO_KNOWN",      "Show Known Actors",         False)
-   AddToggleOptionST("ST_INFO_DEBUG",      "Show Debug Information",    False)
-   AddToggleOptionST("ST_INFO_DIALOGUE",   "Show Last Dialogue Target", False)
+   ; Report the name of the player's current cell.
+   String szCellName = _aPlayer.GetParentCell()
+   szCellName = Substring(szCellName, 7, GetLength(szCellName) - 20)
+   If (_aPlayer.IsInInterior())
+      szCellName += " (I)"
+   EndIf
+   AddLabel("Current Cell: " + szCellName)
 
-   AddEmptyOption()
-   AddHeaderOption("Vulnerability")
-   String szNakedLevel = "0x" + _qDfwUtil.ConvertHexToString(_qFramework.GetNakedLevel(), 8)
-   AddTextOption("Vulnerability", _qFramework.GetVulnerability(), a_flags=OPTION_FLAG_DISABLED)
-   AddTextOption("Naked",         szNakedLevel,                   a_flags=OPTION_FLAG_DISABLED)
-   AddTextOption("Weapon Level",  _qFramework.GetWeaponLevel(),   a_flags=OPTION_FLAG_DISABLED)
+   AddToggleOptionST("ST_INFO_FOR_PLAYER",  "Use Player for Info",       _bInfoForPlayer)
+   AddToggleOptionST("ST_INFO_FACTIONS",    "Show Player Factions",      False)
+   AddToggleOptionST("ST_INFO_REACTIONS",   "Show Faction Reactions",    False)
+   AddToggleOptionST("ST_INFO_NEARBY",      "Show Nearby Actors",        False)
+   AddToggleOptionST("ST_INFO_KNOWN",       "Show Known Actors",         False)
+   AddToggleOptionST("ST_INFO_DIALOGUE",    "Show Last Dialogue Target", False)
 
    AddEmptyOption()
    AddHeaderOption("Current Masters")
@@ -796,17 +889,13 @@ Function DisplayStatusPage(Bool bSecure)
    ; Start on the second column.
    SetCursorPosition(1)
 
-   ; Report the name of the player's current cell.
-   String szCellName = _aPlayer.GetParentCell()
-   szCellName = Substring(szCellName, 7, GetLength(szCellName) - 20)
-   If (_aPlayer.IsInInterior())
-      szCellName += " (I)"
-   EndIf
-   AddLabel("Current Cell: " + szCellName)
-
-   AddMenuOptionST("ST_STA_KEYWORD", "Keyword Browsing", "Select Item")
-
+   AddHeaderOption("Vulnerability")
+   String szNakedLevel = "0x" + _qDfwUtil.ConvertHexToString(_qFramework.GetNakedLevel(), 8)
+   AddTextOption("Vulnerability", _qFramework.GetVulnerability(), a_flags=OPTION_FLAG_DISABLED)
+   AddTextOption("Naked",         szNakedLevel,                   a_flags=OPTION_FLAG_DISABLED)
+   AddTextOption("Weapon Level",  _qFramework.GetWeaponLevel(),   a_flags=OPTION_FLAG_DISABLED)
    AddEmptyOption()
+
    AddHeaderOption("Furniture")
    ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
    String szValue = "None"
@@ -861,6 +950,7 @@ Function DisplayStatusPage(Bool bSecure)
       ; Shift the slot one bit to search the next mask.
       iSearchMask *= 2
    EndWhile
+   AddMenuOptionST("ST_STA_KEYWORD", "Keyword Browsing", "Select Item")
 EndFunction
 
 Function DisplayDebugPage(Bool bSecure)
@@ -876,11 +966,21 @@ Function DisplayDebugPage(Bool bSecure)
    AddSliderOptionST("ST_DBG_NEARBY",   "Screen - Nearby NPCs",        iLogLevelScreenNearby)
    AddSliderOptionST("ST_DBG_LEASH",    "Screen - Leash",              iLogLevelScreenLeash)
    AddSliderOptionST("ST_DBG_EQUIP",    "Screen - Equipping/Blocking", iLogLevelScreenEquip)
+   AddSliderOptionST("ST_DBG_AROUSAL",  "Screen - NPC Arousal",        iLogLevelScreenArousal)
 
    ; Start on the second column.
    SetCursorPosition(1)
 
    AddTextOptionST("ST_DBG_YANK_LEASH", "Yank Leash", "Do It Now")
+
+   String szTarget = "Player"
+   If (!_bInfoForPlayer)
+      Actor aNearby = _qFramework.GetNearestActor(0)
+      szTarget = aNearby.GetDisplayName()
+   EndIf
+   AddMenuOptionST("ST_INFO_REM_FACTION",   "Remove From Faction", szTarget)
+   AddTextOptionST("ST_SAFEWORD_FURNITURE", "Safeword: Furniture", "Use Safeword", a_flags=iFlags)
+   AddTextOptionST("ST_SAFEWORD_LEASH",     "Safeword: Leash",     "Use Safeword", a_flags=iFlags)
 EndFunction
 
 
@@ -896,7 +996,7 @@ State ST_FWK_SECURE
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iSettingsSecurity = fValue As Int
+      iSettingsSecurity = (fValue As Int)
       SetSliderOptionValueST(iSettingsSecurity)
    EndEvent
 
@@ -967,7 +1067,7 @@ State ST_FWK_POLL_NEAR
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iSettingsPollNearby = fValue As Int
+      iSettingsPollNearby = (fValue As Int)
       SetSliderOptionValueST(iSettingsPollNearby)
    EndEvent
 
@@ -992,7 +1092,7 @@ State ST_FWK_POLL_DISTANCE
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iSettingsNearbyDistance = fValue As Int
+      iSettingsNearbyDistance = (fValue As Int)
       _qFramework.UpdatePollingDistance(iSettingsNearbyDistance)
       SetSliderOptionValueST(iSettingsNearbyDistance)
    EndEvent
@@ -1205,7 +1305,7 @@ State ST_VUL_NUDE
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityNude = fValue As Int
+      iVulnerabilityNude = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityNude)
    EndEvent
 
@@ -1230,7 +1330,7 @@ State ST_VUL_COLLAR
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityCollar = fValue As Int
+      iVulnerabilityCollar = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityCollar)
    EndEvent
 
@@ -1255,7 +1355,7 @@ State ST_VUL_BINDER
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityBinder = fValue As Int
+      iVulnerabilityBinder = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityBinder)
    EndEvent
 
@@ -1280,7 +1380,7 @@ State ST_VUL_GAGGED
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityGagged = fValue As Int
+      iVulnerabilityGagged = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityGagged)
    EndEvent
 
@@ -1305,7 +1405,7 @@ State ST_VUL_RESTRAINTS
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityRestraints = fValue As Int
+      iVulnerabilityRestraints = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityRestraints)
    EndEvent
 
@@ -1330,7 +1430,7 @@ State ST_VUL_LEASHED
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityLeashed = fValue As Int
+      iVulnerabilityLeashed = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityLeashed)
    EndEvent
 
@@ -1355,7 +1455,7 @@ State ST_VUL_FURNITURE
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityFurniture = fValue As Int
+      iVulnerabilityFurniture = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityFurniture)
    EndEvent
 
@@ -1380,7 +1480,7 @@ State ST_VUL_NIGHT
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityNight = fValue As Int
+      iVulnerabilityNight = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityNight)
    EndEvent
 
@@ -1405,7 +1505,7 @@ State ST_VUL_REDUCE
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iVulnerabilityNakedReduce = fValue As Int
+      iVulnerabilityNakedReduce = (fValue As Int)
       SetSliderOptionValueST(iVulnerabilityNakedReduce)
    EndEvent
 
@@ -1423,7 +1523,102 @@ EndState
 
 
 ;***********************************************************************************************
-;***                                 STATES: MOD FEATURES                                    ***
+;***                                 STATES: NPC DISPOSITION                                 ***
+;***********************************************************************************************
+State ST_DISP_WILL_GUARDS
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iDispWillingGuards)
+      SetSliderDialogDefaultValue(_iDefWillingGuards)
+      SetSliderDialogRange(-100, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iDispWillingGuards = (fValue As Int)
+      SetSliderOptionValueST(iDispWillingGuards)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("NpcDisposition")
+   EndEvent
+
+   Event OnDefaultST()
+      iDispWillingGuards = _iDefWillingGuards
+      SetSliderOptionValueST(iDispWillingGuards)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("NpcDisposition")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Guards tend to have a higher (or possibly lower) willingness to help value.\n" +\
+                  "Use this slider to configure how much this is affected.")
+   EndEvent
+EndState
+
+State ST_DISP_WILL_MERCHANTS
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iDispWillingMerchants)
+      SetSliderDialogDefaultValue(_iDefWillingMerchants)
+      SetSliderDialogRange(-100, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iDispWillingMerchants = (fValue As Int)
+      SetSliderOptionValueST(iDispWillingMerchants)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("NpcDisposition")
+   EndEvent
+
+   Event OnDefaultST()
+      iDispWillingMerchants = _iDefWillingMerchants
+      SetSliderOptionValueST(iDispWillingMerchants)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("NpcDisposition")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Merchants tend to have a higher (or possibly lower) willingness to help value.\n" +\
+                  "Use this slider to configure how much this is affected.")
+   EndEvent
+EndState
+
+State ST_DISP_WILL_BDSM
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iDispWillingBdsm)
+      SetSliderDialogDefaultValue(_iDefWillingBdsm)
+      SetSliderDialogRange(-100, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iDispWillingBdsm = (fValue As Int)
+      SetSliderOptionValueST(iDispWillingBdsm)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("NpcDisposition")
+   EndEvent
+
+   Event OnDefaultST()
+      iDispWillingBdsm = _iDefWillingBdsm
+      SetSliderOptionValueST(iDispWillingBdsm)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("NpcDisposition")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Slavers tend to have a lower (or possibly higher) willingness to help value.\n" +\
+                  "This value also includes slaves who are prone to following the desires of their Masters.\n" +\
+                  "Use this slider to configure how much this is affected.")
+   EndEvent
+EndState
+
+
+;***********************************************************************************************
+;***                                  STATES: MOD FEATURES                                   ***
 ;***********************************************************************************************
 State ST_MOD_RAPE_REDRESS
    Event OnSliderOpenST()
@@ -1434,7 +1629,7 @@ State ST_MOD_RAPE_REDRESS
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iModRapeRedressTimeout = fValue As Int
+      iModRapeRedressTimeout = (fValue As Int)
       SetSliderOptionValueST(iModRapeRedressTimeout)
    EndEvent
 
@@ -1459,7 +1654,7 @@ State ST_MOD_NAKED_REDRESS
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iModNakedRedressTimeout = fValue As Int
+      iModNakedRedressTimeout = (fValue As Int)
       SetSliderOptionValueST(iModNakedRedressTimeout)
    EndEvent
 
@@ -1537,7 +1732,7 @@ State ST_MOD_LEASH_DAMAGE
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iModLeashDamage = fValue As Int
+      iModLeashDamage = (fValue As Int)
       SetSliderOptionValueST(iModLeashDamage)
    EndEvent
 
@@ -1560,7 +1755,7 @@ State ST_MOD_SLA_THRESHOLD
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iModSlaThreshold = fValue As Int
+      iModSlaThreshold = (fValue As Int)
       SetSliderOptionValueST(iModSlaThreshold)
    EndEvent
 
@@ -1585,7 +1780,7 @@ State ST_MOD_SLA_MIN
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iModSlaAdjustedMin = fValue As Int
+      iModSlaAdjustedMin = (fValue As Int)
       SetSliderOptionValueST(iModSlaAdjustedMin)
    EndEvent
 
@@ -1609,7 +1804,7 @@ State ST_MOD_SLA_MAX
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iModSlaAdjustedMax = fValue As Int
+      iModSlaAdjustedMax = (fValue As Int)
       SetSliderOptionValueST(iModSlaAdjustedMax)
    EndEvent
 
@@ -1626,25 +1821,59 @@ EndState
 
 State ST_MOD_ENABLE_DIALOGUE
    Event OnSelectST()
-      bModEnableDialogues = !bModEnableDialogues
-      SetToggleOptionValueST(bModEnableDialogues)
+      iModDialogueTargetStyle += 1
+      If (_qFramework.DS_MANUAL < iModDialogueTargetStyle)
+         iModDialogueTargetStyle = 0
+      EndIf
+      SetTextOptionValueST(DialogueStyleToString(iModDialogueTargetStyle))
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
       SendSettingChangedEvent("ModFeatures")
    EndEvent
 
    Event OnDefaultST()
-      bModEnableDialogues = _bDefEnableDialogues
-      SetToggleOptionValueST(bModEnableDialogues)
+      iModDialogueTargetStyle = _iDefDialogueTargetStyle
+      SetTextOptionValueST(DialogueStyleToString(iModDialogueTargetStyle))
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
       SendSettingChangedEvent("ModFeatures")
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("The greetings dialogues are a feature that I think may greatly improve dialogues in mods.\n" +\
-                  "Please leave this enabled as much as you can and evaluate whether this is an acceptable addition to the game.\n" +\
-                  "This feature gathers a significant amount of info about the NPC and makes it available to all mod dialogues.")
+      SetInfoText("Greetings dialogues gather a significant amout of information and make it available to all mod dialgoues.\n" +\
+                  "Automatic: Each NPC will greet the player when he first starts talking to her.\n" +\
+                  "Manual: The player must select \"Greetings\" before this info (and associated dialogues) become available.")
+   EndEvent
+EndState
+
+State ST_MOD_DIALOGUE_RETRIES
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModDialogueTargetRetries)
+      SetSliderDialogDefaultValue(_iDefDialogueTargetRetries)
+      SetSliderDialogRange(0, 10)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModDialogueTargetRetries = (fValue As Int)
+      SetSliderOptionValueST(iModDialogueTargetRetries)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("ModFeatures")
+   EndEvent
+
+   Event OnDefaultST()
+      iModDialogueTargetRetries = _iDefDialogueTargetRetries
+      SetSliderOptionValueST(iModDialogueTargetRetries)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("ModFeatures")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Dialogue targets are less effective if the NPC is not in the nearby actor list.\n" +\
+                  "When speaking to an NPC not yet in list you may see the Greetings dialogue a couple of times retrying.\n" +\
+                  "0: A single attempt only.  No retries.  Recommended: 2.")
    EndEvent
 EndState
 
@@ -1930,6 +2159,7 @@ EndState
 
 State ST_INFO_FACTIONS
    Event OnSelectST()
+      SetToggleOptionValueST(True)
       Actor aActor = _aPlayer
       String szTitle = "Player"
       If (!_bInfoForPlayer)
@@ -1949,7 +2179,7 @@ State ST_INFO_FACTIONS
       While (0 <= iIndex)
          Faction oFaction = aoFaction[iIndex]
          String szFormId = "0x" + _qDfwUtil.ConvertHexToString(oFaction.GetFormID(), 8)
-         String szName = oFaction.GetName()
+         String szName = GetFactionName(oFaction)
          Int iRank = aActor.GetFactionRank(oFaction)
          Bool bInFaction = aActor.IsInFaction(oFaction)
          aszInfo = _qDfwUtil.AddStringToArray(aszInfo, szFormId + "-" + szName + ": " + iRank + " (" + bInFaction + ")")
@@ -1961,6 +2191,7 @@ State ST_INFO_FACTIONS
 
       ; Display the information for the user.
       PresentInformation(aszInfo, szTitle)
+      SetToggleOptionValueST(False)
    EndEvent
 
    Event OnHighlightST()
@@ -1968,8 +2199,65 @@ State ST_INFO_FACTIONS
    EndEvent
 EndState
 
+State ST_INFO_REACTIONS
+   Event OnSelectST()
+      SetToggleOptionValueST(True)
+      String[] aszInfo
+
+
+      ; Get factions for the player and for the nearest actor.
+      Faction[] aoPlayerFactions = _aPlayer.GetFactions(-128, 127)
+      Actor aNearest
+      If (_bInfoForPlayer)
+         aNearest = _qFramework.GetNearestActor(0)
+      Else
+         ; If info for player is not selected use the player's combat target instead of nearest actor.
+         aNearest = _aPlayer.GetCombatTarget()
+      EndIf
+      Faction[] aoNearestFactions = aNearest.GetFactions(-128, 127)
+
+      Int iNearestMaxIndex = aoNearestFactions.Length - 1
+      Int iPlayerIndex = aoPlayerFactions.Length - 1
+      While (0 <= iPlayerIndex)
+         Faction oPlayerFaction = aoPlayerFactions[iPlayerIndex]
+         String szPlayerFactionName = GetFactionName(oPlayerFaction)
+
+         Bool bMatchFound = False
+         Int iNearestIndex = iNearestMaxIndex
+         While (0 <= iNearestIndex)
+            Faction oNearestFaction = aoNearestFactions[iNearestIndex]
+            String szNearestFactionName = GetFactionName(oNearestFaction)
+
+            If ((oNearestFaction == oPlayerFaction) || \
+                (oPlayerFaction.GetReaction(oNearestFaction) || oNearestFaction.GetReaction(oPlayerFaction)))
+               If (!bMatchFound)
+                  aszInfo = _qDfwUtil.AddStringToArray(aszInfo, "===" + szPlayerFactionName + "===")
+                  bMatchFound = True
+               EndIf
+               aszInfo = _qDfwUtil.AddStringToArray(aszInfo, szNearestFactionName + \
+                                                             " (" + oPlayerFaction.GetReaction(oNearestFaction) + "-" + \
+                                                             oNearestFaction.GetReaction(oPlayerFaction) + ")")
+            EndIf
+            iNearestIndex -= 1
+         EndWhile
+         iPlayerIndex -= 1
+      EndWhile
+
+      ; Display the information for the user.
+      PresentInformation(aszInfo, "Target: " + aNearest.GetDisplayName())
+      SetToggleOptionValueST(False)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Display the faction reaction for each of the player's factions against those of the nearest actor.\n" +\
+                  "Any faction combinations that are not dispalyed have a reaction of 0.\n" +\
+                  "If \"Use Player for Info\" is un-selected the player's combat target will be used instead.")
+   EndEvent
+EndState
+
 State ST_INFO_NEARBY
    Event OnSelectST()
+      SetToggleOptionValueST(True)
       String[] aszInfo
 
       ; Create a list of information to present to the user.
@@ -1997,6 +2285,7 @@ State ST_INFO_NEARBY
 
       ; Display the information for the user.
       PresentInformation(aszInfo, "Nearby Actors")
+      SetToggleOptionValueST(False)
    EndEvent
 
    Event OnHighlightST()
@@ -2008,6 +2297,7 @@ EndState
 
 State ST_INFO_KNOWN
    Event OnSelectST()
+      SetToggleOptionValueST(True)
       String[] aszInfo
 
       ; Create a list of information to present to the user.
@@ -2029,6 +2319,7 @@ State ST_INFO_KNOWN
 
       ; Display the information for the user.
       PresentInformation(aszInfo, "Known Actors")
+      SetToggleOptionValueST(False)
    EndEvent
 
    Event OnHighlightST()
@@ -2037,35 +2328,14 @@ State ST_INFO_KNOWN
    EndEvent
 EndState
 
-State ST_INFO_DEBUG
-   Event OnSelectST()
-      String[] aszInfo
-
-      ; Create a list of information to present to the user.
-      ActorBase abPlayer = _aPlayer.GetActorBase()
-      Int iCount = abPlayer.GetSpellCount()
-      Int iIndex
-      While (iIndex < iCount)
-         Spell oSpell = abPlayer.GetNthSpell(iIndex)
-         aszInfo = _qDfwUtil.AddStringToArray(aszInfo, oSpell.GetName())
-         iIndex += 1
-      EndWhile
-
-      ; Display the information for the user.
-      PresentInformation(aszInfo, "Actor Base Spells")
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Display debug information.")
-   EndEvent
-EndState
-
 State ST_INFO_DIALOGUE
    Event OnSelectST()
+      SetToggleOptionValueST(True)
       String[] aszInfo = _qFramework.GetDialogueTargetInfo()
 
       ; Display the information for the user.
       PresentInformation(aszInfo, "Dialogue Target Info")
+      SetToggleOptionValueST(False)
    EndEvent
 
    Event OnHighlightST()
@@ -2086,7 +2356,7 @@ State ST_DBG_LEVEL
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevel = fValue As Int
+      iLogLevel = (fValue As Int)
       SetSliderOptionValueST(iLogLevel)
    EndEvent
 
@@ -2111,7 +2381,7 @@ State ST_DBG_GENERAL
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreenGeneral = fValue As Int
+      iLogLevelScreenGeneral = (fValue As Int)
       SetSliderOptionValueST(iLogLevelScreenGeneral)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2142,7 +2412,7 @@ State ST_DBG_STATUS
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreenStatus = fValue As Int
+      iLogLevelScreenStatus = (fValue As Int)
       SetSliderOptionValueST(iLogLevelScreenStatus)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2173,7 +2443,7 @@ State ST_DBG_MASTER
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreenMaster = fValue As Int
+      iLogLevelScreenMaster = (fValue As Int)
       SetSliderOptionValueST(iLogLevelScreenMaster)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2204,7 +2474,7 @@ State ST_DBG_NEARBY
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreenNearby = fValue As Int
+      iLogLevelScreenNearby = (fValue As Int)
       SetSliderOptionValueST(iLogLevelScreenNearby)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2235,7 +2505,7 @@ State ST_DBG_LEASH
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreenLeash = fValue As Int
+      iLogLevelScreenLeash = (fValue As Int)
       SetSliderOptionValueST(iLogLevelScreenLeash)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2266,7 +2536,7 @@ State ST_DBG_EQUIP
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreenEquip = fValue As Int
+      iLogLevelScreenEquip = (fValue As Int)
       SetSliderOptionValueST(iLogLevelScreenEquip)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2288,6 +2558,37 @@ State ST_DBG_EQUIP
    EndEvent
 EndState
 
+State ST_DBG_AROUSAL
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenArousal)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenArousal)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenArousal = (fValue As Int)
+      SetSliderOptionValueST(iLogLevelScreenArousal)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenArousal = _iDefLogLevelScreenArousal
+      SetSliderOptionValueST(iLogLevelScreenArousal)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level of messages that go to the screen for messages about changing nearby NPC arousal.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information")
+   EndEvent
+EndState
+
 State ST_DBG_YANK_LEASH
    Event OnSelectST()
       _qFramework.YankLeash(0, _qFramework.LS_DRAG, bInterruptLeashTarget=True)
@@ -2302,6 +2603,104 @@ State ST_DBG_YANK_LEASH
       SetInfoText("Sometimes with the \"Drag\" leash the player can get caught bobbing back and forth.\n" + \
                   "Most of the time this issue will correct itself.  In the odd case that it doesn't, performing\n" +\
                   "a manual yank of the leash will should fix this issue.")
+   EndEvent
+EndState
+
+State ST_INFO_REM_FACTION
+   Event OnMenuOpenST()
+      Actor aActor = _aPlayer
+      If (!_bInfoForPlayer)
+         Actor aNearby = _qFramework.GetNearestActor(0)
+         If (aNearby)
+            aActor = aNearby
+         EndIf
+      EndIf
+
+      ; Get a list of all of the factions for the selected actor.
+      Faction[] aoFaction = aActor.GetFactions(-128, 127)
+      Int iCount = aoFaction.Length
+
+      String[] aszOptions = Utility.CreateStringArray(iCount + 1)
+      aszOptions[0] = S_REM_NONE
+
+      ; Add a text value for each slot to the option array.
+      Int iIndex = 0
+      While (iIndex < iCount)
+         Faction oFaction = aoFaction[iIndex]
+         String szFormId = "0x" + _qDfwUtil.ConvertHexToString(oFaction.GetFormID(), 8)
+         String szName = GetFactionName(oFaction)
+         aszOptions[iIndex + 1] = szName + " (" + szFormId + ")"
+         iIndex += 1
+      EndWhile
+
+      ; Display the options
+      SetMenuDialogStartIndex(0)
+      SetMenuDialogDefaultIndex(0)
+      SetMenuDialogOptions(aszOptions)
+   EndEvent
+
+   Event OnMenuAcceptST(Int iChosenIndex)
+      ; Ignore the first option ("Remove None")
+      If (!iChosenIndex)
+         Return
+      EndIf
+
+      ; Adjust the chosen index since the "Remove None" is no longer in the list.
+      iChosenIndex -= 1
+
+      ; Recreate the list of factions that was presented to the user.
+      Actor aActor = _aPlayer
+      If (!_bInfoForPlayer)
+         Actor aNearby = _qFramework.GetNearestActor(0)
+         If (aNearby)
+            aActor = aNearby
+         EndIf
+      EndIf
+      Faction[] aoFaction = aActor.GetFactions(-128, 127)
+      Faction oFaction = aoFaction[iChosenIndex]
+      aActor.RemoveFromFaction(oFaction) 
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Use this to remove the player or the nearest NPC from a faction.\n" +\
+                  "\"Use Player for Info\" under \"Status\" determines whether the palyer or\n" +\
+                  "the nearest NPC will be used.")
+   EndEvent
+EndState
+
+State ST_SAFEWORD_FURNITURE
+   Event OnSelectST()
+      ; Send an event to indicate the safeword has been invoked.
+      SendSettingChangedEvent("SafewordFurniture")
+      SetTextOptionValueST("Done")
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Use Safeword")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Releases all locks and lock related status related to BDSM furniture.\n" +\
+                  "Note: This only clears DFW status.  Mods that created the lock may need to be cleared separately.\n" +\
+                  "Warning: This feature cannot be used when the mod's MCM security settings are used.")
+   EndEvent
+EndState
+
+State ST_SAFEWORD_LEASH
+   Event OnSelectST()
+      ; Send an event to indicate the safeword has been invoked.
+      SendSettingChangedEvent("SafewordLeash")
+      SetTextOptionValueST("Done")
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Use Safeword")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Releases all locks and lock related status related to the DFW leash.\n" +\
+                  "Note: This only clears DFW status.  Mods that secured the leash may need to be cleared separately.\n" +\
+                  "Warning: This feature cannot be used when the mod's MCM security settings are used.")
    EndEvent
 EndState
 
