@@ -55,12 +55,14 @@ Bool _bSecureSdPlusLeash
 
 ; *** Toggle Options ***
 Bool _bIncludeOwners
+Bool _bSexDispositions
 Bool _bCatchZazEvents
 Bool _bCatchSdPlus
 Bool _bLeashSdPlus
 Bool _bBlockHelpless
 Bool _bAutoAddFurniture
 Bool Property bIncludeOwners    Auto
+Bool Property bSexDispositions  Auto
 Bool Property bCatchZazEvents   Auto
 Bool Property bCatchSdPlus      Auto
 Bool Property bLeashSdPlus      Auto
@@ -230,6 +232,11 @@ Function UpdateScript()
       _iLogLevelScreenDef = 2
       iLogLevelScreen     = _iLogLevelScreenDef
    EndIf
+
+   If (7 > CurrentVersion)
+      _bSexDispositions = True
+      bSexDispositions = _bSexDispositions
+   EndIf
 EndFunction
 
 Event OnConfigInit()
@@ -250,10 +257,6 @@ Int Function GetVersion()
    ;   CurrentVersion = 4
    ;EndIf
 
-   ; Print a notifiaction of when this function is called so we can have more confidence that
-   ; it behaves as we think it behaves (once per game load).
-   Debug.Notification("[DFWS-MCM] Checking Version.")
-
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
    _qFramework  = (Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework)
@@ -261,7 +264,7 @@ Int Function GetVersion()
    _qDfwUtil    = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
    _qDfwMcm     = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
-   Return 6
+   Return 7
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -347,13 +350,16 @@ Function DisplayDfwSupportPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddSliderOptionST("ST_FWK_SECURE",         "Security Level",        _iSecurityLevel, a_flags=iFlags)
-   AddToggleOptionST("ST_FWK_HARDCORE",       "...Hardcore (Caution)", _bSecureHardcore, a_flags=iFlags)
-   AddToggleOptionST("ST_FWK_SECURE_LEASH",   "Secure SD+ Leash",      _bSecureSdPlusLeash, a_flags=iFlags)
+   AddSliderOptionST("ST_FWK_SECURE",          "Security Level",        _iSecurityLevel, a_flags=iFlags)
+   AddToggleOptionST("ST_FWK_HARDCORE",        "...Hardcore (Caution)", _bSecureHardcore, a_flags=iFlags)
+   AddToggleOptionST("ST_FWK_SECURE_LEASH",    "Secure SD+ Leash",      _bSecureSdPlusLeash, a_flags=iFlags)
 
    AddEmptyOption()
-   AddSliderOptionST("ST_FWK_POLL_TIME",      "Poll Time",             fPollTime, "{1}")
-   AddSliderOptionST("ST_MOD_BLOCK_TRAVEL",   "Block Travel",          iBlockTravel, a_flags=iFlags)
+   AddSliderOptionST("ST_FWK_POLL_TIME",       "Poll Time",             fPollTime, "{1}")
+   AddSliderOptionST("ST_MOD_BLOCK_TRAVEL",    "Block Travel",          iBlockTravel, a_flags=iFlags)
+
+   AddEmptyOption()
+   AddToggleOptionST("ST_FWK_SEX_DISPOSITION", "Sex Dispositions",      bSexDispositions)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -362,15 +368,15 @@ Function DisplayDfwSupportPage(Bool bSecure)
 
    AddEmptyOption()
    AddHeaderOption("Mod Compatibility")
-   AddToggleOptionST("ST_MOD_ZAZ_EVENTS", "Catch ZAZ Events",          bCatchZazEvents, a_flags=iFlags)
-   AddToggleOptionST("ST_MOD_SDP_EVENTS", "Catch SD+ Enslavement",     bCatchSdPlus, a_flags=iFlags)
+   AddToggleOptionST("ST_MOD_ZAZ_EVENTS", "Catch ZAZ Events",           bCatchZazEvents, a_flags=iFlags)
+   AddToggleOptionST("ST_MOD_SDP_EVENTS", "Catch SD+ Enslavement",      bCatchSdPlus, a_flags=iFlags)
 
    ; For now always allow the SD+ leash to be disabled as it can have pretty significant consequences.
    Int iSdLeashFlags = OPTION_FLAG_NONE
    If (_bSecureSdPlusLeash)
       iSdLeashFlags = OPTION_FLAG_DISABLED
    EndIf
-   AddToggleOptionST("ST_MOD_SDP_LEASH",  "Start SD+ Leash",           bLeashSdPlus, a_flags=iSdLeashFlags)
+   AddToggleOptionST("ST_MOD_SDP_LEASH",  "Start SD+ Leash",            bLeashSdPlus, a_flags=iSdLeashFlags)
 
    ; Make sure the poll function is updating as expected.
    Float fDelta = Utility.GetCurrentRealTime() - _qDfwSupport.GetLastUpdateTime()
@@ -565,6 +571,23 @@ State ST_MOD_BLOCK_TRAVEL
    Event OnHighlightST()
       SetInfoText("Block fast travel when at least this vulnerable.\n" +\
                   "0 = Always block.  1 = Always block when vulnerable.  100 = Never block.")
+   EndEvent
+EndState
+
+State ST_FWK_SEX_DISPOSITION
+   Event OnSelectST()
+      bSexDispositions = !bSexDispositions
+      SetToggleOptionValueST(bSexDispositions)
+   EndEvent
+
+   Event OnDefaultST()
+      bSexDispositions = _bSexDispositions
+      SetToggleOptionValueST(bSexDispositions)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When enabled sex events involving the player increase the DFW interest of the actors.\n" +\
+                  "Depending on the situation the NPC's dominance value may increase as well.")
    EndEvent
 EndState
 

@@ -69,6 +69,9 @@ dfwDeviousFramework _qFramework
 ; A reference to the Devious Framework Util quest script.
 dfwUtil _qDfwUtil
 
+; A reference to the SexLab Framework quest script.
+SexLabFramework _qSexLab
+
 ; A reference to the ZAZ Animation Pack (ZBF) slave control APIs.
 zbfSlaveControl _qZbfSlave
 zbfSlaveActions _qZbfSlaveActions
@@ -234,7 +237,9 @@ Bool _bFastTravelBlocked
 ; This function is primarily to ensure new variables are initialized for new script versions.
 Function UpdateScript()
    ; Reset the version number.
-   ; _fCurrVer = 0.00
+   ;If (0.05 < _fCurrVer)
+   ;   _fCurrVer = 0.05
+   ;EndIf
 
    ; Very basic initialization.
    ; Make sure this is done before logging so the MCM options are available.
@@ -283,6 +288,10 @@ Function UpdateScript()
    If (0.06 > _fCurrVer)
       ; Added blindfolds.
       CreateRestraintsArrays()
+
+      ; Register for post sex events to adjust actor dispositions accordingly.
+      _qSexLab = (Quest.GetQuest("SexLabQuestFramework") As SexLabFramework)
+      RegisterForModEvent("AnimationEnd", "PostSexCallback")
    EndIf
 
    ; Finally update the version number.
@@ -296,6 +305,7 @@ Function OnLoadGame()
    _qMcm             = ((Self As Quest) As dfwsMcm)
    _qFramework       = (Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework)
    _qDfwUtil         = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
+   _qSexLab          = (Quest.GetQuest("SexLabQuestFramework") As SexLabFramework)
    _qZadLibs         = (Quest.GetQuest("zadQuest") As Zadlibs)
    _qZadArmbinder    = (Quest.GetQuest("zadArmbinderQuest") As zadHeavyBondageQuestScript)
    _qZbfSlave        = zbfSlaveControl.GetApi()
@@ -317,7 +327,8 @@ Function PerformOnUpdate()
 
    ; Game Loaded: If the current real time is low (has been reset) that indicates the game has
    ; just been loaded.  Do some processing at the beginning of the loaded game.
-   If (_fLastUpdatePoll > fCurrRealTime)
+   If ((_fLastUpdatePoll > fCurrRealTime) || \
+       (_fLastUpdatePoll < (fCurrRealTime - (_qMcm.fPollTime * 10))))
       OnLoadGame()
    ElseIf (10 >= _iPollsSinceLoad)
       _iPollsSinceLoad += 1
@@ -336,6 +347,8 @@ Function PerformOnUpdate()
          RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
          RegisterForModEvent("SDEnslavedStart", "EventSdPlusStart")
          RegisterForModEvent("SDEnslavedStop", "EventSdPlusStop")
+         RegisterForModEvent("AnimationEnd", "PostSexCallback")
+         RegisterForModEvent("DFW_MCM_Changed", "DfwMcmUpdated")
       EndIf
 
       ; Near the start of each game load suspend deviously helpless assaults if needed.
@@ -448,7 +461,10 @@ Function PerformOnUpdate()
             EndIf
          EndIf
 
-         If (_qMcm.fFurnitureLockChance > Utility.RandomFloat(0, 100))
+         Float fMaxChance = _qMcm.fFurnitureLockChance
+         Float fRoll = Utility.RandomFloat(0, 100)
+         Log("Furniture Roll: " + fRoll + "/" + fMaxChance, DL_TRACE, S_MOD)
+         If (fMaxChance > fRoll)
             ; Find someone nearby to lock the player in the device.
             Actor aNearby = _qFramework.GetRandomActor(iIncludeFlags=_qFramework.AF_DOMINANT)
             If (aNearby && !_qFramework.SceneStarting(S_MOD, 60))
@@ -475,7 +491,9 @@ Function PerformOnUpdate()
                fChance = 0
             EndIf
          EndIf
-         If ((fChance > Utility.RandomFloat(0, 100)) && !_qFramework.SceneStarting(S_MOD, 60))
+         Float fRoll = Utility.RandomFloat(0, 100)
+         Log("Furniture End Roll: " + fRoll + "/" + fChance, DL_TRACE, S_MOD)
+         If ((fChance > fRoll) && !_qFramework.SceneStarting(S_MOD, 60))
             ImmobilizePlayer()
             ; Wait for the NPC if he is in the process of sitting or standing.
             ActorSitStateWait(aHelper)
@@ -586,8 +604,11 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
    ElseIf ((S_MOD + "_Unlock" == szMessage) || (S_MOD + "_Release" == szMessage))
       Log(szName + " starts unlocking you from your device.", DL_CRIT, S_MOD)
 
+      Int iMaxChance = _qMcm.iFurnitureTeaseChance
+      Float fRoll = Utility.RandomFloat(0, 100)
+      Log("Teasing Roll: " + fRoll + "/" + iMaxChance, DL_TRACE, S_MOD)
       If ((S_MOD + "_Unlock" == szMessage) && \
-          (_qMcm.iFurnitureTeaseChance >= Utility.RandomFloat(0, 100)))
+          (iMaxChance > fRoll))
          ; The NPC was just teasing the player and really keeps her locked up.
          _qZbfSlaveActions.RestrainInDevice(_oBdsmFurniture, aMaster, S_MOD + "_Teased")
       Else
@@ -652,6 +673,60 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
    EndIf
 EndEvent
 
+Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender)
+   ; Make sure the player is involved in this scene.
+   Actor[] aaEventActors = _qSexLab.HookActors(szArg)
+   If (-1 == aaEventActors.Find(_aPlayer))
+      Return
+   EndIf
+
+   If (_qMcm.bSexDispositions)
+      Int iIndex = aaEventActors.Length - 1
+      While (0 <= iIndex)
+         Actor aPartner = aaEventActors[iIndex]
+         Race oRace = aPartner.GetRace()
+         ; Checking the playable race excludes animals from the processing.
+         If ((_aPlayer != aPartner) && oRace.IsPlayable())
+            Int iActorFlags = _qFramework.GetActorFlags(aPartner)
+            Int iCurrDominance = _qFramework.GetActorDominance(aPartner, 0, 80, True, 1)
+            Bool bDominant = (Math.LogicalAnd(_qFramework.AF_SLAVE_TRADER, iActorFlags) || \
+                              Math.LogicalAnd(_qFramework.AF_OWNER, iActorFlags) || \
+                              (Math.LogicalAnd(_qFramework.AF_DOMINANT, iActorFlags) && \
+                               (50 <= iCurrDominance)))
+            Actor aVictim = _qSexLab.HookVictim(szArg)
+            Int iDeltaInterest = 1
+            Int iDeltaDominance = 1
+            If (aVictim == aPartner)
+               ; The NPC was raped.
+               iDeltaDominance = -3
+               If (!bDominant)
+                  ; The NPC is submissive.
+                  iDeltaInterest = 3
+               Else
+                  iDeltaInterest = -3
+               EndIf
+            ElseIf ((_aPlayer == aVictim) || (30 <= _qFramework.GetVulnerability(_aPlayer)))
+               ; The player was raped or at least locked in bondage for the sex.
+               iDeltaDominance = 3
+               If (bDominant)
+                  ; The NPC is dominant.
+                  iDeltaInterest = 3
+               Else
+                  iDeltaInterest = -1
+               EndIf
+            ElseIf (aVictim)
+               ; A third party was raped.
+               iDeltaDominance = 3
+            EndIf
+            _qFramework.IncActorInterest(aPartner, iDeltaInterest, 0, 100)
+            _qFramework.IncActorDominance(aPartner, iDeltaDominance, 0, 100)
+         EndIf
+
+         iIndex -= 1
+      EndWhile
+   EndIf
+EndEvent
+
 Event EventSdPlusStart(String szEventName, String szArg, Float fArg = 1.0, Form oSender)
    StartSdPlus()
 EndEvent
@@ -659,6 +734,23 @@ EndEvent
 Event EventSdPlusStop(String szEventName, String szArg, Float fArg = 1.0, Form oSender)
    StopSdPlus()
 EndEvent
+
+Function UpdateLocalMcmSettings(String sCategory="")
+   If ("SafewordFurniture" == sCategory)
+      Log("Safeword BDSM Furniture.", DL_CRIT, S_MOD)
+      _iMovementSafety = 0
+      ReMobilizePlayer()
+      _aFurnitureLocker = None
+      _qFramework.SetBdsmFurnitureLocked(False)
+      _qFramework.SceneDone(S_MOD)
+   EndIf
+
+   If ("SafewordLeash" == sCategory)
+      Log("Safeword Leash.", DL_CRIT, S_MOD)
+      StopLeashGame()
+      _qFramework.SceneDone(S_MOD)
+   EndIf
+EndFunction
 
 
 ;***********************************************************************************************
@@ -1228,7 +1320,11 @@ Function StartConversation(Actor aActor, Int iGoal=-1, Int iRefusalCount=-1, \
       _iDialogueBusy = 3
 
       ; For short dialogues, disable DFW dialogue targets for a few seconds.
-      _qFramework.TemporarilyPauseDialogueTargets(3)
+      ;_qFramework.TemporarilyPauseDialogueTargets(3)
+      ; Instead maybe we should prepare the dialogue for the target.  That should disable the
+      ; auto-greeting and make all dialogues available for those with manual greeting.
+      _qFramework.PrepareActorDialogue(aActor)
+
    EndIf
 
    ; Have the leash holder speak with the player.
@@ -1244,7 +1340,9 @@ Function CheckStartLeashGame(Int iVulnerability)
       If (_qMcm.iIncreaseWhenVulnerable)
          fMaxChance += ((_qMcm.iIncreaseWhenVulnerable As Float) * iVulnerability / 100)
       EndIf
-      If (Utility.RandomFloat(0, 100) < fMaxChance)
+      Float fRoll = Utility.RandomFloat(0, 100)
+      Log("Leash Game Roll: " + fRoll + "/" + fMaxChance, DL_TRACE, S_MOD)
+      If (fMaxChance > fRoll)
          ; Find an actor to use as the Master in the leash game.
          Int iActorFlags = _qFramework.AF_SLAVE_TRADER
          If (_qMcm.bIncludeOwners)
@@ -1268,6 +1366,8 @@ Function CheckStartLeashGame(Int iVulnerability)
                ; Start the game.
                StartLeashGame(aRandomActor)
             EndIf
+         Else
+            Log("Leash Game No Actor.", DL_TRACE, S_MOD)
          EndIf
       EndIf
    EndIf
@@ -1359,22 +1459,27 @@ Function PlayLeashGame()
    If (0 >= _iLeashGameDuration)
       ;Log("Leash Game Ending.", DL_TRACE, S_MOD)
 
-      ; The slaver will only release the player if he is not particularly anger with her.
-      If (_qMcm.iMaxAngerForRelease >= _qFramework.GetActorAnger(_aLeashHolder))
-         Int iChance = _qMcm.iChanceOfRelease
-         Int iDominance = _qFramework.GetActorDominance(_aLeashHolder)
-         iChance -= (((iDominance - 50) * _qMcm.iDominanceAffectsRelease) / 50)
-         If (iChance >= Utility.RandomFloat(0, 100))
-            ; The leash game has ended.  The player will be set free.
-            Log(_aLeashHolder.GetDisplayName() + " unties your leash and lets you go.", \
-                DL_CRIT, S_MOD)
-            StopLeashGame()
-            Return
+      ; Only consider stopping the leash game if nothing else is going on.
+      If (0 >= _iLeashHolderGoal)
+         ; The slaver will only release the player if he is not particularly anger with her.
+         If (_qMcm.iMaxAngerForRelease >= _qFramework.GetActorAnger(_aLeashHolder))
+            Int iChance = _qMcm.iChanceOfRelease
+            Int iDominance = _qFramework.GetActorDominance(_aLeashHolder)
+            iChance -= (((iDominance - 50) * _qMcm.iDominanceAffectsRelease) / 50)
+            Float fRoll = Utility.RandomFloat(0, 100)
+            Log("Leash Game End Roll: " + fRoll + "/" + iChance, DL_TRACE, S_MOD)
+            If (iChance > fRoll)
+               ; The leash game has ended.  The player will be set free.
+               Log(_aLeashHolder.GetDisplayName() + " unties your leash and lets you go.", \
+                   DL_CRIT, S_MOD)
+               StopLeashGame()
+               Return
+            EndIf
          EndIf
-      EndIf
 
-      ; The leash game has been extended for some reason.  Reset the duration.
-      _iLeashGameDuration = GetLeashGameDuration(True)
+         ; The leash game has been extended for some reason.  Reset the duration.
+         _iLeashGameDuration = GetLeashGameDuration(True)
+      EndIf
    EndIf
 
    ; Next handle cases of the player being locked in BDSM furniture.
@@ -1438,7 +1543,7 @@ Function PlayLeashGame()
       ; If the player has put away her weapons.  Relax a little.
       If (!_qFramework.GetWeaponLevel())
          _iLeashHolderGoal = -2
-         _qFramework.IncActorAnger(_aLeashHolder, -3, 25, 100)
+         _qFramework.IncActorAnger(_aLeashHolder, -3, 40, 100)
          ; If the player has weapons equipped again it's because she re-equipped them.
          _bReequipWeapons = True
          Return
@@ -1449,9 +1554,9 @@ Function PlayLeashGame()
       iAnger = _qFramework.IncActorAnger(_aLeashHolder, _iLeashGoalRefusalCount / 3, 0, 100)
 
       ; If the actor is overly annoyed yank the player's leash.
-      If (65 < iAnger)
+      If (50 < iAnger)
          AssaultPlayer(0.3, bStealWeapons=True)
-      ElseIf ((50 < iAnger) && _aPlayer.IsWeaponDrawn())
+      ElseIf ((40 < iAnger) && _aPlayer.IsWeaponDrawn())
          AssaultPlayer(0.3, bStealWeapons=True)
       ElseIf (!(_iLeashGoalRefusalCount % 4))
          ; Otherwise just talk to the player about her behaviour.
@@ -1469,7 +1574,7 @@ Function PlayLeashGame()
          _qFramework.RemovePermission(_aLeashHolder, _qFramework.AP_DRESSING_ASSISTED)
 
          _iLeashHolderGoal = -2
-         _qFramework.IncActorAnger(_aLeashHolder, -3, 25, 100)
+         _qFramework.IncActorAnger(_aLeashHolder, -3, 30, 100)
          Return
       EndIf
 
@@ -1514,7 +1619,7 @@ Function PlayLeashGame()
       ; Only try to start something if the player is not already involved in a scene.
       If (!_qFramework.GetCurrentScene())
          ; If the actor is overly annoyed yank the player's leash.
-         If (65 < iAnger)
+         If (50 < iAnger)
             AssaultPlayer(0.3, bAddGag=True, bStrip=False, bAddArmBinder=True)
          ElseIf (!(_iLeashGoalRefusalCount % 5))
             ; Otherwise just talk to the player about her behaviour.
@@ -1546,7 +1651,7 @@ Function PlayLeashGame()
       If (_bReequipWeapons)
          ; Increase the refusal count to trigger a continuation dialogue.
          _iLeashGoalRefusalCount = 3
-         _qFramework.IncActorAnger(_aLeashHolder, 10, 0, 100)
+         _qFramework.IncActorAnger(_aLeashHolder, 5, 0, 100)
       EndIf
 
       StartConversation(_aLeashHolder, 1)
@@ -1574,7 +1679,7 @@ Function PlayLeashGame()
       If (!(_iCurrWalkInFrontCount % 3))
          ; Have the slaver get upset at the player's behaviour.
          _iTotalWalkInFrontCount += 1
-         _qFramework.IncActorAnger(_aLeashHolder, 1, 0, 70)
+         _qFramework.IncActorAnger(_aLeashHolder, 1, 0, 65)
 
          _qFramework.YankLeash()
          StartConversation(_aLeashHolder, 7)
@@ -1819,11 +1924,11 @@ EndFunction
 ; to help ensure the actor doesn't change his mind and decide to help the player later.
 Function ActorFailedToHelp(Actor aActor, Int iSeverity)
    If (1 == iSeverity)
-      _qFramework.IncActorKindness(aActor, -3, 40, 80)
-      _qFramework.IncActorAnger(aActor, 1, 20, 80)
+      _qFramework.IncActorKindness(aActor, -3, 20, 80)
+      _qFramework.IncActorAnger(aActor, 1, 20, 70)
    ElseIf (3 == iSeverity)
-      _qFramework.IncActorKindness(aActor, -5, 40, 80)
-      _qFramework.IncActorAnger(aActor, 3, 20, 80)
+      _qFramework.IncActorKindness(aActor, -5, 20, 80)
+      _qFramework.IncActorAnger(aActor, 3, 20, 70)
    EndIf
 
    ; Reset the dialogue timeout beacuse we are still in a dialogue.
@@ -2076,7 +2181,7 @@ Function OutsideAssistance(Actor aHelper, Int iGoal, Int iLevel)
       ; Goal 0: The player has not received outside assistance but a conversation is taking place.
       If (!_iLeashHolderGoal && (10 >= Utility.RandomInt(1, 100)))
          Log("You feel a tug on the rope around your neck.", DL_CRIT, S_MOD)
-         _qFramework.IncActorAnger(_aLeashHolder, -2, 20, 80)
+         _qFramework.IncActorAnger(_aLeashHolder, 2, 20, 80)
          _qFramework.IncActorDominance(_aLeashHolder, -3, 20, 80)
 
          ; Have the slaver give a warning that he is shortening the player's leash.
@@ -2088,7 +2193,7 @@ Function OutsideAssistance(Actor aHelper, Int iGoal, Int iLevel)
       ; Goal -1: The NPC has actually tipped of the slaver that the player is misbehaving.
       If (!_iLeashHolderGoal)
          Log("You feel a tug on the rope around your neck.", DL_CRIT, S_MOD)
-         _qFramework.IncActorAnger(_aLeashHolder, -5, 20, 80)
+         _qFramework.IncActorAnger(_aLeashHolder, 5, 20, 80)
 
          ; Have the slaver give a warning that he is shortening the player's leash.
          ; Goal 9: Reel in the Player
@@ -2175,7 +2280,7 @@ Int Function StartLeashGame(Actor aActor)
       _iLeashGameDuration = ((iDurationSeconds / _qMcm.fPollTime) As Int)
 
       ; Establish an initial disposition for the leash holder.
-      Int iCurrAnger = _qFramework.GetActorAnger(aActor, 20, 65, True, True)
+      Int iCurrAnger = _qFramework.GetActorAnger(aActor, 10, 70, True, 3)
       _qFramework.GetActorDominance(aActor, 40, 85, True)
 
       ; If the slaver is already angry with the player start with enslave allowed.
