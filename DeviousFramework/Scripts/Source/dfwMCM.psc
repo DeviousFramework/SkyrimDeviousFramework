@@ -199,10 +199,11 @@ Bool _bDebug
 ;***********************************************************************************************
 ;***                                    INITIALIZATION                                       ***
 ;***********************************************************************************************
-Function InitScript()
+Function UpdateScript()
    ; Hardcore mode is turned off on all script updates.
    _bSecureHardcore = False
 
+   Debug.Trace("[DFW-MCM] Updating Script: " + CurrentVersion + " => " + GetVersion())
    Debug.Notification("[DFW-MCM] Updating Script: " + CurrentVersion + " => " + GetVersion())
 
    ; Very basic initialization.
@@ -423,11 +424,14 @@ Function InitScript()
 EndFunction
 
 Event OnConfigInit()
-   InitScript()
+   Debug.Trace("[DFW-MCM] Script Initialized.")
+
+   UpdateScript()
 
    ; Make sure the Devious Framework polling interval is running.
    ; The first polling interval should configure the script.
    ; Do this here so the main script can rely on our data having been initialized first.
+   Debug.Trace("[DFW-MCM] Starting Framework: " + fSettingsPollTime)
    _qFramework.UpdatePollingInterval(fSettingsPollTime)
 EndEvent
 
@@ -449,7 +453,7 @@ Int Function GetVersion()
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
-   InitScript()
+   UpdateScript()
 EndEvent
 
 
@@ -2358,11 +2362,17 @@ State ST_DBG_LEVEL
    Event OnSliderAcceptST(Float fValue)
       iLogLevel = (fValue As Int)
       SetSliderOptionValueST(iLogLevel)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
    EndEvent
 
    Event OnDefaultST()
       iLogLevel = _iDefLogLevel
       SetSliderOptionValueST(iLogLevel)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
    EndEvent
 
    Event OnHighlightST()

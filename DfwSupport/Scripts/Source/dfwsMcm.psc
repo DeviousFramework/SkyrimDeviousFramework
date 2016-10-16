@@ -143,6 +143,7 @@ Function UpdateScript()
    _bSecureHardcore = False
    _bSecureSdPlusLeash = False
 
+   Debug.Trace("[DFWS-MCM] Updating Script: " + CurrentVersion + " => " + GetVersion())
    Debug.Notification("[DFWS-MCM] Updating Script: " + CurrentVersion + " => " + GetVersion())
 
    ; Very basic initialization.
@@ -240,11 +241,14 @@ Function UpdateScript()
 EndFunction
 
 Event OnConfigInit()
+   Debug.Trace("[DFWS-MCM] Script Initialized.")
+
    UpdateScript()
 
    ; Make sure the DFW Support polling interval is running.
    ; The first polling interval should configure the script.
    ; Do this here so the main script can rely on our data having been initialized first.
+   Debug.Trace("[DFWS-MCM] Starting Support Mod: " + fPollTime)
    _qDfwSupport.UpdatePollingInterval(fPollTime)
 EndEvent
 
