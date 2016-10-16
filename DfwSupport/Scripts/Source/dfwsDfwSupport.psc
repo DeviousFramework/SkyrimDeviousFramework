@@ -233,6 +233,14 @@ Bool _bFastTravelBlocked
 ;***********************************************************************************************
 ;***                                    INITIALIZATION                                       ***
 ;***********************************************************************************************
+; A new game has started, this script was added to an existing game, or the script was reset.
+Event OnInit()
+   ; We shouldn't do anything here.  We rely on the MCM script to update our polling interval
+   ; when it's ready.  Register for a polling interval anyway, in case the MCM script fails.
+   Debug.Trace("[" + S_MOD + "] Script Initialized.")
+   RegisterForSingleUpdate(180)
+EndEvent
+
 ; This is called once by the MCM script to initialize the mod and then on each update poll.
 ; This function is primarily to ensure new variables are initialized for new script versions.
 Function UpdateScript()
@@ -241,57 +249,51 @@ Function UpdateScript()
    ;   _fCurrVer = 0.05
    ;EndIf
 
-   ; Very basic initialization.
-   ; Make sure this is done before logging so the MCM options are available.
-   If (0.01 > _fCurrVer)
-      _aPlayer = Game.GetPlayer()
-      _qMcm = ((Self As Quest) As dfwsMcm)
-      _qFramework = (Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework)
-      _qDfwUtil = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
-      _qZbfSlave = zbfSlaveControl.GetApi()
-      _qZbfSlaveActions = zbfSlaveActions.GetApi()
-   EndIf
-
-   ; Always register for an update.  We want to make sure the periodic function is polling.
-   If (_qMcm.fPollTime)
-      RegisterForSingleUpdate(_qMcm.fPollTime)
-   EndIf
-
    ; If the script is at the current version we are done.
-   ; Note: On updating the version number remember to update the OnUpdate() event too!
-   Float fScriptVer = 0.06
+   Float fScriptVer = 1.00
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
    Log("Updating Script " + _fCurrVer + " => " + fScriptVer, DL_CRIT, S_MOD)
 
-   If (0.02 > _fCurrVer)
-      _qZadLibs = (Quest.GetQuest("zadQuest") As Zadlibs)
-      CreateRestraintsArrays()
-   EndIf
+   ; When releasing the greeting dialogues (Version 2 of the mod) the script versions
+   ; were all advanced to version 1.00.
+   If (1.00 > _fCurrVer)
+      ; Initialize basic variables.
+      _aPlayer = Game.GetPlayer()
 
-   If (0.03 > _fCurrVer)
-      ;;; _SD_state_caged
+      ; Create arrays of the different restraints available for us to choose from.
+      CreateRestraintsArrays()
+
+      ; Get the caged state global variable from the SD+ mod.
       _gSdPlusStateCaged = \
          (Game.GetFormFromFile(0x000D1E79, "sanguinesDebauchery.esp") as GlobalVariable)
-   EndIf
 
-   If (0.04 > _fCurrVer)
-      _qZadArmbinder = (Quest.GetQuest("zadArmbinderQuest") As zadHeavyBondageQuestScript)
-   EndIf
+      ; If we are to detected when another mod enslaves the player register for those events.
+      ; Register for events indicating other mods have enslaved the player.
+      RegisterForModEvent("zbfSC_EnslaveActor", "ActorEnslaved")
+      RegisterForModEvent("zbfSC_FreeSlave", "ActorFreed")
+      RegisterForModEvent("zbfSC_ReleaseSlave", "ActorFreed")
 
-   If (0.05 > _fCurrVer)
-      ; Added additional Pony Boots.
-      CreateRestraintsArrays()
-   EndIf
+      ; Register for the ZAZ event indicating an animation is done.
+      RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
 
-   If (0.06 > _fCurrVer)
-      ; Added blindfolds.
-      CreateRestraintsArrays()
+      ; Register for a DFW event notifying us our Master has been overthrown.
+      RegisterForModEvent("DFW_NewMaster", "DfwNewMaster")
+
+      ; Register for SD+ events related to enslaving/freeing the player.
+      RegisterForModEvent("SDEnslavedStart", "EventSdPlusStart")
+      RegisterForModEvent("SDEnslavedStop", "EventSdPlusStop")
 
       ; Register for post sex events to adjust actor dispositions accordingly.
-      _qSexLab = (Quest.GetQuest("SexLabQuestFramework") As SexLabFramework)
       RegisterForModEvent("AnimationEnd", "PostSexCallback")
+
+      ; Register for game load events from the DFW mod.
+      RegisterForModEvent("DFW_GameLoaded", "OnLoadGame")
+
+      ; Register for the event indicating the DFW MCM values have changed.
+      ; Note: This can indicate a DFW safeword has been triggered.
+      RegisterForModEvent("DFW_MCM_Changed", "DfwMcmUpdated")
    EndIf
 
    ; Finally update the version number.
@@ -299,6 +301,8 @@ Function UpdateScript()
 EndFunction
 
 Function OnLoadGame()
+   Log("Game Loaded.", DL_INFO, S_MOD)
+
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
    ; E.g. adding/removing conditional variables, converting from plugin to master file.
@@ -311,10 +315,7 @@ Function OnLoadGame()
    _qZbfSlave        = zbfSlaveControl.GetApi()
    _qZbfSlaveActions = zbfSlaveActions.GetApi()
 
-   ; On each load game make sure to re-apply any blocked health effects.
-
    ; The game has been loaded.  Perform necessary actions here.
-   _iPollsSinceLoad = 0
    UpdateScript()
 EndFunction
 
@@ -322,6 +323,23 @@ EndFunction
 ;***********************************************************************************************
 ;***                                        EVENTS                                           ***
 ;***********************************************************************************************
+; The OnUpdate() code is in a wrapper, PerformOnUpdate().  This is to allow us to return from
+; the function without having to add code to re-register for the update at each return point.
+Event OnUpdate()
+   ; If the script has not been initialized do that instead of performing the update.
+   If (!_fCurrVer)
+      OnLoadGame()
+   Else
+      PerformOnUpdate()
+   EndIf
+
+   ; Register for our next update event.
+   ; We are registering for each update individually after the previous processing has
+   ; completed to avoid long updates causing multiple future updates to occur at the same time,
+   ; thus, piling up.  This is a technique recommended by the community.
+   RegisterForSingleUpdate(_qMcm.fPollTime)
+EndEvent
+
 Function PerformOnUpdate()
    Float fCurrRealTime = Utility.GetCurrentRealTime()
 
@@ -338,17 +356,6 @@ Function PerformOnUpdate()
          ; It seems registering for some events on game load doesn't take effect 100% of the
          ; time.  To account for this register for the events for all of the first few polls.
          UnregisterForAllModEvents()
-         If (_qMcm.bCatchZazEvents)
-            RegisterForModEvent("zbfSC_EnslaveActor", "ActorEnslaved")
-            RegisterForModEvent("zbfSC_FreeSlave", "ActorFreed")
-            RegisterForModEvent("zbfSC_ReleaseSlave", "ActorFreed")
-         EndIf
-         RegisterForModEvent("DFW_NewMaster", "DfwNewMaster")
-         RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
-         RegisterForModEvent("SDEnslavedStart", "EventSdPlusStart")
-         RegisterForModEvent("SDEnslavedStop", "EventSdPlusStop")
-         RegisterForModEvent("AnimationEnd", "PostSexCallback")
-         RegisterForModEvent("DFW_MCM_Changed", "DfwMcmUpdated")
       EndIf
 
       ; Near the start of each game load suspend deviously helpless assaults if needed.
@@ -502,23 +509,6 @@ Function PerformOnUpdate()
       EndIf
    EndIf
 EndFunction
-
-; The OnUpdate() code is in a wrapper, PerformOnUpdate().  This is to allow us to return from
-; the function without having to add code to re-register for the update at each return point.
-Event OnUpdate()
-   ; If the script has not been initialized do that instead of performing the update.
-   If (!_fCurrVer)
-      UpdateScript()
-   Else
-      PerformOnUpdate()
-   EndIf
-
-   ; Register for our next update event.
-   ; We are registering for each update individually after the previous processing has
-   ; completed to avoid long updates causing multiple future updates to occur at the same time,
-   ; thus, piling up.  This is a technique recommended by the community.
-   RegisterForSingleUpdate(_qMcm.fPollTime)
-EndEvent
 
 Event ActorEnslaved(Form oActor, String szMod)
    Actor aActor = (oActor As Actor)

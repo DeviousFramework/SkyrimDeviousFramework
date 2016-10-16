@@ -240,20 +240,18 @@ Bool _bInventoryLocked = False
 ObjectReference _oBdsmFurniture = None
 Bool _bIsFurnitureLocked
 
-; Flags to tell the poll function to update information.
-Bool _bFlagSet            = True
-Bool _bFlagCheckNaked     = True
-Bool _bFlagCheckCollared  = True
-Bool _bFlagCheckArmLocked = True
-Bool _bFlagCheckGagged    = True
-Bool _bFlagCheckHobbled   = True
-Bool _bFlagCheckLockedUp  = True
+; Flags to tell the poll function to update status information.
+Bool _bFlagSet              = True
+Bool _bFlagItemEqupped      = True
+Bool _bFlagItemUnequpped    = True
+Bool _bFlagClothesEqupped   = True
+Bool _bFlagClothesUnequpped = True
 
 ;*** Keywords ***
 ; A local variable to store the SexLab Aroused "Is Naked" keyword for faster access.
 ; Note: This keyword doesn't appear to be used.
 ;       See the StorageUtil SLAroused.IsNakedArmor instead.
-;Keyword _oKeywordIsNaked
+;Keyword _oKeywordIsNaked = Keyword.GetKeyword("EroticArmor")
 
 ; Keywords to identify clothing (Clothes, Light Armour, and Heavy Armour).
 Keyword _oKeywordClothes
@@ -405,7 +403,6 @@ Int _iBlockJournal
 
 ; The faction the NPC is added to when he becomes the DFW Dialogue Target.
 Int _iDialogueTargetStyle Conditional
-Int _iTemporaryPauseDialogues
 Actor _aCurrTarget
 Faction _oFactionDfwDialogueTarget
 
@@ -424,6 +421,7 @@ Int _iMutexNext
 ; Accessing settings from other script is a little expensive as it can cause context switches.
 ; For MCM settings that are used often we will store a local copy of their values in this script
 ; for faster access.
+Int _iMcmLogLevel = 5 ; DL_TRACE
 Int[] _aiMcmScreenLogLevel
 Int _iMcmDispWillingGuards
 Int _iMcmDispWillingMerchants
@@ -446,6 +444,14 @@ Armor _oStraponByAeon
 ;***********************************************************************************************
 ;***                                    INITIALIZATION                                       ***
 ;***********************************************************************************************
+; A new game has started, this script was added to an existing game, or the script was reset.
+Event OnInit()
+   ; We shouldn't do anything here.  We rely on the MCM script to update our polling interval
+   ; when it's ready.  Register for a polling interval anyway, in case the MCM script fails.
+   Debug.Trace("[" + S_MOD + "] Script Initialized.")
+   RegisterForSingleUpdate(180)
+EndEvent
+
 ; This is called from the player monitor script when a game is loaded.
 ; This function is primarily to ensure new variables are initialized for new script versions.
 Function UpdateScript()
@@ -455,57 +461,34 @@ Function UpdateScript()
    ;   _fCurrVer = 0.10
    ;EndIf
 
-   ; Very basic initialization.
-   ; Make sure this is done before logging so the MCM options are available.
-   If (0.01 > _fCurrVer)
-      _aPlayer = Game.GetPlayer()
-   EndIf
-
-   ; If any real time timers are active reset them to the current time because the real time
-   ; clock is reset each time the game is loaded.
-   Float fCurrTime = Utility.GetCurrentRealTime()
-   If (_iBleedoutTime)
-      _iBleedoutTime = fCurrTime + 30
-   EndIf
-   ; The nearby cleanup timeout is always set.  Always reset it.
-   _fNearbyCleanupTime = fCurrTime + 3
-   _fSceneTimeout = 0
-   _szCurrentScene = ""
-
-   ; If the nearby actors lists are out of sync clear them completely.
-   If (_aoNearby.Length != _aiNearbyFlags.Length)
-      Log("Nearby Lists Out of Sync!  Cleaning.", DL_ERROR, DC_NEARBY)
-      If (MutexLock(_iNearbyMutex))
-         While (_aoNearby.Length)
-            _aoNearby = _qDfwUtil.RemoveFormFromArray(_aoNearby, None, 0)
-         EndWhile
-         While (_aiNearbyFlags.Length)
-            _aiNearbyFlags = _qDfwUtil.RemoveIntFromArray(_aiNearbyFlags, 0, 0)
-         EndWhile
-
-         MutexRelease(_iNearbyMutex)
-      EndIf
-   EndIf
-
-   ; Check if the Skyrim Perk Enhancements and Rebalanced Gameplay (SPERG) unarmed "fists" can
-   ; be initialized.  Check each game load in case the SPERG mod has just been installed.
-   If (!_oSpergFist1)
-      _oSpergFist1 = (Game.GetFormFromFile(0x00024689, "SPERG.esm") As Weapon)
-      _oSpergFist2 = (Game.GetFormFromFile(0x00035A8E, "SPERG.esm") As Weapon)
-   EndIf
-
    ; If the script is at the current version we are done.
-   Float fScriptVer = 0.11
+   Float fScriptVer = 1.00
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
    Log("Updating Script " + _fCurrVer + " => " + fScriptVer, DL_INFO, DC_GENERAL)
 
-   ; Historical configuration...
-   If (0.02 > _fCurrVer)
-      ; Note: This keyword doesn't appear to be used.
-      ;       See the StorageUtil SLAroused.IsNakedArmor instead.
-      ;_oKeywordIsNaked = Keyword.GetKeyword("EroticArmor")
+   ; When releasing the greeting dialogues (Version 2 of the mod) the script versions
+   ; were all advanced to version 1.00.
+   If (1.00 > _fCurrVer)
+      ; Initialize basic variables.
+      _aPlayer = Game.GetPlayer()
+      _iLeashLength = 700
+      _iDialogueTargetStyle = DS_MANUAL
+
+      ; Update variables that are based on MCM settings.
+      UpdateLocalMcmSettings()
+
+      ; Create an initial mutex for protecting the mutex list.
+      _aiMutex      = New Int[1]
+      _aszMutexName = New String[1]
+      _aiMutex[0]      = 0
+      _aszMutexName[0] = "Mutex List Mutex"
+      _iMutexNext      = 1
+
+      ; Create other mutexes for protecting data access.
+      _iNearbyMutex = iMutexCreate("DFW Nearby")
+      _iKnownMutex = iMutexCreate("DFW Known")
 
       ; ZAD Devious Keywords.
       _oKeywordZadArmBinder = Keyword.GetKeyword("zad_DeviousArmbinder")
@@ -553,67 +536,28 @@ Function UpdateScript()
       _oKeywordArmourLight = Keyword.GetKeyword("ArmorLight")
       _oKeywordArmourHeavy = Keyword.GetKeyword("ArmorHeavy")
 
-      ; Getting this directly from the .ESP file prevents us from being dependent on the mod.
+      ; BDSM Furniture Keyword.
+      _oKeywordZbfFurniture = \
+         (Game.GetFormFromFile(0x0000762B, "ZaZAnimationPack.esm") As Keyword)
+
+      ; A keyword to identify SexLab No Strip items.
+      _oKeywordSexLabNoStrip = Keyword.GetKeyword("SexLabNoStrip")
+
+      ; Getting factions from the .ESP file prevents us from being dependent on the mod.
       _oFactionHydraSlaver     = \
          (Game.GetFormFromFile(0x0000B670, "hydra_slavegirls.esp") As Faction)
       _oFactionHydraSlaverMisc = \
          (Game.GetFormFromFile(0x000122B6, "hydra_slavegirls.esp") As Faction)
+      _oFactionHydraCaravanSlaver = \
+         (Game.GetFormFromFile(0x00072F71, "hydra_slavegirls.esp") As Faction)
+      _oFactionDfwDialogueTarget = \
+         (Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") As Faction)
 
       ; Register for post sex events to detect rapes.
       RegisterForModEvent("AnimationEnd", "PostSexCallback")
-   EndIf
-
-   If (0.04 > _fCurrVer)
-      _iLeashLength = 700
-
-      ; Create an initial mutex for protecting the mutex list.
-      _aiMutex      = New Int[1]
-      _aszMutexName = New String[1]
-      _aiMutex[0]      = 0
-      _aszMutexName[0] = "Mutex List Mutex"
-      _iMutexNext      = 1
-
-      _iNearbyMutex = iMutexCreate("DFW Nearby")
-      _iKnownMutex = iMutexCreate("DFW Known")
-
-      _oKeywordZbfFurniture = \
-         (Game.GetFormFromFile(0x0000762B, "ZaZAnimationPack.esm") As Keyword)
-   EndIf
-
-   ; There was a problem on initial release where at least one player could not dress even after
-   ; waiting for three in game hours.  This should clear such a problem although it would be
-   ; nice to know why she this happened.
-   If (0.06 > _fCurrVer)
-      _fNakedRedressTimeout = 0
-      _fRapeRedressTimeout = 0
-   EndIf
-
-   If (0.07 > _fCurrVer)
-      _oFactionHydraCaravanSlaver = \
-         (Game.GetFormFromFile(0x00072F71, "hydra_slavegirls.esp") As Faction)
-   EndIf
-
-   If (0.08 > _fCurrVer)
-      UpdateLocalMcmSettings()
 
       ; Register for notification when MCM settings change.
       RegisterForModEvent("DFW_MCM_Changed", "UpdateLocalMcmSettings")
-   EndIf
-
-   If (0.09 > _fCurrVer)
-      _oFactionDfwDialogueTarget = \
-         (Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") As Faction)
-   EndIf
-
-   If (0.10 > _fCurrVer)
-      _iDialogueTargetStyle = DS_MANUAL
-   EndIf
-
-   If (0.11 > _fCurrVer)
-      ; The NPC Disposition has been added.  Make sure to update from the MCM settings.
-      UpdateLocalMcmSettings("Logging")
-      _oKeywordSexLabNoStrip = Keyword.GetKeyword("SexLabNoStrip")
-      _oStraponByAeon = (Game.GetFormFromFile(0x00000D65, "StrapOnbyaeonv1.1.esp") As Armor)
    EndIf
 
    ; Finally update the version number.
@@ -622,6 +566,17 @@ EndFunction
 
 Function OnPlayerLoadGame()
    Float fCurrTime = Utility.GetCurrentRealTime()
+   Log("Game Loaded: " + fCurrTime, DL_INFO, DC_GENERAL)
+
+   ; If any real time timers are active reset them to the current time because the real time
+   ; clock is reset each time the game is loaded.
+   If (_iBleedoutTime)
+      _iBleedoutTime = fCurrTime + 30
+   EndIf
+   ; The nearby cleanup timeout is always set.  Always reset it.
+   _fNearbyCleanupTime = fCurrTime + 3
+   _fSceneTimeout = 0
+   _szCurrentScene = ""
 
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
@@ -634,8 +589,6 @@ Function OnPlayerLoadGame()
    _qZbfSlave = zbfSlaveControl.GetApi()
    _qZbfSlaveActions = zbfSlaveActions.GetApi()
    _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
-
-   Log("Game Loaded: " + fCurrTime, DL_TRACE, DC_GENERAL)
 
    ; On each load game make sure to re-apply any blocked effects.
    If (_qMcm.bModBlockOnGameLoad)
@@ -668,6 +621,21 @@ Function OnPlayerLoadGame()
       If (bMove || bFight || bCam || bLook || bSneak || bMenu || bActivate || bJournal)
          Game.DisablePlayerControls(bMove, bFight, bCam, bLook, bSneak, bMenu, bActivate, \
                                     bJournal)
+      EndIf
+   EndIf
+
+   ; If the nearby actors lists are out of sync clear them completely.
+   If (_aoNearby.Length != _aiNearbyFlags.Length)
+      Log("Nearby Lists Out of Sync!  Cleaning.", DL_ERROR, DC_NEARBY)
+      If (MutexLock(_iNearbyMutex))
+         While (_aoNearby.Length)
+            _aoNearby = _qDfwUtil.RemoveFormFromArray(_aoNearby, None, 0)
+         EndWhile
+         While (_aiNearbyFlags.Length)
+            _aiNearbyFlags = _qDfwUtil.RemoveIntFromArray(_aiNearbyFlags, 0, 0)
+         EndWhile
+
+         MutexRelease(_iNearbyMutex)
       EndIf
    EndIf
 
@@ -704,17 +672,32 @@ Function OnPlayerLoadGame()
       EndWhile
    EndIf
 
+   ; Get objects from other mods.  Check each game load in case the mod has been added/removed.
+   ; Skyrim Perk Enhancements and Rebalanced Gameplay (SPERG) unarmed "fists"
+   Debug.Trace("[" + S_MOD + "] =========================" + \
+               "[Optional Mods: Ignore all Warnings start]==========================")
+   _oSpergFist1    = (Game.GetFormFromFile(0x00024689, "SPERG.esm") As Weapon)
+   _oSpergFist2    = (Game.GetFormFromFile(0x00035A8E, "SPERG.esm") As Weapon)
+   _oStraponByAeon = (Game.GetFormFromFile(0x00000D65, "StrapOnbyaeonv1.1.esp") As Armor)
+   Debug.Trace("[" + S_MOD + "] ==========================" + \
+               "[Optional Mods: Ignore all Warnings end]===========================")
+
    ; Make sure the utility script gets updated as well.
    _qDfwUtil.OnPlayerLoadGame()
 
    UpdateScript()
 
-   ; Always register for a poll update.  We want to make sure the periodic function is polling.
-   RegisterForSingleUpdate(_qMcm.fSettingsPollTime)
+   ; Send out a mod event so other scripts don't have to create a player alias just to get the
+   ; on load game event.
+   ModEvent.Send(ModEvent.Create("DFW_GameLoaded"))
+
+   Log("Game Loaded Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
 EndFunction
 
 Function UpdateLocalMcmSettings(String sCategory="")
    If (!sCategory || ("Logging" == sCategory))
+      _iMcmLogLevel = _qMcm.iLogLevel
+
       _aiMcmScreenLogLevel = New Int[7]
       _aiMcmScreenLogLevel[DC_GENERAL]     = _qMcm.iLogLevelScreenGeneral
       _aiMcmScreenLogLevel[DC_STATUS]      = _qMcm.iLogLevelScreenStatus
@@ -758,6 +741,24 @@ EndFunction
 ;***********************************************************************************************
 ;***                                        EVENTS                                           ***
 ;***********************************************************************************************
+; The OnUpdate() code is in a wrapper, PerformOnUpdate().  This is to allow us to return from
+; the function without having to add code to re-register for the update at each return point.
+Event OnUpdate()
+   If (!_fCurrVer)
+      ; If the script has not been initialized do that instead of processing the update.
+      OnPlayerLoadGame()
+   Else
+      PerformOnUpdate()
+      Log("Update Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
+   EndIf
+
+   ; Register for our next update event.
+   ; We are registering for each update individually after the previous processing has
+   ; completed to avoid long updates causing multiple future updates to occur at the same time,
+   ; thus, piling up.  This is a technique recommended by the community.
+   RegisterForSingleUpdate(_qMcm.fSettingsPollTime)
+EndEvent
+
 ; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function in
 ; various situations.
 ;Int _iWeaponScanCount = 10
@@ -791,14 +792,6 @@ Function PerformOnUpdate()
 
    ; Reset the number of items unequipped as we unequip more each poll interval.
    _iNumItemsUnequipped = 0
-
-   ; If dialogue targets have been disabled see about re-enabling them.
-   If (0 < _iTemporaryPauseDialogues)
-      _iTemporaryPauseDialogues -= 1
-      If (0 == _iTemporaryPauseDialogues)
-         _iDialogueTargetStyle = _qMcm.iModDialogueTargetStyle
-      EndIf
-   EndIf
 
    ; If the player is leashed to a target make sure they are not too far away.
    If (_oLeashTarget)
@@ -875,11 +868,14 @@ Function PerformOnUpdate()
       ; No flags are set so return here.
       Return
    EndIf
-   _bFlagSet = False
 
-   If (_bFlagCheckNaked)
-      _bFlagCheckNaked = False
+   ; Keep track of whether we want to check for additional restraints.
+   Bool bCheckLockedUp = False
+   If (_bFlagItemEqupped || (_bFlagItemUnequpped && _iNumOtherRestraints))
+      bCheckLockedUp = True
+   EndIf
 
+   If (_bFlagClothesEqupped || _bFlagClothesUnequpped)
       Log("Checking Naked", DL_TRACE, DC_STATUS)
 
       Int iOldStatus = _iNakedStatus
@@ -887,7 +883,7 @@ Function PerformOnUpdate()
       ; Only do any processing if the dressed state has changed.
       If (iOldStatus != _iNakedStatus)
          ; Some restraints may have been (un)covered.  Make sure to re-check them.
-         _bFlagCheckLockedUp = True
+         bCheckLockedUp = True
 
          ; If the player has just become (more) naked start a redress timeout.
          If ((NS_BOTH_PARTIAL > _iNakedStatus) && (_iNakedStatus < iOldStatus) && \
@@ -909,9 +905,8 @@ Function PerformOnUpdate()
       EndIf
    EndIf
 
-   If (_bFlagCheckCollared)
-      _bFlagCheckCollared = False
-
+   If ((_bIsPlayerCollared && _bFlagItemUnequpped) || \
+       (!_bIsPlayerCollared && _bFlagItemEqupped))
       Log("Checking Collared", DL_TRACE, DC_STATUS)
 
       Bool bOldStatus = _bIsPlayerCollared
@@ -923,16 +918,26 @@ Function PerformOnUpdate()
       ReportStatus("Collared", _bIsPlayerCollared, bOldStatus)
    EndIf
 
+   ; Keep track of whether we will be checking wrist and ankle bondage.
+   Bool bCheckArmLocked = False
+   If ((_bIsPlayerArmLocked && _bFlagItemUnequpped) || \
+       (!_bIsPlayerArmLocked && _bFlagItemEqupped))
+      bCheckArmLocked = True
+   EndIf
+   Bool bCheckHobbled   = False
+   If ((_bIsPlayerHobbled && _bFlagItemUnequpped) || \
+       (!_bIsPlayerHobbled && _bFlagItemEqupped))
+      bCheckHobbled = True
+   EndIf
+
    ; Sometimes ZBF restraints have wrist cuffs and ankle cuff combinations.  Keep track of the
    ; wrist cuff key word to check this situation as well.
    Bool bWristCuffsKeyword = False
-   If (_bFlagCheckHobbled || _bFlagCheckArmLocked)
+   If (bCheckArmLocked || bCheckHobbled)
       bWristCuffsKeyword = _aPlayer.WornHasKeyword(_oKeywordZbfWornWrist)
    EndIf
 
-   If (_bFlagCheckArmLocked)
-      _bFlagCheckArmLocked = False
-
+   If (bCheckArmLocked)
       Log("Checking Arms Locked", DL_TRACE, DC_STATUS)
 
       Bool bOldStatus = _bIsPlayerArmLocked
@@ -947,9 +952,7 @@ Function PerformOnUpdate()
       ReportStatus("Arm Locked", _bIsPlayerArmLocked, bOldStatus)
    EndIf
 
-   If (_bFlagCheckGagged)
-      _bFlagCheckGagged = False
-
+   If ((_bIsPlayerGagged && _bFlagItemUnequpped) || (!_bIsPlayerGagged && _bFlagItemEqupped))
       Log("Checking Gagged", DL_TRACE, DC_STATUS)
 
       Bool bOldStatus = _bIsPlayerGagged
@@ -963,13 +966,11 @@ Function PerformOnUpdate()
 
    ; The Leg Cuffs Keyword is used in Hobbled and other restraints.  Keep track of it.
    Bool bLegCuffsKeyword = False
-   If (_bFlagCheckHobbled || _bFlagCheckLockedUp)
+   If (bCheckHobbled || bCheckLockedUp)
       bLegCuffsKeyword = _aPlayer.WornHasKeyword(_oKeywordZadLegCuffs)
    EndIf
 
-   If (_bFlagCheckHobbled)
-      _bFlagCheckHobbled = False
-
+   If (bCheckHobbled)
       Log("Checking Hobbled", DL_TRACE, DC_STATUS)
 
       ; Note on the check below:
@@ -1010,9 +1011,7 @@ Function PerformOnUpdate()
       EndIf
    EndIf
 
-   If (_bFlagCheckLockedUp)
-      _bFlagCheckLockedUp = False
-
+   If (bCheckLockedUp)
       Log("Checking Locked Up", DL_TRACE, DC_STATUS)
 
       Int iOldStatus = _iNumOtherRestraints
@@ -1076,26 +1075,14 @@ Function PerformOnUpdate()
          Log(szMessage, DL_DEBUG, DC_STATUS)
       EndIf
    EndIf
+
+   ; Reset all of the flags.
+   _bFlagSet              = False
+   _bFlagItemEqupped      = False
+   _bFlagItemUnequpped    = False
+   _bFlagClothesEqupped   = False
+   _bFlagClothesUnequpped = False
 EndFunction
-
-; The OnUpdate() code is in a wrapper, PerformOnUpdate().  This is to allow us to return from
-; the function without having to add code to re-register for the update at each return point.
-Event OnUpdate()
-   ; If the script has not been initialized do that instead of performing the update.
-   If (!_fCurrVer)
-      OnPlayerLoadGame()
-      Return
-   EndIf
-
-   PerformOnUpdate()
-   Log("Update Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
-
-   ; Register for our next update event.
-   ; We are registering for each update individually after the previous processing has
-   ; completed to avoid long updates causing multiple future updates to occur at the same time,
-   ; thus, piling up.  This is a technique recommended by the community.
-   RegisterForSingleUpdate(_qMcm.fSettingsPollTime)
-EndEvent
 
 ; This is called from the player monitor script when an item equipped event is seen.
 Function ItemEquipped(Form oItem, ObjectReference oReference)
@@ -1108,18 +1095,11 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
    EndIf
 
    If (IT_RESTRAINT == iType)
-      ; Only check each restraint if the player is not already restrained.
-      _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsPlayerCollared,  False)
-      _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsPlayerArmLocked, False)
-      _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsPlayerGagged,    False)
-      _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsPlayerHobbled,   False)
-      ; We always have to check for various "other" restraints.
       _bFlagSet = True
-      _bFlagCheckLockedUp  = True
+      _bFlagItemEqupped = True
    ElseIf (IT_COVERINGS == iType)
-      ; If the player's clothes have changed always recheck how naked she is.
-      _bFlagCheckNaked = True
       _bFlagSet = True
+      _bFlagClothesEqupped   = False
 
       ; If we are configured to block clothing check that now.
       ; If the nearby master is assisting the player to dress allow her to dress as normal.
@@ -1238,14 +1218,8 @@ Function ItemUnequipped(Form oItem, ObjectReference oReference)
    EndIf
 
    If (IT_RESTRAINT == iType)
-      _bFlagCheckCollared  = SetCheckFlag(_bFlagCheckCollared,  _bIsPlayerCollared,  True)
-      _bFlagCheckArmLocked = SetCheckFlag(_bFlagCheckArmLocked, _bIsPlayerArmLocked, True)
-      _bFlagCheckGagged    = SetCheckFlag(_bFlagCheckGagged,    _bIsPlayerGagged,    True)
-      _bFlagCheckHobbled   = SetCheckFlag(_bFlagCheckHobbled,   _bIsPlayerHobbled,   True)
-      If (_iNumOtherRestraints)
-         _bFlagSet = True
-         _bFlagCheckLockedUp  = True
-      EndIf
+      _bFlagSet           = True
+      _bFlagItemUnequpped = True
 
       ; Try to fix Devious Devices being unequipped by the Favourites clear armour mechanism.
       If (_qMcm.bSettingsDetectUnequip && oItem.HasKeyword(_oKeywordZadLockable))
@@ -1277,8 +1251,8 @@ Function ItemUnequipped(Form oItem, ObjectReference oReference)
       EndIf
    ElseIf (IT_COVERINGS == iType)
       ; If the player's clothes have changed always recheck how naked she is.
-      _bFlagCheckNaked = True
-      _bFlagSet = True
+      _bFlagSet              = True
+      _bFlagClothesUnequpped = True
    EndIf
    Log("Unequip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
 EndFunction
@@ -1889,7 +1863,7 @@ EndFunction
 
 ; This must be called internally as it requires the known list mutex to be locked!
 Function CleanupKnownList()
-   Log("Cleaning Known: " + Utility.GetCurrentRealTime(), DL_CRIT, DC_NEARBY)
+   Log("Cleaning Known: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
    Float fCurrTime = Utility.GetCurrentGameTime()
 
    ; On the first pass keep track of the max significance seen.
@@ -1946,7 +1920,7 @@ Function CleanupKnownList()
    While (20 <= _aoKnown.Length)
       RemoveKnownActor(_aoKnown.Length - 1)
    EndWhile
-   Log("Cleaning Known Done: " + Utility.GetCurrentRealTime(), DL_CRIT, DC_NEARBY)
+   Log("Cleaning Known Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
 EndFunction
 
 Function Log(String szMessage, Int iLevel=0, Int iClass=0)
@@ -1958,7 +1932,7 @@ Function Log(String szMessage, Int iLevel=0, Int iClass=0)
    ;EndIf
 
    ; Log to the papyrus file.
-   If (ilevel <= _qMcm.iLogLevel)
+   If (ilevel <= _iMcmLogLevel)
       Debug.Trace(szMessage)
    EndIf
 
@@ -1966,17 +1940,6 @@ Function Log(String szMessage, Int iLevel=0, Int iClass=0)
    If (_aiMcmScreenLogLevel && (ilevel <= _aiMcmScreenLogLevel[iClass]))
       Debug.Notification(szMessage)
    EndIf
-EndFunction
-
-Bool Function SetCheckFlag(Bool bFlagToSet, Bool bCurrStatus, Bool bExpectedStatus)
-   ; If the player's status is as expected return that we need to permform the check.
-   If (bCurrStatus == bExpectedStatus)
-      ; Set the flag to indicate one of the status check flags has been set.
-      _bFlagSet = True
-      Return True
-   EndIf
-   ; If the player's status isn't the desired status return the current status of the flag.
-   Return bFlagToSet
 EndFunction
 
 ; For status purposes only to be called by the MCM status menu.
@@ -3551,21 +3514,5 @@ Function PrepareActorDialogue(ObjectReference oActor)
          _iWillingnessToHelp += _iMcmDispWillingBdsm
       EndIf
    EndIf
-EndFunction
-
-; This function allows temporary dialogues to be paused from a script.  This can be used to
-; allow short one or two sentence interractions to occur without being interrupted by the
-; greeting.  Perhaps such dialogues should be made as "Hello" dialogues but I haven't done
-; enough experimenting to determine that yet.
-; NOTE: I don't think this function is necessary!!!
-;       Instead the calling script should call the PrepareActorDialogue() function for the
-;       actor the player is about to engage in dialogue with.
-Function TemporarilyPauseDialogueTargets(Int iSeconds)
-   If (iSeconds)
-      iSeconds = 5
-   EndIf
-
-   _iTemporaryPauseDialogues = Math.Ceiling((iSeconds As Float) / _qMcm.fSettingsPollTime)
-   _iDialogueTargetStyle = DS_OFF
 EndFunction
 
