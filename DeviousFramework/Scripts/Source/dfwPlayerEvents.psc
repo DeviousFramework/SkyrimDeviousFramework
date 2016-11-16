@@ -82,3 +82,12 @@ Event OnGetUp(ObjectReference oFurniture)
    _qFramework.OnGetUp(oFurniture)
 EndEvent
 
+Event OnLocationChange(Location oOldLocation, Location oNewLocation)
+   ; Make sure we have a valid reference to the main devious framework script.
+   If (!_qFramework)
+      _qFramework = (Self.GetOwningQuest() As dfwDeviousFramework)
+   EndIf
+
+   _qFramework.OnLocationChange(oOldLocation, oNewLocation)
+EndEvent
+

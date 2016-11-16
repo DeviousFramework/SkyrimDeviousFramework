@@ -120,52 +120,66 @@ Int _iDefWillingMerchants
 Int _iDefWillingBdsm
 Int _iDefRapeRedressTimeout
 Int _iDefNakedRedressTimeout
+Int _iDefLeashDamage
+Int _iDefLeashMinLength
 Int _iDefSlaThreshold
 Int _iDefSlaAdjustedMin
 Int _iDefSlaAdjustedMax
 Int _iDefDialogueTargetStyle
 Int _iDefDialogueTargetRetries
-Int _iDefLeashDamage
+Int _iDefCallTimeout
 Int _iDefLogLevel
 Int _iDefLogLevelScreenGeneral
+Int _iDefLogLevelScreenDebug
 Int _iDefLogLevelScreenStatus
 Int _iDefLogLevelScreenMaster
 Int _iDefLogLevelScreenNearby
 Int _iDefLogLevelScreenLeash
 Int _iDefLogLevelScreenEquip
 Int _iDefLogLevelScreenArousal
+Int _iDefLogLevelScreenInteraction
+Int _iDefLogLevelScreenLocation
+Int _iDefLogLevelScreenRedress
 Int _iDefVulNakedReduce
-Int Property iSettingsSecurity         Auto
-Int Property iSettingsPollNearby       Auto
-Int Property iSettingsNearbyDistance   Auto
-Int Property iVulnerabilityNude        Auto
-Int Property iVulnerabilityCollar      Auto
-Int Property iVulnerabilityBinder      Auto
-Int Property iVulnerabilityGagged      Auto
-Int Property iVulnerabilityRestraints  Auto
-Int Property iVulnerabilityLeashed     Auto
-Int Property iVulnerabilityFurniture   Auto
-Int Property iVulnerabilityNight       Auto
-Int Property iDispWillingGuards        Auto
-Int Property iDispWillingMerchants     Auto
-Int Property iDispWillingBdsm          Auto
-Int Property iModRapeRedressTimeout    Auto
-Int Property iModNakedRedressTimeout   Auto
-Int Property iModSlaThreshold          Auto
-Int Property iModSlaAdjustedMin        Auto
-Int Property iModSlaAdjustedMax        Auto
-Int Property iModDialogueTargetStyle   Auto
-Int Property iModDialogueTargetRetries Auto
-Int Property iModLeashDamage           Auto
-Int Property iLogLevel                 Auto
-Int Property iLogLevelScreenGeneral    Auto
-Int Property iLogLevelScreenStatus     Auto
-Int Property iLogLevelScreenMaster     Auto
-Int Property iLogLevelScreenNearby     Auto
-Int Property iLogLevelScreenLeash      Auto
-Int Property iLogLevelScreenEquip      Auto
-Int Property iLogLevelScreenArousal    Auto
-Int Property iVulnerabilityNakedReduce Auto
+Int Property iSettingsSecurity          Auto
+Int Property iSettingsPollNearby        Auto
+Int Property iSettingsNearbyDistance    Auto
+Int Property iVulnerabilityNude         Auto
+Int Property iVulnerabilityCollar       Auto
+Int Property iVulnerabilityBinder       Auto
+Int Property iVulnerabilityGagged       Auto
+Int Property iVulnerabilityRestraints   Auto
+Int Property iVulnerabilityLeashed      Auto
+Int Property iVulnerabilityFurniture    Auto
+Int Property iVulnerabilityNight        Auto
+Int Property iDispWillingGuards         Auto
+Int Property iDispWillingMerchants      Auto
+Int Property iDispWillingBdsm           Auto
+Int Property iModRapeRedressTimeout     Auto
+Int Property iModNakedRedressTimeout    Auto
+Int Property iModLeashDamage            Auto
+Int Property iModLeashMinLength         Auto
+Int Property iModSlaThreshold           Auto
+Int Property iModSlaAdjustedMin         Auto
+Int Property iModSlaAdjustedMax         Auto
+Int Property iModDialogueTargetStyle    Auto
+Int Property iModDialogueTargetRetries  Auto
+Int Property iModHelpKey                Auto
+Int Property iModAttentionKey           Auto
+Int Property iModCallTimeout            Auto
+Int Property iLogLevel                  Auto
+Int Property iLogLevelScreenGeneral     Auto
+Int Property iLogLevelScreenDebug       Auto
+Int Property iLogLevelScreenStatus      Auto
+Int Property iLogLevelScreenMaster      Auto
+Int Property iLogLevelScreenNearby      Auto
+Int Property iLogLevelScreenLeash       Auto
+Int Property iLogLevelScreenEquip       Auto
+Int Property iLogLevelScreenArousal     Auto
+Int Property iLogLevelScreenInteraction Auto
+Int Property iLogLevelScreenLocation    Auto
+Int Property iLogLevelScreenRedress     Auto
+Int Property iVulnerabilityNakedReduce  Auto
 
 ; *** Enumeration Options ***
 Int _iDefModLeashStyle
@@ -421,6 +435,25 @@ Function UpdateScript()
       ; Make sure to synchronize data in the main script as well.
       SendSettingChangedEvent()
    EndIf
+
+   If (12 > CurrentVersion)
+      iModHelpKey      = 0x00
+      iModAttentionKey = 0x00
+
+      _iDefCallTimeout               = 30
+      _iDefLeashMinLength            = 550
+      _iDefLogLevelScreenRedress     = 3
+      _iDefLogLevelScreenDebug       = 3
+      _iDefLogLevelScreenInteraction = 3
+      _iDefLogLevelScreenLocation    = 3
+
+      iModCallTimeout            = _iDefCallTimeout
+      iModLeashMinLength         = _iDefLeashMinLength
+      iLogLevelScreenRedress     = _iDefLogLevelScreenRedress
+      iLogLevelScreenDebug       = _iDefLogLevelScreenDebug
+      iLogLevelScreenInteraction = _iDefLogLevelScreenInteraction
+      iLogLevelScreenLocation    = _iDefLogLevelScreenLocation
+   EndIf
 EndFunction
 
 Event OnConfigInit()
@@ -439,8 +472,8 @@ EndEvent
 ; Unrelated to the Devious Framework Version.
 Int Function GetVersion()
    ; Reset the version number.
-   ;If (10 < CurrentVersion)
-   ;   CurrentVersion = 10
+   ;If (12 < CurrentVersion)
+   ;   CurrentVersion = 12
    ;EndIf
 
    ; Update all quest variables upon loading each game.
@@ -449,7 +482,7 @@ Int Function GetVersion()
    _qDfwUtil = ((Self As Quest) As dfwUtil)
    _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
 
-   Return 11
+   Return 12
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -614,10 +647,8 @@ EndFunction
 
 Function SendSettingChangedEvent(String sCategory="")
    Int iModEvent = ModEvent.Create("DFW_MCM_Changed")
-   If (iModEvent)
-      ModEvent.PushString(iModEvent, sCategory)
-      ModEvent.Send(iModEvent)
-   EndIf
+   ModEvent.PushString(iModEvent, sCategory)
+   ModEvent.Send(iModEvent)
 EndFunction
 
 Function PresentInformation(String[] aszInfo, String szHeader)
@@ -789,11 +820,14 @@ Function DisplayModFeaturesPage(Bool bSecure)
    AddHeaderOption("Redress Timeouts")
    AddSliderOptionST("ST_MOD_RAPE_REDRESS",     "Post Rape Redress Timeout", iModRapeRedressTimeout,  a_flags=iFlags)
    AddSliderOptionST("ST_MOD_NAKED_REDRESS",    "Naked Redress Timeout",     iModNakedRedressTimeout, a_flags=iFlags)
+
+   AddEmptyOption()
    AddHeaderOption("Leash Configuration")
    AddTextOptionST("ST_MOD_LEASH_STYLE",        "Leash Style", LeashStyleToString(iModLeashStyle))
    AddToggleOptionST("ST_MOD_LEASH_VISIBLE",    "Leash Visible", bModLeashVisible)
    AddToggleOptionST("ST_MOD_LEASH_INTERRUPT",  "Leash Interrupt", bModLeashInterrupt)
    AddSliderOptionST("ST_MOD_LEASH_DAMAGE",     "Damage When Jerked", iModLeashDamage,  a_flags=iFlags)
+   AddSliderOptionST("ST_MOD_LEASH_LENGTH",     "Minimum Leash Length", iModLeashMinLength,  a_flags=iFlags)
 
    AddEmptyOption()
    AddHeaderOption("SexLab Aroused Base")
@@ -802,16 +836,22 @@ Function DisplayModFeaturesPage(Bool bSecure)
    AddSliderOptionST("ST_MOD_SLA_MAX",          "Maximum Adjusted Arousal", iModSlaAdjustedMax, a_flags=iFlags)
 
    AddEmptyOption()
+   AddHeaderOption("Miscellaneous")
    AddToggleOptionST("ST_MOD_LOAD_BLOCK",        "Block Controls on Game Load", bModBlockOnGameLoad, a_flags=iFlags)
    AddTextOptionST("ST_MOD_ENABLE_DIALOGUE",     "Greeting Dialogue Style", DialogueStyleToString(iModDialogueTargetStyle))
    AddSliderOptionST("ST_MOD_DIALOGUE_RETRIES",  "Dialogue Target Retries", iModDialogueTargetRetries)
-      iModDialogueTargetRetries  = _iDefDialogueTargetRetries
 
    ; Start on the second column.
    SetCursorPosition(1)
 
+   AddHeaderOption("Call For Help")
+   AddKeyMapOptionST("ST_MOD_CALL_HELP",      "Help Key", iModHelpKey)
+   AddKeyMapOptionST("ST_MOD_CALL_ATTENTION", "Attention Key", iModAttentionKey)
+   AddSliderOptionST("ST_MOD_CALL_TIMEOUT",   "Call for Help Timeout", iModCallTimeout, a_flags=iFlags)
+
    ; I'm not sure this is the right mod to block armour but no other mods have the concept of
    ; "chest" and "waist" armour so let's keep it here for now.
+   AddEmptyOption()
    AddHeaderOption("Armour Blocking")
    AddToggleOptionST("ST_MOD_NIPPLE", "Blocking Nipple Piercing", bBlockNipple, a_flags=iFlags)
    AddToggleOptionST("ST_MOD_VAGINA", "Blocking Vagina Piercing", bBlockVagina, a_flags=iFlags)
@@ -840,6 +880,14 @@ Function DisplayStatusPage(Bool bSecure)
       szCellName += " (I)"
    EndIf
    AddLabel("Current Cell: " + szCellName)
+   Location oCurrLocation = (_qFramework.GetCurrentLocation() As Location)
+   AddLabel("Current Location: " + oCurrLocation.GetName())
+   Location oCurrRegion = (_qFramework.GetCurrentRegion() As Location)
+   String szRegion = "Wilderness"
+   If (oCurrRegion)
+      szRegion = oCurrRegion.GetName()
+   EndIf
+   AddLabel("Current Region: " + szRegion)
 
    AddToggleOptionST("ST_INFO_FOR_PLAYER",  "Use Player for Info",       _bInfoForPlayer)
    AddToggleOptionST("ST_INFO_FACTIONS",    "Show Player Factions",      False)
@@ -896,7 +944,7 @@ Function DisplayStatusPage(Bool bSecure)
    AddHeaderOption("Vulnerability")
    String szNakedLevel = "0x" + _qDfwUtil.ConvertHexToString(_qFramework.GetNakedLevel(), 8)
    AddTextOption("Vulnerability", _qFramework.GetVulnerability(), a_flags=OPTION_FLAG_DISABLED)
-   AddTextOption("Naked",         szNakedLevel,                   a_flags=OPTION_FLAG_DISABLED)
+   AddTextOptionST("ST_INFO_NAKED", "Naked", szNakedLevel,        a_flags=OPTION_FLAG_DISABLED)
    AddTextOption("Weapon Level",  _qFramework.GetWeaponLevel(),   a_flags=OPTION_FLAG_DISABLED)
    AddEmptyOption()
 
@@ -963,14 +1011,18 @@ Function DisplayDebugPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddSliderOptionST("ST_DBG_LEVEL",    "Log Level (File)",            iLogLevel)
-   AddSliderOptionST("ST_DBG_GENERAL",  "Screen - General",            iLogLevelScreenGeneral)
-   AddSliderOptionST("ST_DBG_STATUS",   "Screen - Player Status",      iLogLevelScreenStatus)
-   AddSliderOptionST("ST_DBG_MASTER",   "Screen - Masters",            iLogLevelScreenMaster)
-   AddSliderOptionST("ST_DBG_NEARBY",   "Screen - Nearby NPCs",        iLogLevelScreenNearby)
-   AddSliderOptionST("ST_DBG_LEASH",    "Screen - Leash",              iLogLevelScreenLeash)
-   AddSliderOptionST("ST_DBG_EQUIP",    "Screen - Equipping/Blocking", iLogLevelScreenEquip)
-   AddSliderOptionST("ST_DBG_AROUSAL",  "Screen - NPC Arousal",        iLogLevelScreenArousal)
+   AddSliderOptionST("ST_DBG_LEVEL",       "Log Level (File)",            iLogLevel)
+   AddSliderOptionST("ST_DBG_GENERAL",     "Screen - General",            iLogLevelScreenGeneral)
+   AddSliderOptionST("ST_DBG_DEBUG",       "Screen - Debug",              iLogLevelScreenDebug)
+   AddSliderOptionST("ST_DBG_STATUS",      "Screen - Player Status",      iLogLevelScreenStatus)
+   AddSliderOptionST("ST_DBG_MASTER",      "Screen - Masters",            iLogLevelScreenMaster)
+   AddSliderOptionST("ST_DBG_NEARBY",      "Screen - Nearby NPCs",        iLogLevelScreenNearby)
+   AddSliderOptionST("ST_DBG_LEASH",       "Screen - Leash",              iLogLevelScreenLeash)
+   AddSliderOptionST("ST_DBG_EQUIP",       "Screen - Equipping/Blocking", iLogLevelScreenEquip)
+   AddSliderOptionST("ST_DBG_AROUSAL",     "Screen - NPC Arousal",        iLogLevelScreenArousal)
+   AddSliderOptionST("ST_DBG_INTERACTION", "Screen - NPC Interaction",    iLogLevelScreenInteraction)
+   AddSliderOptionST("ST_DBG_LOCATION",    "Screen - Location Changes",   iLogLevelScreenLocation)
+   AddSliderOptionST("ST_DBG_REDRESS",     "Screen - Redress Timeouts",   iLogLevelScreenRedress)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -982,7 +1034,8 @@ Function DisplayDebugPage(Bool bSecure)
       Actor aNearby = _qFramework.GetNearestActor(0)
       szTarget = aNearby.GetDisplayName()
    EndIf
-   AddMenuOptionST("ST_INFO_REM_FACTION",   "Remove From Faction", szTarget)
+   AddMenuOptionST("ST_DBG_REM_FACTION",    "Remove From Faction", szTarget)
+   AddTextOptionST("ST_DBG_MOD_EVENTS",     "Fix Mod Events",      "Fix Now")
    AddTextOptionST("ST_SAFEWORD_FURNITURE", "Safeword: Furniture", "Use Safeword", a_flags=iFlags)
    AddTextOptionST("ST_SAFEWORD_LEASH",     "Safeword: Leash",     "Use Safeword", a_flags=iFlags)
 EndFunction
@@ -1750,6 +1803,37 @@ State ST_MOD_LEASH_DAMAGE
    EndEvent
 EndState
 
+State ST_MOD_LEASH_LENGTH
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModLeashMinLength)
+      SetSliderDialogDefaultValue(_iDefLeashMinLength)
+      SetSliderDialogRange(0, 1000)
+      SetSliderDialogInterval(10)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModLeashMinLength = (fValue As Int)
+      SetSliderOptionValueST(iModLeashMinLength)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("ModFeatures")
+   EndEvent
+
+   Event OnDefaultST()
+      iModLeashMinLength = _iDefLeashMinLength
+      SetSliderOptionValueST(iModLeashMinLength)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("ModFeatures")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The minimum length the leash can be.\n" +\
+                  "The leash can be set shorter than this but will be treated as this length.\n" +\
+                  "Setting this to zero turns off this feature and allows for any length.")
+   EndEvent
+EndState
+
 State ST_MOD_SLA_THRESHOLD
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModSlaThreshold)
@@ -1896,6 +1980,83 @@ State ST_MOD_LOAD_BLOCK
       SetInfoText("Toggles whether control features should be re-blocked on loading a game.\n" +\
                   "This applies to health/magika/stamina/fast travel/fighting/camera/sneaking/menus/activations/journal.\n" +\
                   "Controls will only be blocked if a feature blocked them before the save.  Disable if you are having problems.")
+   EndEvent
+EndState
+
+State ST_MOD_CALL_HELP
+   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
+      ; Handle key registration here.  Events should be sent to all scripts in the same quest.
+      If (iModHelpKey && (iModHelpKey != iModAttentionKey))
+         UnregisterForKey(iModHelpKey)
+      EndIf
+      iModHelpKey = iKeyCode
+      Debug.Notification("[DFW-MCM] Registering for Key: " + Input.GetMappedControl(iModHelpKey)  + "(" + iModHelpKey + ")")
+      RegisterForKey(iModHelpKey)
+      SetKeyMapOptionValueST(iModHelpKey)
+   EndEvent
+
+   Event OnDefaultST()
+      If (iModHelpKey && (iModHelpKey != iModAttentionKey))
+         UnregisterForKey(iModHelpKey)
+      EndIf
+      iModHelpKey = 0x00
+      SetKeyMapOptionValueST(iModHelpKey)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Calls out for help.  Use this if you really want those around you to help.\n" +\
+                  "May not always get people's attention, especially if you are gagged.\n" +\
+                  "Recommended Key: \",\"  Set to default to turn off.")
+   EndEvent
+EndState
+
+State ST_MOD_CALL_ATTENTION
+   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
+      If (iModAttentionKey && (iModAttentionKey != iModHelpKey))
+         UnregisterForKey(iModAttentionKey)
+      EndIf
+      iModAttentionKey = iKeyCode
+      Debug.Notification("[DFW-MCM] Registering for Key: " + Input.GetMappedControl(iModAttentionKey)  + "(" + iModAttentionKey + ")")
+      RegisterForKey(iModAttentionKey)
+      SetKeyMapOptionValueST(iModAttentionKey)
+   EndEvent
+
+   Event OnDefaultST()
+      If (iModAttentionKey && (iModAttentionKey != iModHelpKey))
+         UnregisterForKey(iModAttentionKey)
+      EndIf
+      iModAttentionKey = 0x00
+      SetKeyMapOptionValueST(iModAttentionKey)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Calls out for attention.  Use this for a calmer, quieter interaction without alarming anyone.\n" +\
+                  "May not always get people's attention, especially if you are gagged.\n" +\
+                  "Recommended Key: \".\"  Set to default to turn off.")
+   EndEvent
+EndState
+
+State ST_MOD_CALL_TIMEOUT
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModCallTimeout)
+      SetSliderDialogDefaultValue(_iDefCallTimeout)
+      SetSliderDialogRange(0, 300)
+      SetSliderDialogInterval(5)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModCallTimeout = (fValue As Int)
+      SetSliderOptionValueST(iModCallTimeout)
+   EndEvent
+
+   Event OnDefaultST()
+      iModCallTimeout = _iDefCallTimeout
+      SetSliderOptionValueST(iModCallTimeout)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("A timeout to prevent the user from using the call for help feature too frequently.\n" +\
+                  "Measured in real life seconds.  Half when calling for attention.")
    EndEvent
 EndState
 
@@ -2295,7 +2456,7 @@ State ST_INFO_NEARBY
    Event OnHighlightST()
       SetInfoText("Display Actors in the nearby actor's list and their actor flags:\n" +\
                   "0x001 Estimate  0x002 Important   0x004 Child  0x008 Guard  0x010 Merchant\n" +\
-                  "0x080 Dominant  0x100 submissive  0x200 slave  0x400 Owner  0x800 Trader\n")
+                  "0x080 Dominant  0x100 submissive  0x200 slave  0x400 Owner  0x800 Trader")
    EndEvent
 EndState
 
@@ -2347,6 +2508,14 @@ State ST_INFO_DIALOGUE
    EndEvent
 EndState
 
+State ST_INFO_NAKED
+   Event OnHighlightST()
+      SetInfoText("The naked level of the player.\n" +\
+                  "0x00 Naked  0x01 Waist Partial  0x02 Waist Covered\n" +\
+                  "0x04 Chest Partial  0x08 Chest Covered  0x10 Both Partial  0x20 Both Covered")
+   EndEvent
+EndState
+
 
 ;***********************************************************************************************
 ;***                                    STATES: DEBUG                                        ***
@@ -2378,7 +2547,7 @@ State ST_DBG_LEVEL
    Event OnHighlightST()
       SetInfoText("Set the level of messages that go to the papyrus log file.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
-                  "This should be set to the maximum value to have a complete log file.")
+                  "Recommended: 4 - Debug.  5 - Trace if you are having trouble.")
    EndEvent
 EndState
 
@@ -2407,9 +2576,40 @@ State ST_DBG_GENERAL
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen for general messages.\n" +\
+      SetInfoText("Set the level on the screen for general messages.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_DEBUG
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenDebug)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenDebug)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenDebug = (fValue As Int)
+      SetSliderOptionValueST(iLogLevelScreenDebug)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenDebug = _iDefLogLevelScreenDebug
+      SetSliderOptionValueST(iLogLevelScreenDebug)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level on the screen for player status related messages.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information.  4 - Debug turns on debug messages.")
    EndEvent
 EndState
 
@@ -2438,7 +2638,7 @@ State ST_DBG_STATUS
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen for player status related messages.\n" +\
+      SetInfoText("Set the level on the screen for player status related messages.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information")
    EndEvent
@@ -2469,7 +2669,7 @@ State ST_DBG_MASTER
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen for messages related to DFW registered Masters.\n" +\
+      SetInfoText("Set the level on the screen for messages related to DFW registered Masters.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information")
    EndEvent
@@ -2500,7 +2700,7 @@ State ST_DBG_NEARBY
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen for messages related to nearby NPCs.\n" +\
+      SetInfoText("Set the level on the screen for messages related to nearby NPCs.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information")
    EndEvent
@@ -2531,7 +2731,7 @@ State ST_DBG_LEASH
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen for leash related messages.\n" +\
+      SetInfoText("Set the level on the screen for leash related messages.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information")
    EndEvent
@@ -2562,7 +2762,7 @@ State ST_DBG_EQUIP
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen for messages about equipment and equipment blocking.\n" +\
+      SetInfoText("Set the level on the screen for messages about equipment and equipment blocking.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information")
    EndEvent
@@ -2593,9 +2793,102 @@ State ST_DBG_AROUSAL
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen for messages about changing nearby NPC arousal.\n" +\
+      SetInfoText("Set the level on the screen for messages about changing nearby NPC arousal.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_INTERACTION
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenInteraction)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenInteraction)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenInteraction = (fValue As Int)
+      SetSliderOptionValueST(iLogLevelScreenInteraction)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenInteraction = _iDefLogLevelScreenInteraction
+      SetSliderOptionValueST(iLogLevelScreenInteraction)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level on the screen for messages about NPC approach and calling for help.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_LOCATION
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenLocation)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenLocation)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenLocation = (fValue As Int)
+      SetSliderOptionValueST(iLogLevelScreenLocation)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenLocation = _iDefLogLevelScreenLocation
+      SetSliderOptionValueST(iLogLevelScreenLocation)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level on the screen for change of location messages.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information to see the messages.  2 - Error if you don't want to see them.")
+   EndEvent
+EndState
+
+State ST_DBG_REDRESS
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenRedress)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenRedress)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenRedress = (fValue As Int)
+      SetSliderOptionValueST(iLogLevelScreenRedress)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenRedress = _iDefLogLevelScreenRedress
+      SetSliderOptionValueST(iLogLevelScreenRedress)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level on the screen for rape and redress timeouts expiring.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information to see the messages.  2 - Error if you don't want to see them.")
    EndEvent
 EndState
 
@@ -2616,7 +2909,7 @@ State ST_DBG_YANK_LEASH
    EndEvent
 EndState
 
-State ST_INFO_REM_FACTION
+State ST_DBG_REM_FACTION
    Event OnMenuOpenST()
       Actor aActor = _aPlayer
       If (!_bInfoForPlayer)
@@ -2675,6 +2968,23 @@ State ST_INFO_REM_FACTION
       SetInfoText("Use this to remove the player or the nearest NPC from a faction.\n" +\
                   "\"Use Player for Info\" under \"Status\" determines whether the palyer or\n" +\
                   "the nearest NPC will be used.")
+   EndEvent
+EndState
+
+State ST_DBG_MOD_EVENTS
+   Event OnSelectST()
+      _qFramework.ReRegisterModEvents()
+      SetTextOptionValueST("Done")
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Fix Now")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Re-register for all mod events this mod should be registered for.\n" +\
+                  "Registering for mod events does not always succeed, especially early after a game load.\n" +\
+                  "This can be used to remedy this situation or if mod events are not being received for any reason.")
    EndEvent
 EndState
 

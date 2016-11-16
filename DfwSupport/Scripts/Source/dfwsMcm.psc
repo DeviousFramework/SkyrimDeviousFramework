@@ -60,15 +60,18 @@ Bool _bCatchZazEvents
 Bool _bCatchSdPlus
 Bool _bLeashSdPlus
 Bool _bBlockHelpless
+Bool _bAllowSex
 Bool _bAutoAddFurniture
+Bool _bHotkeyPackage
 Bool Property bIncludeOwners    Auto
 Bool Property bSexDispositions  Auto
 Bool Property bCatchZazEvents   Auto
 Bool Property bCatchSdPlus      Auto
 Bool Property bLeashSdPlus      Auto
 Bool Property bBlockHelpless    Auto
+Bool Property bAllowSex         Auto
 Bool Property bAutoAddFurniture Auto
-
+Bool Property bHotkeyPackage    Auto
 
 ; *** Float Slider Options ***
 Float _fPollTimeDef
@@ -83,10 +86,14 @@ Float Property fFurnitureLockChance     Auto
 Float Property fFurnitureReleaseChance  Auto
 
 ; *** Integer Slider Options ***
+Int _iLeashGameStyle
+Int _iLeashProtectedDelay
 Int _iIncreaseWhenVulnerable
+Int _iMaxDistance
 Int _iLeashLength
 Int _iSecurityLevel
 Int _iBlockTravel
+Int _iGagMode
 Int _iFurnitureTeaseChance
 Int _iFurnitureAltRelease
 Int _iLogLevelDef
@@ -98,9 +105,13 @@ Int _iDominanceAffectsRelease
 Int _iMaxAngerForRelease
 Int _iChanceIdleRestraints
 Int _iFurnitureMinLockTime
+Int Property iLeashGameStyle          Auto
+Int Property iLeashProtectedDelay     Auto
 Int Property iIncreaseWhenVulnerable  Auto
+Int Property iMaxDistance             Auto
 Int Property iLeashLength             Auto
 Int Property iBlockTravel             Auto
+Int Property iGagMode                 Auto
 Int Property iFurnitureTeaseChance    Auto
 Int Property iFurnitureAltRelease     Auto
 Int Property iLogLevel                Auto
@@ -209,11 +220,6 @@ Function UpdateScript()
    EndIf
 
    If (5 > CurrentVersion)
-      Pages = New String[3]
-      Pages[0] = "DFW Support"
-      Pages[1] = "Leash Game"
-      Pages[2] = "BDSM Furniture"
-
       _bAutoAddFurniture        = False
       _iFurnitureMinLockTime    = 30
       _bCatchSdPlus             = False
@@ -238,6 +244,31 @@ Function UpdateScript()
       _bSexDispositions = True
       bSexDispositions = _bSexDispositions
    EndIf
+
+   If (8 > CurrentVersion)
+      Pages = New String[4]
+      Pages[0] = "DFW Support"
+      Pages[1] = "Leash Game"
+      Pages[2] = "BDSM Furniture"
+      Pages[3] = "Logging + Debug"
+
+      _bAllowSex            = False
+      _bHotkeyPackage       = False
+      _iGagMode             = 1
+      _iLeashGameStyle      = 2
+      _iLeashProtectedDelay = 0
+      _iMaxDistance         = 2000
+
+      bAllowSex             = _bAllowSex
+      bHotkeyPackage        = _bHotkeyPackage
+      iGagMode              = _iGagMode
+      iLeashGameStyle       = _iLeashGameStyle
+      iLeashProtectedDelay  = _iLeashProtectedDelay
+      iMaxDistance          = _iMaxDistance
+
+      ; Make sure to synchronize data in the main script as well.
+      SendSettingChangedEvent()
+   EndIf
 EndFunction
 
 Event OnConfigInit()
@@ -257,8 +288,8 @@ EndEvent
 Int Function GetVersion()
    ; Reset the version number.
    ; This can be used to manage saves between releases.
-   ;If (4 < CurrentVersion)
-   ;   CurrentVersion = 4
+   ;If (8 < CurrentVersion)
+   ;   CurrentVersion = 8
    ;EndIf
 
    ; Update all quest variables upon loading each game.
@@ -268,7 +299,7 @@ Int Function GetVersion()
    _qDfwUtil    = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
    _qDfwMcm     = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
-   Return 7
+   Return 8
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -279,6 +310,28 @@ EndEvent
 ;***********************************************************************************************
 ;***                                  PRIVATE FUNCTIONS                                      ***
 ;***********************************************************************************************
+String Function LeashGameStyleToString(Int iValue)
+   If (0 == iValue)
+      Return "Off"
+   ElseIf (1 == iValue)
+      Return "Auto"
+   ElseIf (2 == iValue)
+      Return "Protected"
+   ElseIf (3 == iValue)
+      Return "Dialogue"
+   EndIf
+EndFunction
+
+String Function GagModeToString(Int iValue)
+   If (0 == iValue)
+      Return "No Gag"
+   ElseIf (1 == iValue)
+      Return "Regular"
+   ElseIf (2 == iValue)
+      Return "Auto Remove"
+   EndIf
+EndFunction
+
 Bool Function IsSecure()
    ; If the security setting is set to 100 don't lock the settings at all.
    If (100 == _iSecurityLevel)
@@ -303,6 +356,12 @@ Bool Function IsSecure()
 
    ; Otherwise the menus are secure if the player is bound.
    Return _qFramework.IsPlayerBound(True)
+EndFunction
+
+Function SendSettingChangedEvent(String sCategory="")
+   Int iModEvent = ModEvent.Create("DFWS_MCM_Changed")
+   ModEvent.PushString(iModEvent, sCategory)
+   ModEvent.Send(iModEvent)
 EndFunction
 
 ; Debug/Development function to present a message in a message box.
@@ -342,6 +401,8 @@ Event OnPageReset(String szRequestedPage)
       DisplayLeashGamePage(bSecure)
    ElseIf ("BDSM Furniture" == szPage)
       DisplayBdsmFurniturePage(bSecure)
+   ElseIf ("Logging + Debug" == szPage)
+      DisplayDebugPage(bSecure)
    Else
       ; Load this page if nothing else is set.  Initial page and "DFW Support".
       DisplayDfwSupportPage(bSecure)
@@ -381,6 +442,7 @@ Function DisplayDfwSupportPage(Bool bSecure)
       iSdLeashFlags = OPTION_FLAG_DISABLED
    EndIf
    AddToggleOptionST("ST_MOD_SDP_LEASH",  "Start SD+ Leash",            bLeashSdPlus, a_flags=iSdLeashFlags)
+   AddTextOptionST("ST_MOD_GAG_MODE",     "Gag Mode:", GagModeToString(iGagMode), a_flags=iFlags)
 
    ; Make sure the poll function is updating as expected.
    Float fDelta = Utility.GetCurrentRealTime() - _qDfwSupport.GetLastUpdateTime()
@@ -389,11 +451,6 @@ Function DisplayDfwSupportPage(Bool bSecure)
       AddTextOption("Warning: Poll May Have Stopped!", "", a_flags=OPTION_FLAG_DISABLED)
       AddTextOption("Seconds Since Update", (fDelta As Int), a_flags=OPTION_FLAG_DISABLED)
    EndIf
-
-   AddEmptyOption()
-
-   AddSliderOptionST("ST_DBG_LEVEL",  "Log Level",        iLogLevel)
-   AddSliderOptionST("ST_DBG_SCREEN", "Log Level Screen", iLogLevelScreen)
 EndFunction
 
 Function DisplayLeashGamePage(Bool bSecure)
@@ -402,20 +459,28 @@ Function DisplayLeashGamePage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddHeaderOption("Chance to Play")
-   AddSliderOptionST("ST_MOD_LEASH_GAME",     "Leash Game Chance",            fLeashGameChance, "{1}", a_flags=iFlags)
+   AddHeaderOption("Chances Start/Stop")
+   AddSliderOptionST("ST_LGM_LEASH_GAME",     "Leash Game Chance",            fLeashGameChance, "{1}", a_flags=iFlags)
    AddSliderOptionST("ST_LGM_INC_VULNERABLE", "Increase When Vulnerable",     iIncreaseWhenVulnerable, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_DISTANCE",       "Maximum Distance",             iMaxDistance, a_flags=iFlags)
    AddToggleOptionST("ST_LGM_INCLUD_OWNERS",  "Include Owners",               bIncludeOwners, a_flags=iFlags)
-
-   AddEmptyOption()
-   AddSliderOptionST("ST_LGM_LEASH_LENGTH",   "Leash Length",                 iLeashLength, a_flags=iFlags)
-   AddToggleOptionST("ST_LGM_BLOCK_HELPLESS", "Block Deviously Helpless",     bBlockHelpless, a_flags=iFlags)
-
-   AddSliderOptionST("ST_LGM_CHANCE_IDLE",    "Chance of Idle Restraints",    iChanceIdleRestraints, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_CHANCE_XFER",    "Chance of Furniture Transfer", fChanceFurnitureTransfer, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_DURATION_MIN",   "Minimum Duration",             iDurationMin, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_DURATION_MAX",   "Maximum Duration",             iDurationMax, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_RELEASE", "Chance of Release",            iChanceOfRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_RELEASE_DOM",    "Dominance Affects Release",    iDominanceAffectsRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_RELEASE_ANGER",  "Maximum Anger for Release",    iMaxAngerForRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_XFER",    "Chance of Furniture Transfer", fChanceFurnitureTransfer, "{2}", a_flags=iFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
+
+   AddTextOptionST("ST_LGM_STYLE",            "Leash Game Style:", LeashGameStyleToString(iLeashGameStyle), a_flags=iFlags)
+   ; The following option is only valid if the leash game style is Protected (2).
+   Int iDelayFlags = iFlags
+   If (2 != iLeashGameStyle)
+      iDelayFlags = OPTION_FLAG_DISABLED
+   EndIf
+   AddSliderOptionST("ST_LGM_PROT_DELAY",     "Protected Delay",   iLeashProtectedDelay, "{0}ms", a_flags=iDelayFlags)
 
    String szActive = "Not On"
    If (_qDfwSupport.IsGameOn())
@@ -429,12 +494,12 @@ Function DisplayLeashGamePage(Bool bSecure)
    EndIf
 
    AddEmptyOption()
-   AddHeaderOption("Duration")
-   AddSliderOptionST("ST_LGM_DURATION_MIN",   "Minimum Duration",          iDurationMin, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_DURATION_MAX",   "Maximum Duration",          iDurationMax, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_CHANCE_RELEASE", "Chance of Release",         iChanceOfRelease, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_RELEASE_DOM",    "Dominance Affects Release", iDominanceAffectsRelease, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_RELEASE_ANGER",  "Maximum Anger for Release", iMaxAngerForRelease, a_flags=iFlags)
+   AddHeaderOption("Options")
+   AddSliderOptionST("ST_LGM_LEASH_LENGTH",   "Leash Length",                 iLeashLength, a_flags=iFlags)
+   AddToggleOptionST("ST_LGM_BLOCK_HELPLESS", "Block Deviously Helpless",     bBlockHelpless, a_flags=iFlags)
+   AddToggleOptionST("ST_LGM_ALLOW_SEX",      "Allow Sex",                    bAllowSex, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_IDLE",    "Chance of Idle Restraints",    iChanceIdleRestraints, a_flags=iFlags)
+
 EndFunction
 
 Function DisplayBdsmFurniturePage(Bool bSecure)
@@ -462,6 +527,22 @@ Function DisplayBdsmFurniturePage(Bool bSecure)
    EndIf
    AddToggleOptionST("ST_BDSMF_AUTO_FAV", "Auto Add Favourite", bAutoAddFurniture, a_flags=iFlags)
    AddMenuOptionST("ST_BDSMF_AUTO_SHOW",  "Remove/View Favourite Furniture", "Open")
+EndFunction
+
+Function DisplayDebugPage(Bool bSecure)
+   Int iFlags = OPTION_FLAG_NONE
+   If (bSecure)
+      iFlags = OPTION_FLAG_DISABLED
+   EndIf
+
+   AddSliderOptionST("ST_DBG_LEVEL",    "Log Level",        iLogLevel)
+   AddSliderOptionST("ST_DBG_SCREEN",   "Log Level Screen", iLogLevelScreen)
+
+   ; Start on the second column.
+   SetCursorPosition(1)
+
+   AddTextOptionST("ST_DBG_MOD_EVENTS",      "Fix Mod Events",              "Fix Now")
+   AddToggleOptionST("ST_DBG_CYCLE_PACKAGE", "Hotkey Cycle Slaver Package", bHotkeyPackage)
 EndFunction
 
 
@@ -542,11 +623,17 @@ State ST_FWK_POLL_TIME
       EndIf
       fPollTime = fValue
       SetSliderOptionValueST(fPollTime, "{1}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
    EndEvent
 
    Event OnDefaultST()
       fPollTime = _fPollTimeDef
       SetSliderOptionValueST(fPollTime, "{1}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
    EndEvent
 
    Event OnHighlightST()
@@ -565,11 +652,17 @@ State ST_MOD_BLOCK_TRAVEL
    Event OnSliderAcceptST(Float fValue)
       iBlockTravel = (fValue As Int)
       SetSliderOptionValueST(iBlockTravel)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
    EndEvent
 
    Event OnDefaultST()
       iBlockTravel = _iBlockTravel
       SetSliderOptionValueST(iBlockTravel)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
    EndEvent
 
    Event OnHighlightST()
@@ -616,11 +709,17 @@ State ST_MOD_SDP_EVENTS
    Event OnSelectST()
       bCatchSdPlus = !bCatchSdPlus
       SetToggleOptionValueST(bCatchSdPlus)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Compatibility")
    EndEvent
 
    Event OnDefaultST()
       bCatchSdPlus = _bCatchSdPlus
       SetToggleOptionValueST(bCatchSdPlus)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Compatibility")
    EndEvent
 
    Event OnHighlightST()
@@ -651,53 +750,30 @@ State ST_MOD_SDP_LEASH
    EndEvent
 EndState
 
-State ST_DBG_LEVEL
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iLogLevel)
-      SetSliderDialogDefaultValue(_iLogLevelDef)
-      SetSliderDialogRange(0, 5)
-      SetSliderDialogInterval(1)
-   EndEvent
+State ST_MOD_GAG_MODE
+   Event OnSelectST()
+      iGagMode += 1
+      If (2 < iGagMode)
+         iGagMode = 0
+      EndIf
+      SetTextOptionValueST(GagModeToString(iGagMode))
 
-   Event OnSliderAcceptST(Float fValue)
-      iLogLevel = (fValue As Int)
-      SetSliderOptionValueST(iLogLevel)
-   EndEvent
-
-   Event OnDefaultST()
-      iLogLevel = _iLogLevelDef
-      SetSliderOptionValueST(iLogLevel)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the papyrus log file.\n" +\
-                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
-                  "This should be set to the maximum value to have a complete log file.")
-   EndEvent
-EndState
-
-State ST_DBG_SCREEN
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iLogLevelScreen)
-      SetSliderDialogDefaultValue(_iLogLevelScreenDef)
-      SetSliderDialogRange(0, 5)
-      SetSliderDialogInterval(1)
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      iLogLevelScreen = (fValue As Int)
-      SetSliderOptionValueST(iLogLevelScreen)
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Compatability")
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreen = _iLogLevelScreenDef
-      SetSliderOptionValueST(iLogLevelScreen)
+      iGagMode = _iGagMode
+      SetTextOptionValueST(GagModeToString(iGagMode))
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Compatability")
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("Set the level of messages that go to the screen.\n" +\
-                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
-                  "This should be Critical to reduce clutter on your screen but still get event messages.")
+      SetInfoText("Special behaviour for gags, intended for compatibility with Maria Eden where the player cannot speak.\n" +\
+                  "\"No Gag\": Never gag the player.  \"Regular\": Apply the gag and remove it based on mod decisions.\n" +\
+                  "\"Auto Remove\": Start a timer based on the player's behaviour remove the gag when the timer expires.")
    EndEvent
 EndState
 
@@ -705,7 +781,70 @@ EndState
 ;***********************************************************************************************
 ;***                                  STATES: LEASH GAME                                     ***
 ;***********************************************************************************************
-State ST_MOD_LEASH_GAME
+State ST_LGM_STYLE
+   Event OnSelectST()
+      iLeashGameStyle += 1
+      If (3 < iLeashGameStyle)
+         iLeashGameStyle = 0
+      EndIf
+      If (3 == iLeashGameStyle)
+         ShowMessage("Dialogue Not Yet Supported.", False)
+      EndIf
+      SetTextOptionValueST(LeashGameStyleToString(iLeashGameStyle))
+
+      ; Update the availablility of the Protected Delay as it is only available for Protected.
+      If (2 != iLeashGameStyle)
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_LGM_PROT_DELAY")
+      Else
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_LGM_PROT_DELAY")
+      EndIf
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnDefaultST()
+      iLeashGameStyle = _iLeashGameStyle
+      SetTextOptionValueST(LeashGameStyleToString(iLeashGameStyle))
+
+      ; Update the availablility of the Protected Delay as it is only available for Protected.
+      SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_LGM_PROT_DELAY")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("How the leash game starts.  \"Off\": Do not play.  \"Auto\": The slaver will simply lasso you.\n" +\
+                  "\"Protected\": The slaver will approach you from behind.  Facing him or drawing weapons protects you.\n" +\
+                  "\"Dialogue\": Not supported yet.")
+   EndEvent
+EndState
+
+State ST_LGM_PROT_DELAY
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLeashProtectedDelay)
+      SetSliderDialogDefaultValue(_iLeashProtectedDelay)
+      SetSliderDialogRange(0, 3000)
+      SetSliderDialogInterval(100)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLeashProtectedDelay = (fValue As Int)
+      SetSliderOptionValueST(iLeashProtectedDelay, "{0}ms")
+   EndEvent
+
+   Event OnDefaultST()
+      iLeashProtectedDelay = _iLeashProtectedDelay
+      SetSliderOptionValueST(iLeashProtectedDelay, "{0}ms")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Add a delay while starting a protected leash game making it easier to defend against.")
+   EndEvent
+EndState
+
+State ST_LGM_LEASH_GAME
    Event OnSliderOpenST()
       SetSliderDialogStartValue(fLeashGameChance)
       SetSliderDialogDefaultValue(_fLeashGameChanceDef)
@@ -720,12 +859,18 @@ State ST_MOD_LEASH_GAME
 
    Event OnSliderAcceptST(Float fValue)
       fLeashGameChance = fValue
-      SetSliderOptionValueST(fLeashGameChance)
+      SetSliderOptionValueST(fLeashGameChance, "{1}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnDefaultST()
       fLeashGameChance = _fLeashGameChanceDef
-      SetSliderOptionValueST(fLeashGameChance)
+      SetSliderOptionValueST(fLeashGameChance, "{1}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnHighlightST()
@@ -746,11 +891,17 @@ State ST_LGM_INC_VULNERABLE
    Event OnSliderAcceptST(Float fValue)
       iIncreaseWhenVulnerable = (fValue As Int)
       SetSliderOptionValueST(iIncreaseWhenVulnerable)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnDefaultST()
       iIncreaseWhenVulnerable = _iIncreaseWhenVulnerable
       SetSliderOptionValueST(iIncreaseWhenVulnerable)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnHighlightST()
@@ -759,15 +910,52 @@ State ST_LGM_INC_VULNERABLE
    EndEvent
 EndState
 
+State ST_LGM_DISTANCE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iMaxDistance)
+      SetSliderDialogDefaultValue(_iMaxDistance)
+      SetSliderDialogRange(0, 5000)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iMaxDistance = (fValue As Int)
+      SetSliderOptionValueST(iMaxDistance)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnDefaultST()
+      iMaxDistance = _iMaxDistance
+      SetSliderOptionValueST(iMaxDistance)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The maximum distance the slaver can be from the player to start the leash game.\n" +\
+                  "Set to 0 to search all actors in the DFW nearby actor list.\n" +\
+                  "This would limit the range to the range of the DFW nearby actor scan.")
+   EndEvent
+EndState
+
 State ST_LGM_INCLUD_OWNERS
    Event OnSelectST()
       bIncludeOwners = !bIncludeOwners
       SetToggleOptionValueST(bIncludeOwners)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnDefaultST()
       bIncludeOwners = _bIncludeOwners
       SetToggleOptionValueST(bIncludeOwners)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnHighlightST()
@@ -818,6 +1006,23 @@ State ST_LGM_BLOCK_HELPLESS
    EndEvent
 EndState
 
+State ST_LGM_ALLOW_SEX
+   Event OnSelectST()
+      bAllowSex = !bAllowSex
+      SetToggleOptionValueST(bAllowSex)
+   EndEvent
+
+   Event OnDefaultST()
+      bAllowSex = _bAllowSex
+      SetToggleOptionValueST(bAllowSex)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Allow sex from other mods while the leash game is in effect.\n" +\
+                  "The slaver will stand around and wait whenever the player is engaged in sex.")
+   EndEvent
+EndState
+
 State ST_LGM_DURATION_MIN
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iDurationMin)
@@ -861,7 +1066,7 @@ State ST_LGM_DURATION_MAX
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("The minimum length of time in real game minutes to play the leash game.\n" +\
+      SetInfoText("The maximum length of time in real game minutes to play the leash game.\n" +\
                   "When the game is started a random time between min and max is selected for the game duration.\n" +\
                   "Note: The game can be played for longer if the player is not released (See below).")
    EndEvent
@@ -911,7 +1116,7 @@ State ST_LGM_RELEASE_DOM
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("The maximum amount the slaver's dominance value affects the player's chance of release.\n" +\
+      SetInfoText("The amount the slaver's dominance value affects the player's chance of release.\n" +\
                   "Total Chance of Release = Base Chance above - ((Slaver Dominance - 50) / 50 * This).\n" +\
                   "Warning: If this is more than the base chance the player will never be freed by a dominant slaver.")
    EndEvent
@@ -953,11 +1158,17 @@ State ST_LGM_CHANCE_IDLE
    Event OnSliderAcceptST(Float fValue)
       iChanceIdleRestraints = (fValue As Int)
       SetSliderOptionValueST(iChanceIdleRestraints)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnDefaultST()
       iChanceIdleRestraints = _iChanceIdleRestraints
       SetSliderOptionValueST(iChanceIdleRestraints)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnHighlightST()
@@ -976,23 +1187,28 @@ State ST_LGM_CHANCE_XFER
          SetSliderDialogInterval(1)
       Else
          SetSliderDialogRange(0, 10)
-         SetSliderDialogInterval(0.1)
+         SetSliderDialogInterval(0.05)
       EndIf
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
       fChanceFurnitureTransfer = fValue
-      SetSliderOptionValueST(fChanceFurnitureTransfer)
+      SetSliderOptionValueST(fChanceFurnitureTransfer, "{2}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnDefaultST()
       fChanceFurnitureTransfer = _fChanceFurnitureTransfer
-      SetSliderOptionValueST(fChanceFurnitureTransfer)
+      SetSliderOptionValueST(fChanceFurnitureTransfer, "{2}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnHighlightST()
       SetInfoText("The chance the slaver will lock the player up in nearby Favourite BDSM furniture and leave her.\n" +\
-                  "This will only happen if they are in the same \"cell\" as the furniture.\n" +\
                   "This will only happen if the player is all locked up.")
    EndEvent
 EndState
@@ -1039,17 +1255,17 @@ State ST_BDSMF_LOCK
 
    Event OnSliderAcceptST(Float fValue)
       fFurnitureLockChance = fValue
-      SetSliderOptionValueST(fFurnitureLockChance)
+      SetSliderOptionValueST(fFurnitureLockChance, "{1}")
    EndEvent
 
    Event OnDefaultST()
       fFurnitureLockChance = _fFurnitureLockChance
-      SetSliderOptionValueST(fFurnitureLockChance)
+      SetSliderOptionValueST(fFurnitureLockChance, "{1}")
    EndEvent
 
    Event OnHighlightST()
       SetInfoText("When sitting in unlocked BDSM furniture (a cross or pillory, etc.) this is the\n" +\
-                  "chance (per poll event) that a nearby NPC will decide to lock the furniture.")
+                  "chance (per poll event) a nearby NPC will decide to lock the furniture.")
    EndEvent
 EndState
 
@@ -1068,12 +1284,18 @@ State ST_BDSMF_RELEASE
 
    Event OnSliderAcceptST(Float fValue)
       fFurnitureReleaseChance = fValue
-      SetSliderOptionValueST(fFurnitureReleaseChance)
+      SetSliderOptionValueST(fFurnitureReleaseChance, "{1}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Furniture")
    EndEvent
 
    Event OnDefaultST()
       fFurnitureReleaseChance = _fFurnitureReleaseChance
-      SetSliderOptionValueST(fFurnitureReleaseChance)
+      SetSliderOptionValueST(fFurnitureReleaseChance, "{1}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Furniture")
    EndEvent
 
    Event OnHighlightST()
@@ -1121,11 +1343,17 @@ State ST_BDSMF_ALT
    Event OnSliderAcceptST(Float fValue)
       iFurnitureAltRelease = (fValue As Int)
       SetSliderOptionValueST(iFurnitureAltRelease)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnDefaultST()
       iFurnitureAltRelease = _iFurnitureAltRelease
       SetSliderOptionValueST(iFurnitureAltRelease)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
    EndEvent
 
    Event OnHighlightST()
@@ -1140,7 +1368,7 @@ State ST_BDSMF_MIN_TIME
       SetSliderDialogStartValue(iFurnitureMinLockTime)
       SetSliderDialogDefaultValue(_iFurnitureMinLockTime)
       SetSliderDialogRange(0, 360)
-      SetSliderDialogInterval(1)
+      SetSliderDialogInterval(5)
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
@@ -1199,6 +1427,8 @@ State ST_BDSMF_AUTO_SHOW
    Event OnMenuOpenST()
       Form[] aoFavourites = _qDfwSupport.GetFavouriteFurniture()
       Form[] aoCells      = _qDfwSupport.GetFavouriteCell()
+      Form[] aoLocations  = _qDfwSupport.GetFavouriteLocation()
+      Form[] aoRegions    = _qDfwSupport.GetFavouriteRegion()
       ; Create a new array to hold all of the options.
       Int iIndex = aoFavourites.Length - 1
       String[] aszOptions = Utility.CreateStringArray(iIndex + 2)
@@ -1208,7 +1438,13 @@ State ST_BDSMF_AUTO_SHOW
       While (0 <= iIndex)
          ObjectReference oFurniture = (aoFavourites[iIndex] As ObjectReference)
          Cell oCell = (aoCells[iIndex] As Cell)
-         aszOptions[iIndex + 1] = oFurniture.GetDisplayName() + " In " + oCell
+         Location oLocation = (aoLocations[iIndex] As Location)
+         Location oRegion = (aoRegions[iIndex] As Location)
+         String szRegion = "Wilderness"
+         If (oRegion)
+            szRegion = oRegion.GetName()
+         EndIf
+         aszOptions[iIndex + 1] = oFurniture.GetDisplayName() + ": " + oCell.GetName() + "(" + oLocation.GetName() + "-" + szRegion + ")"
          iIndex -= 1
       EndWhile
 
@@ -1237,6 +1473,106 @@ State ST_BDSMF_AUTO_SHOW
 
    Event OnHighlightST()
       SetInfoText("View the list of favourited furniture and remove one if desired.")
+   EndEvent
+EndState
+
+;***********************************************************************************************
+;***                                 STATES: LOGGING + DEBUG                                 ***
+;***********************************************************************************************
+State ST_DBG_LEVEL
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevel)
+      SetSliderDialogDefaultValue(_iLogLevelDef)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevel = (fValue As Int)
+      SetSliderOptionValueST(iLogLevel)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevel = _iLogLevelDef
+      SetSliderOptionValueST(iLogLevel)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level of messages that go to the papyrus log file.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "This should be set to the maximum value to have a complete log file.")
+   EndEvent
+EndState
+
+State ST_DBG_SCREEN
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreen)
+      SetSliderDialogDefaultValue(_iLogLevelScreenDef)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreen = (fValue As Int)
+      SetSliderOptionValueST(iLogLevelScreen)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreen = _iLogLevelScreenDef
+      SetSliderOptionValueST(iLogLevelScreen)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level of messages that go to the screen.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "This should be Critical to reduce clutter on your screen but still get event messages.")
+   EndEvent
+EndState
+
+State ST_DBG_MOD_EVENTS
+   Event OnSelectST()
+      _qDfwSupport.ReRegisterModEvents()
+      SetTextOptionValueST("Done")
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Fix Now")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Re-register for all mod events this mod should be registered for.\n" +\
+                  "Registering for mod events does not always succeed, especially early after a game load.\n" +\
+                  "This can be used to remedy this situation or if mod events are not being received for any reason.")
+   EndEvent
+EndState
+
+State ST_DBG_CYCLE_PACKAGE
+   Event OnSelectST()
+      bHotkeyPackage = !bHotkeyPackage
+      SetToggleOptionValueST(bHotkeyPackage)
+   EndEvent
+
+   Event OnDefaultST()
+      bHotkeyPackage = _bHotkeyPackage
+      SetToggleOptionValueST(bHotkeyPackage)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When set the \"Call for Attention\" hotkey will reset the leash holder's AI package.\n" +\
+                  "Zaz Animations scenes cause the AI package to be reset which can causes discontinuity issues.\n" +\
+                  "This option can be used to cycle back to a more desireable package.")
    EndEvent
 EndState
 
