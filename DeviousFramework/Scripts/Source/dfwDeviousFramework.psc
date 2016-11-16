@@ -47,13 +47,17 @@ Int SUCCESS = 0
 Int WARNING = 1
 
 ; Debug Class (DC_) constants.
-Int DC_GENERAL     = 0
-Int DC_STATUS      = 1
-Int DC_MASTER      = 2
-Int DC_NEARBY      = 3
-Int DC_LEASH       = 4
-Int DC_EQUIP       = 5
-Int DC_NPC_AROUSAL = 6
+Int DC_GENERAL     =  0
+Int DC_DEBUG       =  1
+Int DC_STATUS      =  2
+Int DC_MASTER      =  3
+Int DC_NEARBY      =  4
+Int DC_LEASH       =  5
+Int DC_EQUIP       =  6
+Int DC_NPC_AROUSAL =  7
+Int DC_INTERACTION =  8
+Int DC_LOCATION    =  9
+Int DC_REDRESS     = 10
 
 ; Debug Level (DL_) constants.
 Int DL_NONE   = 0
@@ -135,6 +139,7 @@ Int Property AP_ALL               = 0xFFFFFFFF Auto
 ; Notes: The animal flag is not supported yet and may never be.
 ;        These flags are only intended for basic features.
 ;        For more advanced features the mod should get the enire list and process it manually.
+Int Property AF_NONE         = 0x00000000 Auto
 Int Property AF_ESTIMATE     = 0x00000001 Auto
 Int Property AF_IMPORTANT    = 0x00000002 Auto
 Int Property AF_CHILD        = 0x00000004 Auto
@@ -150,6 +155,48 @@ Int Property AF_SLAVE_TRADER = 0x00000800 Auto
 ; Masks encompassing groups of the above masks.
 Int Property AF_BDSM_AWARE   = 0x00000F00 Auto
 
+; Regions of Skyrim.
+Location    REGION_DAWNSTAR
+Location[] SUBURBS_DAWNSTAR
+Location    REGION_DRAGON_BRIDGE
+Location[] SUBURBS_DRAGON_BRIDGE
+Location    REGION_FALKREATH
+Location[] SUBURBS_FALKREATH
+Location    REGION_HIGH_HROTHGAR
+Location[] SUBURBS_HIGH_HROTHGAR
+Location    REGION_IVARSTEAD
+Location[] SUBURBS_IVARSTEAD
+Location    REGION_KARTHWASTEN
+Location[] SUBURBS_KARTHWASTEN
+Location    REGION_MARKARTH
+Location[] SUBURBS_MARKARTH
+Location    REGION_MORTHAL
+Location[] SUBURBS_MORTHAL
+Location    REGION_OLD_HROLDAN
+Location[] SUBURBS_OLD_HROLDAN
+Location    REGION_RIFTEN
+Location[] SUBURBS_RIFTEN
+Location    REGION_RIVERWOOD
+Location[] SUBURBS_RIVERWOOD
+Location    REGION_RORIKSTEAD
+Location[] SUBURBS_RORIKSTEAD
+Location    REGION_SHORS_STONE
+Location[] SUBURBS_SHORS_STONE
+Location    REGION_SKY_HAVEN
+Location[] SUBURBS_SKY_HAVEN
+Location    REGION_SOLITUDE
+Location    SUBURB_SOLITUDE_WELLS
+Location    SUBURB_SOLITUDE_AVENUES
+Location[] SUBURBS_SOLITUDE
+Location    REGION_THALMOR_EMBASSY
+Location[] SUBURBS_THALMOR_EMBASSY
+Location    REGION_WHITERUN
+Location[] SUBURBS_WHITERUN
+Location    REGION_WINDHELM
+Location[] SUBURBS_WINDHELM
+Location    REGION_WINTERHOLD
+Location    SUBURB_WINTERHOLD_COLLEGE
+Location[] SUBURBS_WINTERHOLD
 
 ; Master distances (MD_) constants.
 ; Note: These must remain backwards compatible.
@@ -177,6 +224,13 @@ Spell   Property _oDfwNearbyDetectorSpell Auto
 Faction Property _oFactionMerchants       Auto
 Idle    Property _oIdleStop_Loose         Auto
 
+; Quest Alias References.
+ReferenceAlias _aAliasApproachPlayer
+LocationAlias _aAliasLocationTarget
+ReferenceAlias _aAliasMoveToLocation
+ReferenceAlias _aAliasObjectTarget
+ReferenceAlias _aAliasMoveToObject
+
 
 ;***********************************************************************************************
 ;***                                      VARIABLES                                          ***
@@ -191,12 +245,15 @@ Float _fCurrVer = 0.00
 ;----------------------------------------------------------------------------------------------
 ; Conditional variables available to dialogues.
 ; Use PrepareActorDialogue() to set the variables before using them.
+Bool  _bCallingForAttention     Conditional
+Bool  _bCallingForHelp          Conditional
 Bool  _bIsActorDominant         Conditional
 Bool  _bIsActorLeashHolder      Conditional
 Bool  _bIsActorOwner            Conditional
 Bool  _bIsActorSlave            Conditional
 Bool  _bIsActorSlaver           Conditional
 Bool  _bIsActorSubmissive       Conditional
+Bool  _bIsGagStrict             Conditional
 Bool  _bIsLastRapeAggressor     Conditional
 Bool  _bIsPlayerArmLocked       Conditional
 Bool  _bIsPlayerBelted          Conditional
@@ -224,6 +281,10 @@ Float _fMasterDistance          Conditional
 Int _iDialogRetries             Conditional
 ;----------
 
+; A conditional to tell the approach package(s) how fast to move.
+; 2 Walk Fast  3 Jog  4 Run
+Int _iApproachSpeed Conditional
+
 ;*** Vulnerability Flags ***
 Int _iNakedStatus
 Bool _bChestCovered = False
@@ -234,6 +295,10 @@ Bool _bWaistReduced = False
 Int _iNumOtherRestraints
 Bool _bHiddenRestraints = False
 Bool _bInventoryLocked = False
+
+; Keep track of the player's location as this information is not otherwise available.
+Location _oCurrLocation
+Location _oCurrRegion
 
 ; BDSM furniture related flags.  What furniture the player is sitting on and if it is locked.
 ; Note that if the furniture is locked the player should be locked back up after sex.
@@ -345,7 +410,7 @@ String _aMasterModClose
 String _aMasterModDistant
 
 ; Also keep a list of actors who have previously been the player's Master.
-Form []_aaPreviousMasters
+Form[] _aaPreviousMasters
 
 ; A set of flags to keep track of whether sex or enslavement is allowed.
 Int _iPermissionsClose
@@ -364,12 +429,25 @@ Int _iNumItemsUnequipped
 Float _fSceneTimeout
 String _szCurrentScene
 
+; For moving aliases, keep track of the mods/features performing the movement.
+String _szApproachModId
+String _szMoveToLocationModId
+String _szMoveToObjectModId
+
 ; Keep track of how long before the next cleanup is scheduled for the nearby actors list.
 Float _fNearbyCleanupTime
 
 ; Timeouts to prevent redressing after becoming naked or being raped.
 Float _fNakedRedressTimeout
 Float _fRapeRedressTimeout
+
+; A timeout preventing the player from calling for help too frequently.
+Int _iCallOutTimeout
+
+; A flag to identify we are waiting for someone to respond to a call out.
+; This is used to prevent multiple mods from responding to a call out.
+Int _iCallOutType
+Int _iCallOutResponse
 
 ; Information about the most recent rape or assault.
 Actor _aLastAssaultActor
@@ -427,6 +505,7 @@ Int _iMcmDispWillingGuards
 Int _iMcmDispWillingMerchants
 Int _iMcmDispWillingBdsm
 Int _iMcmDialogueRetries
+Int _iMcmLeashMinLength
 ;----------
 
 ;----------------------------------------------------------------------------------------------
@@ -457,12 +536,12 @@ EndEvent
 Function UpdateScript()
    ; Reset the version number.
    ; To make sure the Utility script is loaded.
-   ;If (0.10 < _fCurrVer)
-   ;   _fCurrVer = 0.10
+   ;If (1.00 < _fCurrVer)
+   ;   _fCurrVer = 1.00
    ;EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 1.00
+   Float fScriptVer = 1.01
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
@@ -553,6 +632,10 @@ Function UpdateScript()
       _oFactionDfwDialogueTarget = \
          (Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") As Faction)
 
+      ; Registering for events on game load almost always fails.  Always add a delay.
+      Log("Delaying before mod event registration.", DL_CRIT, DC_GENERAL)
+      Utility.Wait(20)
+
       ; Register for post sex events to detect rapes.
       RegisterForModEvent("AnimationEnd", "PostSexCallback")
 
@@ -560,8 +643,116 @@ Function UpdateScript()
       RegisterForModEvent("DFW_MCM_Changed", "UpdateLocalMcmSettings")
    EndIf
 
+   If (1.01 > _fCurrVer)
+      ; A new logging class was added.  Make sure the array is initialized.
+      UpdateLocalMcmSettings("Logging")
+      _aAliasApproachPlayer = (GetAlias(1) As ReferenceAlias)
+      _aAliasLocationTarget = (GetAlias(2) As LocationAlias)
+      _aAliasMoveToLocation = (GetAlias(3) As ReferenceAlias)
+      _aAliasObjectTarget = (GetAlias(4) As ReferenceAlias)
+      _aAliasMoveToObject = (GetAlias(5) As ReferenceAlias)
+      InitRegions()
+   EndIf
+
    ; Finally update the version number.
    _fCurrVer = fScriptVer
+EndFunction
+
+Function InitRegions()
+    REGION_DAWNSTAR = (Game.GetFormFromFile(0x00018A50, "Skyrim.esm") As Location)
+   SUBURBS_DAWNSTAR = New Location[1]
+   SUBURBS_DAWNSTAR[0] = (Game.GetFormFromFile(0x00019429, "Skyrim.esm") As Location) ; DawnstarSanctuaryLocation
+
+    REGION_DRAGON_BRIDGE = (Game.GetFormFromFile(0x00018A46, "Skyrim.esm") As Location)
+
+    REGION_FALKREATH = (Game.GetFormFromFile(0x00018A49, "Skyrim.esm") As Location)
+   SUBURBS_FALKREATH = New Location[3]
+   SUBURBS_FALKREATH[0] = (Game.GetFormFromFile(0x000479B3, "Skyrim.esm") As Location) ; FalkreathWatchtowerLocation
+   SUBURBS_FALKREATH[1] = (Game.GetFormFromFile(0x00018E3E, "Skyrim.esm") As Location) ; HalfmoonMillLocation
+   SUBURBS_FALKREATH[2] = (Game.GetFormFromFile(0x000200AB, "Skyrim.esm") As Location) ; HalfMoonLumberMillLocation
+
+    REGION_HIGH_HROTHGAR = (Game.GetFormFromFile(0x00018A34, "Skyrim.esm") As Location)
+   SUBURBS_HIGH_HROTHGAR = New Location[1]
+   SUBURBS_HIGH_HROTHGAR[0] = (Game.GetFormFromFile(0x000192BB, "Skyrim.esm") As Location) ; ThroatoftheWorldLocation
+
+    REGION_IVARSTEAD = (Game.GetFormFromFile(0x00018A4B, "Skyrim.esm") As Location)
+
+    REGION_KARTHWASTEN = (Game.GetFormFromFile(0x00018A54, "Skyrim.esm") As Location)
+
+    REGION_MARKARTH = (Game.GetFormFromFile(0x00018A59, "Skyrim.esm") As Location)
+   SUBURBS_MARKARTH = New Location[7]
+   SUBURBS_MARKARTH[0] = (Game.GetFormFromFile(0x00018E3A, "Skyrim.esm") As Location) ; LeftHandMineLocation
+   SUBURBS_MARKARTH[1] = (Game.GetFormFromFile(0x0001F7B8, "Skyrim.esm") As Location) ; LeftHandMineDaighresHouseLocation
+   SUBURBS_MARKARTH[2] = (Game.GetFormFromFile(0x0001F7B6, "Skyrim.esm") As Location) ; LeftHandMineMineLocation
+   SUBURBS_MARKARTH[3] = (Game.GetFormFromFile(0x0001F7B7, "Skyrim.esm") As Location) ; LeftHandMineMinersBarracksLocation
+   SUBURBS_MARKARTH[4] = (Game.GetFormFromFile(0x0001F7B5, "Skyrim.esm") As Location) ; LeftHandMineSkaggisHouseLocation
+   SUBURBS_MARKARTH[5] = (Game.GetFormFromFile(0x00018E40, "Skyrim.esm") As Location) ; SalviusFarmLocation
+   SUBURBS_MARKARTH[6] = (Game.GetFormFromFile(0x0001F805, "Skyrim.esm") As Location) ; SalviusFarmhouseLocation
+
+    REGION_MORTHAL = (Game.GetFormFromFile(0x00018A53, "Skyrim.esm") As Location)
+
+    REGION_OLD_HROLDAN = (Game.GetFormFromFile(0x00018A55, "Skyrim.esm") As Location)
+
+    REGION_RIFTEN = (Game.GetFormFromFile(0x00018A58, "Skyrim.esm") As Location)
+   SUBURBS_RIFTEN = New Location[6]
+   SUBURBS_RIFTEN[0] = (Game.GetFormFromFile(0x00018E32, "Skyrim.esm") As Location) ; GoldenglowEstateLocation
+   SUBURBS_RIFTEN[1] = (Game.GetFormFromFile(0x00018E33, "Skyrim.esm") As Location) ; HeartwoodMillLocation
+   SUBURBS_RIFTEN[2] = (Game.GetFormFromFile(0x0005E0FB, "Skyrim.esm") As Location) ; HeartwoodMillInteriorLocation
+   SUBURBS_RIFTEN[3] = (Game.GetFormFromFile(0x00018E3C, "Skyrim.esm") As Location) ; MerryfairFarmLocation
+   SUBURBS_RIFTEN[4] = (Game.GetFormFromFile(0x00018E41, "Skyrim.esm") As Location) ; SarethiFarmLocation
+   SUBURBS_RIFTEN[5] = (Game.GetFormFromFile(0x00018E43, "Skyrim.esm") As Location) ; SnowShodFarmLocation
+
+    REGION_RIVERWOOD = (Game.GetFormFromFile(0x00013163, "Skyrim.esm") As Location)
+
+    REGION_RORIKSTEAD = (Game.GetFormFromFile(0x00018A47, "Skyrim.esm") As Location)
+   SUBURBS_RORIKSTEAD = New Location[1]
+   SUBURBS_RORIKSTEAD[0] = (Game.GetFormFromFile(0x000E66A5, "Skyrim.esm") As Location) ; LundsHutLocation
+
+    REGION_SHORS_STONE = (Game.GetFormFromFile(0x00018A4C, "Skyrim.esm") As Location)
+   SUBURBS_SHORS_STONE = New Location[1]
+   SUBURBS_SHORS_STONE[0] = (Game.GetFormFromFile(0x000D5669, "Skyrim.esm") As Location) ; ShorsWatchtowerLocation
+
+    REGION_SKY_HAVEN = (Game.GetFormFromFile(0x00018E42, "Skyrim.esm") As Location)
+
+    REGION_SOLITUDE         = (Game.GetFormFromFile(0x00018A5A, "Skyrim.esm") As Location)
+    SUBURB_SOLITUDE_AVENUES = (Game.GetFormFromFile(0x000358B8, "Skyrim.esm") As Location)
+    SUBURB_SOLITUDE_WELLS   = (Game.GetFormFromFile(0x000358B7, "Skyrim.esm") As Location)
+   SUBURBS_SOLITUDE = New Location[6]
+   SUBURBS_SOLITUDE[0] = (Game.GetFormFromFile(0x0002008E, "Skyrim.esm") As Location) ; EastEmpireWarehouseLocation
+   SUBURBS_SOLITUDE[1] = (Game.GetFormFromFile(0x0004FEF1, "Skyrim.esm") As Location) ; SolitudeEastEmpireWarehouseLocation
+   SUBURBS_SOLITUDE[2] = (Game.GetFormFromFile(0x00018E44, "Skyrim.esm") As Location) ; SolitudeSawmillLocation
+   SUBURBS_SOLITUDE[3] = (Game.GetFormFromFile(0x0010FE2C, "Skyrim.esm") As Location) ; SolitudeSawmillInteriorLocation
+   SUBURBS_SOLITUDE[4] = (Game.GetFormFromFile(0x0001914A, "Skyrim.esm") As Location) ; BluePalaceWingLocation
+   SUBURBS_SOLITUDE[5] = (Game.GetFormFromFile(0x00018E38, "Skyrim.esm") As Location) ; KatlasFarmLocation
+
+    REGION_THALMOR_EMBASSY = (Game.GetFormFromFile(0x00018C92, "Skyrim.esm") As Location)
+
+    REGION_WHITERUN = (Game.GetFormFromFile(0x00018A56, "Skyrim.esm") As Location)
+   SUBURBS_WHITERUN = New Location[9]
+   SUBURBS_WHITERUN[0] = (Game.GetFormFromFile(0x00049B60, "Skyrim.esm") As Location) ; WhiterunHonningbrewMeaderyInteriorLocation
+   SUBURBS_WHITERUN[1] = (Game.GetFormFromFile(0x00023E5D, "Skyrim.esm") As Location) ; WhiterunJorrvaskrBasementLocation
+   SUBURBS_WHITERUN[2] = (Game.GetFormFromFile(0x000D9079, "Skyrim.esm") As Location) ; WhiterunWatchtowerLocation
+   SUBURBS_WHITERUN[3] = (Game.GetFormFromFile(0x000E66A0, "Skyrim.esm") As Location) ; WhitewatchTowerLocation
+   SUBURBS_WHITERUN[4] = (Game.GetFormFromFile(0x00018C8C, "Skyrim.esm") As Location) ; BarleydarkFarmLocation
+   SUBURBS_WHITERUN[5] = (Game.GetFormFromFile(0x00018C8D, "Skyrim.esm") As Location) ; BattleBornFarmLocation
+   SUBURBS_WHITERUN[6] = (Game.GetFormFromFile(0x00018C90, "Skyrim.esm") As Location) ; ChillfurrowFarmLocation
+   SUBURBS_WHITERUN[7] = (Game.GetFormFromFile(0x000674F0, "Skyrim.esm") As Location) ; CWCampsiteWhiterunLocation
+   SUBURBS_WHITERUN[8] = (Game.GetFormFromFile(0x00018E3F, "Skyrim.esm") As Location) ; PelagiaFarmLocation
+
+    REGION_WINDHELM = (Game.GetFormFromFile(0x00018A57, "Skyrim.esm") As Location)
+   SUBURBS_WINDHELM = New Location[7]
+   SUBURBS_WINDHELM[0] = (Game.GetFormFromFile(0x00018C8F, "Skyrim.esm") As Location) ; BrandyMugFarmLocation
+   SUBURBS_WINDHELM[1] = (Game.GetFormFromFile(0x00018E35, "Skyrim.esm") As Location) ; HlaaluFarmLocation
+   SUBURBS_WINDHELM[2] = (Game.GetFormFromFile(0x00018E36, "Skyrim.esm") As Location) ; HollyfrostFarmLocation
+   SUBURBS_WINDHELM[3] = (Game.GetFormFromFile(0x000EF572, "Skyrim.esm") As Location) ; RefugeesRestLocation
+   SUBURBS_WINDHELM[4] = (Game.GetFormFromFile(0x00018A4E, "Skyrim.esm") As Location) ; KynesgroveLocation
+   SUBURBS_WINDHELM[5] = (Game.GetFormFromFile(0x00020A02, "Skyrim.esm") As Location) ; KynesgroveBraidwoodInnLocation
+   SUBURBS_WINDHELM[6] = (Game.GetFormFromFile(0x00020A07, "Skyrim.esm") As Location) ; KynesgroveSteamscorchGullyMineLocation
+
+    REGION_WINTERHOLD = (Game.GetFormFromFile(0x00018A51, "Skyrim.esm") As Location)
+    SUBURB_WINTERHOLD_COLLEGE = (Game.GetFormFromFile(0x00076F3A, "Skyrim.esm") As Location)
+   SUBURBS_WINTERHOLD
+   SUBURBS_WINTERHOLD[0] = (Game.GetFormFromFile(0x00018E45, "Skyrim.esm") As Location) ; WhistlingMineLocation
 EndFunction
 
 Function OnPlayerLoadGame()
@@ -577,6 +768,9 @@ Function OnPlayerLoadGame()
    _fNearbyCleanupTime = fCurrTime + 3
    _fSceneTimeout = 0
    _szCurrentScene = ""
+
+   ; Update the distance for polling nearby actors.  This seems to reset on game load.
+   UpdatePollingDistance(_qMcm.iSettingsNearbyDistance)
 
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
@@ -694,23 +888,34 @@ Function OnPlayerLoadGame()
    Log("Game Loaded Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
 EndFunction
 
+Function ReRegisterModEvents()
+   ; Re-register for all mod events.  Should be called from the MCM menu to fix issues.
+   RegisterForModEvent("AnimationEnd",    "PostSexCallback")
+   RegisterForModEvent("DFW_MCM_Changed", "UpdateLocalMcmSettings")
+EndFunction
+
 Function UpdateLocalMcmSettings(String sCategory="")
    If (!sCategory || ("Logging" == sCategory))
       _iMcmLogLevel = _qMcm.iLogLevel
 
-      _aiMcmScreenLogLevel = New Int[7]
+      _aiMcmScreenLogLevel = New Int[11]
       _aiMcmScreenLogLevel[DC_GENERAL]     = _qMcm.iLogLevelScreenGeneral
+      _aiMcmScreenLogLevel[DC_DEBUG]       = _qMcm.iLogLevelScreenDebug
       _aiMcmScreenLogLevel[DC_STATUS]      = _qMcm.iLogLevelScreenStatus
       _aiMcmScreenLogLevel[DC_MASTER]      = _qMcm.iLogLevelScreenMaster
       _aiMcmScreenLogLevel[DC_NEARBY]      = _qMcm.iLogLevelScreenNearby
       _aiMcmScreenLogLevel[DC_LEASH]       = _qMcm.iLogLevelScreenLeash
       _aiMcmScreenLogLevel[DC_EQUIP]       = _qMcm.iLogLevelScreenEquip
       _aiMcmScreenLogLevel[DC_NPC_AROUSAL] = _qMcm.iLogLevelScreenArousal
+      _aiMcmScreenLogLevel[DC_INTERACTION] = _qMcm.iLogLevelScreenInteraction
+      _aiMcmScreenLogLevel[DC_LOCATION]    = _qMcm.iLogLevelScreenLocation
+      _aiMcmScreenLogLevel[DC_REDRESS]     = _qMcm.iLogLevelScreenRedress
    EndIf
 
    If (!sCategory || ("ModFeatures" == sCategory))
       _iDialogueTargetStyle = _qMcm.iModDialogueTargetStyle
       _iMcmDialogueRetries  = _qMcm.iModDialogueTargetRetries
+      _iMcmLeashMinLength   = _qMcm.iModLeashMinLength
    EndIf
 
    If (!sCategory || ("NpcDisposition" == sCategory))
@@ -722,6 +927,7 @@ Function UpdateLocalMcmSettings(String sCategory="")
    If (_bIsFurnitureLocked && ("SafewordFurniture" == sCategory))
       Log("Safeword BDSM Furniture.", DL_CRIT, DC_GENERAL)
       _bIsFurnitureLocked = False
+      _qZbfPlayerSlot.SetFurniture(None)
 
       ; Release the player's inventory.  Because this is a safeword do it unconditionally.
       _bInventoryLocked = False
@@ -734,6 +940,11 @@ Function UpdateLocalMcmSettings(String sCategory="")
       _oLeashTarget = None
       _iLeashLength = 700
       _bYankingLeash = False
+   EndIf
+
+   ; This should really use the standard mod event process but for now update it as is.
+   If (!sCategory)
+      UpdatePollingDistance(_qMcm.iSettingsNearbyDistance)
    EndIf
 EndFunction
 
@@ -793,6 +1004,25 @@ Function PerformOnUpdate()
    ; Reset the number of items unequipped as we unequip more each poll interval.
    _iNumItemsUnequipped = 0
 
+   ; Reduce the timeout for allowing the player to call out.
+   If (0 < _iCallOutTimeout)
+      _iCallOutTimeout -= 1
+      If (0 < _iCallOutResponse)
+         _iCallOutResponse -= 1
+         If (!_iCallOutResponse)
+            If ((1 == _iCallOutType) && _aMasterClose && \
+                (300 > _aMasterClose.GetDistance(_aPlayer)))
+               Log(_aMasterClose.GetDisplayName() + \
+                   " grabs you and stops you from making a scene.", DL_CRIT, DC_INTERACTION)
+            ElseIf (_bIsPlayerGagged)
+               Log("You don't manage to get anyone's attention.", DL_CRIT, DC_INTERACTION)
+            Else
+               Log("No one seems to pay much attention to you.", DL_CRIT, DC_INTERACTION)
+            EndIf
+         EndIf
+      EndIf
+   EndIf
+
    ; If the player is leashed to a target make sure they are not too far away.
    If (_oLeashTarget)
       ; Play the leash effect to draw leash particles between the player and the leash holder.
@@ -825,7 +1055,10 @@ Function PerformOnUpdate()
                               (_oLeashTarget.IsInInterior() || _aPlayer.IsInInterior()))
 
       Float fDistance = _oLeashTarget.GetDistance(_aPlayer)
-      _iLeashLength
+      Int iLeashLength = _iLeashLength
+      If (_iMcmLeashMinLength && (_iMcmLeashMinLength > iLeashLength))
+         iLeashLength = _iMcmLeashMinLength
+      EndIf
       If (bCellTransition || (1500 < fDistance))
          If ((!GetBdsmFurniture() || !_bIsFurnitureLocked) && \
              CheckLeashInterruptScene())
@@ -838,7 +1071,7 @@ Function PerformOnUpdate()
             Log("You feel a great tug on your leash as you are pulled along.", DL_CRIT, \
                 DC_LEASH)
          EndIf
-      ElseIf (_iLeashLength < fDistance)
+      ElseIf (iLeashLength < fDistance)
          ; Only try to drag the player if she is not busy or we can interrupt the scene.
          If (CheckLeashInterruptScene())
             If (!YankLeash())
@@ -867,6 +1100,18 @@ Function PerformOnUpdate()
 
       ; No flags are set so return here.
       Return
+   EndIf
+
+   If (_fNakedRedressTimeout || _fRapeRedressTimeout)
+      Float fCurrGameTime = Utility.GetCurrentGameTime()
+      If (_fRapeRedressTimeout && (fCurrGameTime > _fRapeRedressTimeout))
+         Log("You are now feeling better and recovered from being raped.", DL_INFO, DC_REDRESS)
+         _fRapeRedressTimeout = 0
+      EndIf
+      If (_fNakedRedressTimeout && (fCurrGameTime > _fNakedRedressTimeout))
+         Log("You have finished undressing and are ready to dress again.", DL_INFO, DC_REDRESS)
+         _fNakedRedressTimeout = 0
+      EndIf
    EndIf
 
    ; Keep track of whether we want to check for additional restraints.
@@ -960,6 +1205,8 @@ Function PerformOnUpdate()
       If (_aPlayer.WornHasKeyword(_oKeywordZadGag) || \
           _aPlayer.WornHasKeyword(_oKeywordZbfWornGag))
          _bIsPlayerGagged = True
+      Else
+         _bIsGagStrict = False
       EndIf
       ReportStatus("Gagged", _bIsPlayerGagged, bOldStatus)
    EndIf
@@ -1113,7 +1360,7 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
 
       ; First check if we are in a naked or post rape redress timeout.
       If (_fRapeRedressTimeout)
-         If (_fRapeRedressTimeout > Utility.GetCurrentGameTime())
+         If (Utility.GetCurrentGameTime() < _fRapeRedressTimeout)
             Log("You are too exhausted from being raped to dress right now.", DL_CRIT, DC_EQUIP)
             _fRapeRedressTimeout = Utility.GetCurrentGameTime() + \
                                    ((_qMcm.iModRapeRedressTimeout As Float) / 1440)
@@ -1127,7 +1374,7 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
          _fRapeRedressTimeout = 0
       EndIf
       If (_fNakedRedressTimeout)
-         If (_fNakedRedressTimeout > Utility.GetCurrentGameTime())
+         If (Utility.GetCurrentGameTime() < _fRapeRedressTimeout)
             Log("You tried to dress too fast.  Now you have to start again.", DL_CRIT, DC_EQUIP)
             _fNakedRedressTimeout = Utility.GetCurrentGameTime() + \
                                     ((_qMcm.iModNakedRedressTimeout As Float) / 1440)
@@ -1286,7 +1533,26 @@ Function OnGetUp(ObjectReference oFurniture)
          ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
          Game.EnablePlayerControls(False, False, False, False, False, True,  False,  False)
       EndIf
+      _qZbfPlayerSlot.SetFurniture(None)
    EndIf
+EndFunction
+
+Function OnLocationChange(Location oOldLocation, Location oNewLocation)
+   _oCurrLocation = oNewLocation
+   ; Figure out which "Region" we are now in.
+   _oCurrRegion = GetRegion(oNewLocation)
+
+   String szRegion = "Wilderness"
+   If (_oCurrRegion)
+      szRegion = _oCurrRegion.GetName()
+   EndIf
+
+   String szOldLocation = "Wilderness"
+   If (oOldLocation)
+      szOldLocation = oOldLocation.GetName()
+   EndIf
+   Log("Location Change: " + szOldLocation + " => " + oNewLocation.GetName() + " (" + \
+       szRegion + ")", DL_INFO, DC_LOCATION)
 EndFunction
 
 ; This is called from the _dfwNearbyDetectorEffect magic effect when it starts.
@@ -1449,9 +1715,11 @@ Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender
             aPartner = GetNearestActor()
          EndIf
 
-         Log(aPartner.GetDisplayName() + " locks you back up in your device.", DL_CRIT, \
-             DC_GENERAL)
-         _qZbfSlaveActions.RestrainInDevice(oFurniture, aPartner, S_MOD)
+         If (aPartner)
+            Log(aPartner.GetDisplayName() + " locks you back up in your device.", DL_CRIT, \
+                DC_GENERAL)
+            _qZbfSlaveActions.RestrainInDevice(oFurniture, aPartner, S_MOD)
+         EndIf
       EndIf
    EndIf
 
@@ -1465,6 +1733,149 @@ Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender
       EndIf
    EndIf
 EndEvent
+
+Event OnKeyUp(Int iKeyCode, Float fHoldTime)
+   If ((_qMcm.iModHelpKey == iKeyCode) || (_qMcm.iModAttentionKey == iKeyCode))
+      ; If the player has called out too recently ignore this attempt.
+      If (_iCallOutTimeout)
+         Return
+      EndIf
+
+      ; The two calls are handled very similar with a few changes in details.
+      ; Keep track of the details in these variables.
+      String sEvent = "DFW_CallForHelp"
+      Int iRange = 2000
+      Int iIncludeFlags = AF_GUARDS + AF_OWNER + AF_SLAVE_TRADER
+      Int iExcludeFlags = AF_CHILD + AF_SUBMISSIVE + AF_SLAVE
+      Int iChance = 20
+      ; Call Type: 1 for Help, 2 for Assistance
+      _iCallOutType = 1
+      _iCallOutTimeout = _qMcm.iModCallTimeout
+      _iCallOutResponse = 3
+      If (_qMcm.iModAttentionKey == iKeyCode)
+         sEvent = "DFW_CallForAttention"
+         iRange = 1000
+         iIncludeFlags = AF_NONE
+         iChance = 10
+         _iCallOutType = 2
+         _iCallOutTimeout /= 2
+      EndIf
+      ; Convert the call out timeout and response from seconds into number of polls.
+      _iCallOutTimeout = ((_iCallOutTimeout / _qMcm.fSettingsPollTime) As Int) + 1
+      _iCallOutResponse = ((_iCallOutResponse / _qMcm.fSettingsPollTime) As Int) + 1
+
+      ; If the player is gagged the range is less and chance of Master interaction more.
+      If (_bIsPlayerGagged)
+         iRange = ((iRange * 0.5) As Int)
+         iChance *= 2
+
+         ; If the player is wearing a strict gag reduce the range even further.
+         If (_bIsGagStrict)
+            Log("You are effectively gagged and can't make much sound.", DL_CRIT, \
+                DC_INTERACTION)
+            iRange = ((iRange * 0.5) As Int)
+         Else
+            Log("You mumble through your gag as best you can.", DL_CRIT, DC_INTERACTION)
+         EndIf
+      ElseIf (1 == _iCallOutType)
+         Log("You call out for help.", DL_CRIT, DC_INTERACTION)
+      Else
+         Log("You subtly try to get someone to notice you.", DL_CRIT, DC_INTERACTION)
+      EndIf
+
+      ; Find a suitable actor nearby to recommend to handle the call for help.
+      Actor aNearby = GetRandomActor(iRange, iIncludeFlags, iExcludeFlags)
+
+      ; If the player's Master is nearby consider recommending him instead.
+      If (_aMasterClose && (iRange >= _aMasterClose.GetDistance(_aPlayer)) && \
+          (!aNearby || (Utility.RandomInt(0, 99) < iChance)))
+         aNearby = _aMasterClose
+      EndIf
+
+      ; If we did not find anyone try one last search without any actor flags.
+      If (!aNearby && (iIncludeFlags || iExcludeFlags))
+         ; Start by removing any include flags.
+         If (iIncludeFlags)
+            aNearby = GetRandomActor(iRange, iExcludeFlags=iExcludeFlags)
+         EndIf
+         ; If we still haven't found anyone remove the exclude flags as well.
+         If (!aNearby && iExcludeFlags)
+            aNearby = GetRandomActor(iRange, iExcludeFlags=AF_CHILD)
+         EndIf
+      EndIf
+
+      ; Send the event.
+      Int iModEvent = ModEvent.Create(sEvent)
+      If (iModEvent)
+         ModEvent.PushInt(iModEvent, _iCallOutType)
+         ModEvent.PushInt(iModEvent, iRange)
+         ModEvent.PushForm(iModEvent, aNearby)
+         If (!ModEvent.Send(iModEvent))
+            Log("Failed to send Event " + sEvent + "(" + aNearby.GetDisplayName() + ")", \
+                DL_ERROR, DC_INTERACTION)
+         EndIf
+      EndIf
+   EndIf
+EndEvent
+
+; Called from the approach package to indicate the approach is done (passed for failed).
+Function PlayerApproachComplete()
+   Actor aApproachNpc = (_aAliasApproachPlayer.GetReference() As Actor)
+   _aAliasApproachPlayer.Clear()
+   Bool bSuccess = (1000 > aApproachNpc.GetDistance(_aPlayer))
+
+   Int iModEvent = ModEvent.Create("DFW_MovementDone")
+   If (iModEvent)
+      ModEvent.PushInt(iModEvent, 1)
+      ModEvent.PushForm(iModEvent, aApproachNpc)
+      ModEvent.PushBool(iModEvent, bSuccess)
+      ModEvent.PushString(iModEvent, _szApproachModId)
+      If (!ModEvent.Send(iModEvent))
+         Log("Failed to send Event DFW_MovementDone(1, " + bSuccess + ", " + \
+             _szApproachModId + ")", DL_ERROR, DC_INTERACTION)
+      EndIf
+   EndIf
+EndFunction
+
+Function MoveToLocationComplete()
+   Actor aMovingNpc = (_aAliasMoveToLocation.GetReference() As Actor)
+   Location oTargetLocation = _aAliasLocationTarget.GetLocation()
+   _aAliasMoveToLocation.Clear()
+   _aAliasLocationTarget.Clear()
+   Bool bSuccess = (oTargetLocation == aMovingNpc.GetCurrentLocation())
+
+   Int iModEvent = ModEvent.Create("DFW_MovementDone")
+   If (iModEvent)
+      ModEvent.PushInt(iModEvent, 2)
+      ModEvent.PushForm(iModEvent, aMovingNpc)
+      ModEvent.PushBool(iModEvent, bSuccess)
+      ModEvent.PushString(iModEvent, _szMoveToLocationModId)
+      If (!ModEvent.Send(iModEvent))
+         Log("Failed to send Event DFW_MovementDone(2, " + bSuccess + ", " + \
+             _szMoveToLocationModId + ")", DL_ERROR, DC_INTERACTION)
+      EndIf
+   EndIf
+EndFunction
+
+Function MoveToObjectComplete()
+   Actor aMovingNpc = (_aAliasMoveToObject.GetReference() As Actor)
+   ObjectReference oTargetObject = _aAliasObjectTarget.GetReference()
+   _aAliasMoveToObject.Clear()
+   _aAliasObjectTarget.Clear()
+   Bool bSuccess = (1000 > aMovingNpc.GetDistance(oTargetObject))
+
+   Int iModEvent = ModEvent.Create("DFW_MovementDone")
+   If (iModEvent)
+      ModEvent.PushInt(iModEvent, 3)
+      ModEvent.PushForm(iModEvent, aMovingNpc)
+      ModEvent.PushBool(iModEvent, bSuccess)
+      ModEvent.PushString(iModEvent, _szMoveToObjectModId)
+      If (!ModEvent.Send(iModEvent))
+         Log("Failed to send Event DFW_MovementDone(3, " + bSuccess + ", " + \
+             _szMoveToObjectModId + ")", DL_ERROR, DC_INTERACTION)
+      EndIf
+   EndIf
+EndFunction
 
 
 ;***********************************************************************************************
@@ -1942,6 +2353,11 @@ Function Log(String szMessage, Int iLevel=0, Int iClass=0)
    EndIf
 EndFunction
 
+; A special name for debug (non permanent) log messages making them easier to locate.
+Function DebugLog(String szMessage, Int iLevel=4)
+   Log(szMessage, iLevel, DC_DEBUG)
+EndFunction
+
 ; For status purposes only to be called by the MCM status menu.
 Form[] Function GetKnownActors()
    Return _aoKnown
@@ -1958,35 +2374,38 @@ EndFunction
 ; Returns an array of string information about the last dialogue target.
 ; This is inteded to be displayed by the MCM menu for diagnostics information.
 String[] Function GetDialogueTargetInfo()
-   String[] szInfo = New String[28]
+   String[] szInfo = New String[31]
    szInfo[00] = "Actor: " + _aCurrTarget.GetDisplayName()
-   szInfo[01] = "_bIsActorDominant: " + _bIsActorDominant
-   szInfo[02] = "_bIsActorLeashHolder: " + _bIsActorLeashHolder
-   szInfo[03] = "_bIsActorOwner: " + _bIsActorOwner
-   szInfo[04] = "_bIsActorSlave: " + _bIsActorSlave
-   szInfo[05] = "_bIsActorSlaver: " + _bIsActorSlaver
-   szInfo[06] = "_bIsActorSubmissive: " + _bIsActorSubmissive
-   szInfo[07] = "_bIsLastRapeAggressor: " + _bIsLastRapeAggressor
-   szInfo[08] = "_bIsPlayerArmLocked: " + _bIsPlayerArmLocked
-   szInfo[09] = "_bIsPlayerBelted: " + _bIsPlayerBelted
-   szInfo[10] = "_bIsPlayerBound: " + _bIsPlayerBound
-   szInfo[11] = "_bIsPlayerBoundVisible: " + _bIsPlayerBoundVisible
-   szInfo[12] = "_bIsPlayerCollared: " + _bIsPlayerCollared
-   szInfo[13] = "_bIsPlayerFurnitureLocked: " + _bIsPlayerFurnitureLocked
-   szInfo[14] = "_bIsPlayerGagged: " + _bIsPlayerGagged
-   szInfo[15] = "_bIsPlayerHobbled: " + _bIsPlayerHobbled
-   szInfo[16] = "_bIsPlayersMaster: " + _bIsPlayersMaster
-   szInfo[17] = "_bIsPreviousMaster: " + _bIsPreviousMaster
-   szInfo[18] = "_iActorAnger: " + _iActorAnger
-   szInfo[19] = "_iActorConfidence: " + _iActorConfidence
-   szInfo[20] = "_iActorDominance: " + _iActorDominance
-   szInfo[21] = "_iActorInterest: " + _iActorInterest
-   szInfo[22] = "_iActorKindness: " + _iActorKindness
-   szInfo[23] = "_iNakedLevel: " + _iNakedLevel
-   szInfo[24] = "_iWillingnessToHelp: " + _iWillingnessToHelp
-   szInfo[25] = "_fActorDistance: " + _fActorDistance
-   szInfo[26] = "_fHoursSinceLastRape: " + _fHoursSinceLastRape
-   szInfo[27] = "_fMasterDistance: " + _fMasterDistance
+   szInfo[01] = "_bCallingForAttention: " + _bCallingForAttention
+   szInfo[02] = "_bCallingForHelp: " + _bCallingForHelp
+   szInfo[03] = "_bIsActorDominant: " + _bIsActorDominant
+   szInfo[04] = "_bIsActorLeashHolder: " + _bIsActorLeashHolder
+   szInfo[05] = "_bIsActorOwner: " + _bIsActorOwner
+   szInfo[06] = "_bIsActorSlave: " + _bIsActorSlave
+   szInfo[07] = "_bIsActorSlaver: " + _bIsActorSlaver
+   szInfo[08] = "_bIsActorSubmissive: " + _bIsActorSubmissive
+   szInfo[09] = "_bIsGagStrict: " + _bIsGagStrict
+   szInfo[10] = "_bIsLastRapeAggressor: " + _bIsLastRapeAggressor
+   szInfo[11] = "_bIsPlayerArmLocked: " + _bIsPlayerArmLocked
+   szInfo[12] = "_bIsPlayerBelted: " + _bIsPlayerBelted
+   szInfo[13] = "_bIsPlayerBound: " + _bIsPlayerBound
+   szInfo[14] = "_bIsPlayerBoundVisible: " + _bIsPlayerBoundVisible
+   szInfo[15] = "_bIsPlayerCollared: " + _bIsPlayerCollared
+   szInfo[16] = "_bIsPlayerFurnitureLocked: " + _bIsPlayerFurnitureLocked
+   szInfo[17] = "_bIsPlayerGagged: " + _bIsPlayerGagged
+   szInfo[18] = "_bIsPlayerHobbled: " + _bIsPlayerHobbled
+   szInfo[19] = "_bIsPlayersMaster: " + _bIsPlayersMaster
+   szInfo[20] = "_bIsPreviousMaster: " + _bIsPreviousMaster
+   szInfo[21] = "_iActorAnger: " + _iActorAnger
+   szInfo[22] = "_iActorConfidence: " + _iActorConfidence
+   szInfo[23] = "_iActorDominance: " + _iActorDominance
+   szInfo[24] = "_iActorInterest: " + _iActorInterest
+   szInfo[25] = "_iActorKindness: " + _iActorKindness
+   szInfo[26] = "_iNakedLevel: " + _iNakedLevel
+   szInfo[27] = "_iWillingnessToHelp: " + _iWillingnessToHelp
+   szInfo[28] = "_fActorDistance: " + _fActorDistance
+   szInfo[29] = "_fHoursSinceLastRape: " + _fHoursSinceLastRape
+   szInfo[30] = "_fMasterDistance: " + _fMasterDistance
    Return szInfo
 EndFunction
 
@@ -2066,6 +2485,7 @@ EndFunction
 ;            Bool IsPlayerCriticallyBusy(Bool bIncludeBleedout)
 ;             Int SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs)
 ;                 SceneDone(String szSceneName)
+;        Location GetRegion(Location oLocation)
 ;          String GetCurrentScene()
 ;                 BlockHealthRegen()
 ;                 RestoreHealthRegen()
@@ -2104,6 +2524,7 @@ EndFunction
 ;                 RemovePermission(Actor aMaster, Int iPermissionMask)
 ;            Bool IsAllowed(Int iAction)
 ;          --- Player Status ---
+;        Location GetCurrentLocation()
 ;             Int GetNakedLevel()
 ;            Bool IsPlayerBound(Bool bIncludeHidden, Bool bOnlyLocked)
 ;            Bool IsPlayerArmLocked()
@@ -2111,6 +2532,8 @@ EndFunction
 ;            Bool IsPlayerCollared()
 ;            Bool IsPlayerGagged()
 ;            Bool IsPlayerHobbled()
+;                 SetStrictGag(Bool bIsStrict)
+;            Bool IsGagStrict()
 ; ObjectReference GetBdsmFurniture()
 ;                 SetBdsmFurnitureLocked(Bool bLocked)
 ;            Bool IsBdsmFurnitureLocked()
@@ -2151,18 +2574,33 @@ EndFunction
 ;             Int IncActorKindness(Actor aActor, Int iDelta, Int iMinValue, Int iMaxValue,
 ;                                  Bool bCreateAsNeeded, Int iSignificant)
 ;             Int GetActorSignificance(Actor aActor)
+;             Int GetActorWillingnessToHelp(Actor aActor)
 ;                 PrepareActorDialogue(Actor aActor)
 ;                 TemporarilyPauseDialogueTargets(Int iSeconds)
+;          --- NPC Interactions ---
+;             Int ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String sModId,
+;                                Bool bForce=False)
+;             Int MoveToLocation(Actor aActor, Location oTarget, String sModId,
+;                                Bool bForce=False)
+;             Int MoveToObject(Actor aActor, ObjectReference oTarget, String sModId,
+;                              Bool bForce=False)
+;            Bool HandleCallForHelp()
+;            Bool HandleCallForAttention()
+;                 CallOutDone()
+;                 ReEvaluatePackage(Actor aActor)
 ;          --- Mod Events ---
 ;        ModEvent DFW_NewMaster(String szOldMod, Actor aOldMaster)
-;                 *** Warning: The following event is triggered often.  Handling should be fast! ***
+;        *** Warning: The following event is triggered often.  Handling should be fast! ***
 ;        ModEvent DFW_NearbyActor(Int iFlags, Actor aActor)
+;        ModEvent DFW_MovementDone(Int iType, Actor aActor, Bool bSucceeded, String sModId)
+;        ModEvent DFW_CallForHelp(Int iCallType, Int iRange, Actor aRecommendedActor)
+;        ModEvent DFW_CallForAttention(Int iCallType, Int iRange, Actor aRecommendedActor)
 ;
 
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "1.09"
+   Return "2.01"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -2188,6 +2626,10 @@ Bool Function IsPlayerCriticallyBusy(Bool bIncludeBleedout=True)
    Return False
 EndFunction
 
+; *********************************************************************************
+; *** TODO: The Scene Needs to be "extended" or continued as a following scene. ***
+; *********************************************************************************
+
 ; szSceneName can be anything.
 ; iSceneTimeout is in seconds.  The amount of time before giving up waiting for the scene done.
 Int Function SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs=0)
@@ -2207,6 +2649,111 @@ Function SceneDone(String szSceneName)
    If (_szCurrentScene == szSceneName)
       _fSceneTimeout = 0
       _szCurrentScene = ""
+   EndIf
+EndFunction
+
+; Returns a location represnting the region (or town area) the location is close to.
+; Regions not close to a town or civilization are None (considered "Wilderness").
+; Note: This is not likely a particularly fast function and should be used sparingly.
+Location Function GetRegion(Location oLocation)
+   ; Check for the base regions first as they are quickest to search.
+   If ((oLocation == REGION_DAWNSTAR)    || (oLocation == REGION_DRAGON_BRIDGE)   || \
+       (oLocation == REGION_FALKREATH)   || (oLocation == REGION_HIGH_HROTHGAR)   || \
+       (oLocation == REGION_IVARSTEAD)   || (oLocation == REGION_KARTHWASTEN)     || \
+       (oLocation == REGION_MARKARTH)    || (oLocation == REGION_MORTHAL)         || \
+       (oLocation == REGION_OLD_HROLDAN) || (oLocation == REGION_RIFTEN)          || \
+       (oLocation == REGION_RIVERWOOD)   || (oLocation == REGION_RORIKSTEAD)      || \
+       (oLocation == REGION_SHORS_STONE) || (oLocation == REGION_SKY_HAVEN)       || \
+       (oLocation == REGION_SOLITUDE)    || (oLocation == REGION_THALMOR_EMBASSY) || \
+       (oLocation == REGION_WHITERUN)    || (oLocation == REGION_WINDHELM)        || \
+       (oLocation == REGION_WINTERHOLD))
+      Return oLocation
+   ; Next check for any special suburbs of the region.
+   ElseIf ((oLocation == SUBURB_SOLITUDE_WELLS) || (oLocation == SUBURB_SOLITUDE_AVENUES))
+      Return REGION_SOLITUDE
+   ElseIf (oLocation == SUBURB_WINTERHOLD_COLLEGE)
+      Return REGION_WINTERHOLD
+   ; Next check if the location is in one of the suburb lists.
+   ElseIf (SUBURBS_DAWNSTAR && (-1 != SUBURBS_DAWNSTAR.Find(oLocation)))
+      Return REGION_DAWNSTAR
+   ElseIf (SUBURBS_DRAGON_BRIDGE && (-1 != SUBURBS_DRAGON_BRIDGE.Find(oLocation)))
+      Return REGION_DRAGON_BRIDGE
+   ElseIf (SUBURBS_FALKREATH && (-1 != SUBURBS_FALKREATH.Find(oLocation)))
+      Return REGION_FALKREATH
+   ElseIf (SUBURBS_HIGH_HROTHGAR && (-1 != SUBURBS_HIGH_HROTHGAR.Find(oLocation)))
+      Return REGION_HIGH_HROTHGAR
+   ElseIf (SUBURBS_IVARSTEAD && (-1 != SUBURBS_IVARSTEAD.Find(oLocation)))
+      Return REGION_IVARSTEAD
+   ElseIf (SUBURBS_KARTHWASTEN && (-1 != SUBURBS_KARTHWASTEN.Find(oLocation)))
+      Return REGION_KARTHWASTEN
+   ElseIf (SUBURBS_MARKARTH && (-1 != SUBURBS_MARKARTH.Find(oLocation)))
+      Return REGION_MARKARTH
+   ElseIf (SUBURBS_MORTHAL && (-1 != SUBURBS_MORTHAL.Find(oLocation)))
+      Return REGION_MORTHAL
+   ElseIf (SUBURBS_OLD_HROLDAN && (-1 != SUBURBS_OLD_HROLDAN.Find(oLocation)))
+      Return REGION_OLD_HROLDAN
+   ElseIf (SUBURBS_RIFTEN && (-1 != SUBURBS_RIFTEN.Find(oLocation)))
+      Return REGION_RIFTEN
+   ElseIf (SUBURBS_RIVERWOOD && (-1 != SUBURBS_RIVERWOOD.Find(oLocation)))
+      Return REGION_RIVERWOOD
+   ElseIf (SUBURBS_RORIKSTEAD && (-1 != SUBURBS_RORIKSTEAD.Find(oLocation)))
+      Return REGION_RORIKSTEAD
+   ElseIf (SUBURBS_SHORS_STONE && (-1 != SUBURBS_SHORS_STONE.Find(oLocation)))
+      Return REGION_SHORS_STONE
+   ElseIf (SUBURBS_SKY_HAVEN && (-1 != SUBURBS_SKY_HAVEN.Find(oLocation)))
+      Return REGION_SKY_HAVEN
+   ElseIf (SUBURBS_SOLITUDE && (-1 != SUBURBS_SOLITUDE.Find(oLocation)))
+      Return REGION_SOLITUDE
+   ElseIf (SUBURBS_THALMOR_EMBASSY && (-1 != SUBURBS_THALMOR_EMBASSY.Find(oLocation)))
+      Return REGION_THALMOR_EMBASSY
+   ElseIf (SUBURBS_WHITERUN && (-1 != SUBURBS_WHITERUN.Find(oLocation)))
+      Return REGION_WHITERUN
+   ElseIf (SUBURBS_WINDHELM && (-1 != SUBURBS_WINDHELM.Find(oLocation)))
+      Return REGION_WINDHELM
+   ElseIf (SUBURBS_WINTERHOLD && (-1 != SUBURBS_WINTERHOLD.Find(oLocation)))
+      Return REGION_WINTERHOLD
+   ; Finally check if a base region is a parent of the new location.
+   ElseIf (REGION_DAWNSTAR.IsChild(oLocation))
+      Return REGION_DAWNSTAR
+   ElseIf (REGION_DRAGON_BRIDGE.IsChild(oLocation))
+      Return REGION_DRAGON_BRIDGE
+   ElseIf (REGION_FALKREATH.IsChild(oLocation))
+      Return REGION_FALKREATH
+   ElseIf (REGION_HIGH_HROTHGAR.IsChild(oLocation))
+      Return REGION_HIGH_HROTHGAR
+   ElseIf (REGION_IVARSTEAD.IsChild(oLocation))
+      Return REGION_IVARSTEAD
+   ElseIf (REGION_KARTHWASTEN.IsChild(oLocation))
+      Return REGION_KARTHWASTEN
+   ElseIf (REGION_MARKARTH.IsChild(oLocation))
+      Return REGION_MARKARTH
+   ElseIf (REGION_MORTHAL.IsChild(oLocation))
+      Return REGION_MORTHAL
+   ElseIf (REGION_OLD_HROLDAN.IsChild(oLocation))
+      Return REGION_OLD_HROLDAN
+   ElseIf (REGION_RIFTEN.IsChild(oLocation))
+      Return REGION_RIFTEN
+   ElseIf (REGION_RIVERWOOD.IsChild(oLocation))
+      Return REGION_RIVERWOOD
+   ElseIf (REGION_RORIKSTEAD.IsChild(oLocation))
+      Return REGION_RORIKSTEAD
+   ElseIf (REGION_SHORS_STONE.IsChild(oLocation))
+      Return REGION_SHORS_STONE
+   ElseIf (REGION_SKY_HAVEN.IsChild(oLocation))
+      Return REGION_SKY_HAVEN
+   ElseIf (REGION_SOLITUDE.IsChild(oLocation) || \
+           SUBURB_SOLITUDE_WELLS.IsChild(oLocation) || \
+           SUBURB_SOLITUDE_AVENUES.IsChild(oLocation))
+      Return REGION_SOLITUDE
+   ElseIf (REGION_THALMOR_EMBASSY.IsChild(oLocation))
+      Return REGION_THALMOR_EMBASSY
+   ElseIf (REGION_WHITERUN.IsChild(oLocation))
+      Return REGION_WHITERUN
+   ElseIf (REGION_WINDHELM.IsChild(oLocation))
+      Return REGION_WINDHELM
+   ElseIf (REGION_WINTERHOLD.IsChild(oLocation) || \
+           SUBURB_WINTERHOLD_COLLEGE.IsChild(oLocation))
+      Return REGION_WINTERHOLD
    EndIf
 EndFunction
 
@@ -2656,6 +3203,19 @@ EndFunction
 
 ;----------------------------------------------------------------------------------------------
 ; API: Player Status
+; Returns the current location of the player as that information is not available for actors.
+; May return None before a location change has occurred.
+Location Function GetCurrentLocation()
+   Return _oCurrLocation
+EndFunction
+
+; A region is like a hold.  For cities it is the city location as well inner locations and
+; suburbs around the city (for example, Salvius' Farm outside of Markarth). Unlike Holds most
+; of the wilderness in the holds are not included.
+Location Function GetCurrentRegion()
+   Return _oCurrRegion
+EndFunction
+
 Int Function GetNakedLevel()
    Return _iNakedStatus
 EndFunction
@@ -2690,6 +3250,15 @@ Bool Function IsPlayerHobbled()
    Return _bIsPlayerHobbled
 EndFunction
 
+; Used to identify the gag the player is wearing is strict and effectively muffles sound.
+Function SetStrictGag(Bool bIsStrict=True)
+   _bIsGagStrict = bIsStrict
+EndFunction
+
+Bool Function IsGagStrict()
+   Return _bIsGagStrict
+EndFunction
+
 ; The DFW uses OnSit() and OnGetUp() events to keep track of _oBdsmFurniture.  There are some
 ; cases where this doesn't work.  In particular after some ZAZ Animation Pack scenes.  The ZAZ
 ; Animation Pack (zbf) GetFurniture() does not always seem to work when sitting with the
@@ -2710,6 +3279,15 @@ Function SetBdsmFurnitureLocked(Bool bLocked=True)
    _bIsFurnitureLocked = bLocked
    If (!_bIsFurnitureLocked && (3 > _aPlayer.GetSitState()))
       _oBdsmFurniture = None
+      _qZbfPlayerSlot.SetFurniture(None)
+   EndIf
+
+   ; If the player is actively in furniture register this with the Zaz Animation Pack as well.
+   If (_bIsFurnitureLocked)
+      ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
+      If (oCurrFurniture && oCurrFurniture.hasKeyword(_oKeywordZbfFurniture))
+         _qZbfPlayerSlot.SetFurniture(oCurrFurniture)
+      EndIf
    EndIf
 
    ; If we previously disabled the player's inventory, release it now.
@@ -3021,7 +3599,11 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
    If (iOverrideLeashStyle)
       iLeashStyle = iOverrideLeashStyle
    EndIf
-   If (500 > _iLeashLength)
+   Int iLeashLength = _iLeashLength
+   If (_iMcmLeashMinLength && (_iMcmLeashMinLength > iLeashLength))
+      iLeashLength = _iMcmLeashMinLength
+   EndIf
+   If (500 > iLeashLength)
       ; The dragging leash doesn't work with leash lengths of less than 500 units.
       ; By the time the player stands up she is being dragged again.
       iLeashStyle = LS_TELEPORT
@@ -3066,7 +3648,7 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
          _aPlayer.DamageActorValue("Health", fDamage)
       EndIf
    Else ; LS_TELEPORT
-      While ((_iLeashLength / 1.75) < _oLeashTarget.GetDistance(_aPlayer))
+      While ((iLeashLength / 1.75) < _oLeashTarget.GetDistance(_aPlayer))
          _qDfwUtil.TeleportToward(_oLeashTarget, 40)
 
          Utility.Wait(0.5)
@@ -3430,12 +4012,24 @@ Int Function GetActorSignificance(Actor aActor)
    Return iValue
 EndFunction
 
+Int Function GetActorWillingnessToHelp(Actor aActor, Bool bCreateAsNeeded=True)
+   Int iAnger      = GetActorAnger(aActor,      20, 80, bCreateAsNeeded=bCreateAsNeeded)
+   Int iConfidence = GetActorConfidence(aActor, 20, 80, bCreateAsNeeded=bCreateAsNeeded)
+   Int iDominance  = GetActorDominance(aActor,  20, 80, bCreateAsNeeded=bCreateAsNeeded)
+   Int iKindness   = GetActorKindness(aActor,   20, 80, bCreateAsNeeded=bCreateAsNeeded)
+
+   ; Note: This calculation duplicates the same one in PrepareActorDialogue (for speed
+   ; reasons).  If this calculation is modified the duplicate must be modified as well.
+   Return ((iKindness * 40)          + ((100 - iAnger) * 25) + \
+           ((100 - iDominance) * 20) + ((100 - iConfidence) * 15)) / 100
+EndFunction
+
 ; Fills in all dialogue condition variables based on the actor specified.
 Function PrepareActorDialogue(ObjectReference oActor)
    Actor aActor = (oActor As Actor)
 
    ; First set all variables that don't depend on the other actor.
-   Log("Preparing Dialog: " + aActor.GetDisplayName(), DL_INFO, DC_GENERAL)
+   Log("Preparing Dialog: " + aActor.GetDisplayName(), DL_DEBUG, DC_GENERAL)
    _bIsPlayerBound           = IsPlayerBound(True)
    _bIsPlayerBoundVisible    = IsPlayerBound()
    _bIsPlayerFurnitureLocked = (_bIsFurnitureLocked && GetBdsmFurniture())
@@ -3463,7 +4057,6 @@ Function PrepareActorDialogue(ObjectReference oActor)
       _aCurrTarget.RemoveFromFaction(_oFactionDfwDialogueTarget)
    EndIf
    _aCurrTarget = aActor
-   Log("Adding Dialogue Faction...", DL_CRIT, DC_GENERAL)
    aActor.AddToFaction(_oFactionDfwDialogueTarget)
 
    _bIsPlayersMaster    = ((aActor == GetMaster(MD_CLOSE)) || \
@@ -3479,6 +4072,8 @@ Function PrepareActorDialogue(ObjectReference oActor)
    _iActorInterest      = GetActorInterest(aActor,   20, 80, bCreateAsNeeded=True)
    _iActorKindness      = GetActorKindness(aActor,   20, 80, bCreateAsNeeded=True)
 
+   ; Note: This calculation duplicates the same one in GetActorWillingnessToHelp (for speed
+   ; reasons).  If this calculation is modified the duplicate must be modified as well.
    _iWillingnessToHelp = ((_iActorKindness * 40) + \
                           ((100 - _iActorAnger) * 25) + \
                           ((100 - _iActorDominance) * 20) + \
@@ -3495,6 +4090,9 @@ Function PrepareActorDialogue(ObjectReference oActor)
    _bIsActorDominant    = (50 <= _iActorDominance)
    _bIsActorSubmissive  = !_bIsActorDominant
    _bIsActorSlave       = (30 > _iActorDominance)
+
+   _bCallingForAttention = ((0 < _iCallOutTimeout) && (2 == _iCallOutType))
+   _bCallingForHelp      = ((0 < _iCallOutTimeout) && (1 == _iCallOutType))
 
    If (iActorFlags)
       _bIsActorSlaver     = (Math.LogicalAnd(iActorFlags, AF_SLAVE_TRADER) As Bool)
@@ -3514,5 +4112,154 @@ Function PrepareActorDialogue(ObjectReference oActor)
          _iWillingnessToHelp += _iMcmDispWillingBdsm
       EndIf
    EndIf
+EndFunction
+
+;----------------------------------------------------------------------------------------------
+; API: NPC Interactions
+; iSpeed: 2 Walk Fast  3 Jog  4 Run
+Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String sModId, \
+                            Bool bForce=False)
+   Int iReturnCode = SUCCESS
+
+   ; Check if there already is an NPC approaching the player.
+   Actor aApproachNpc = (_aAliasApproachPlayer.GetReference() As Actor)
+   If (aApproachNpc)
+      If (!bForce)
+         ; If we are not told to override the current NPC fail the request.
+         Return FAIL
+      EndIf
+      iReturnCode = WARNING
+
+      ; Otherwise send an event to report the current NPC approach failed.
+      Int iModEvent = ModEvent.Create("DFW_MovementDone")
+      If (iModEvent)
+         ModEvent.PushInt(iModEvent, 1)
+         ModEvent.PushForm(iModEvent, aApproachNpc)
+         ModEvent.PushBool(iModEvent, False)
+         ModEvent.PushString(iModEvent, _szApproachModId)
+         If (!ModEvent.Send(iModEvent))
+            Log("Failed to send Event DFW_MovementDone(1, False, " + _szApproachModId + ")", \
+                DL_ERROR, DC_INTERACTION)
+         EndIf
+      EndIf
+   EndIf
+
+   _szApproachModId = sModId
+   _iApproachSpeed = iSpeed
+   _aAliasApproachPlayer.ForceRefTo(aActor)
+   Return iReturnCode
+EndFunction
+
+Int Function MoveToLocation(Actor aActor, Location oTarget, String sModId, Bool bForce=False)
+   Int iReturnCode = SUCCESS
+
+   ; Check if there already is an NPC performing the movement.
+   Actor aMovingNpc = (_aAliasMoveToLocation.GetReference() As Actor)
+   If (aMovingNpc)
+      If (!bForce)
+         ; If we are not told to override the current NPC fail the request.
+         Return FAIL
+      EndIf
+      iReturnCode = WARNING
+
+      ; Otherwise send an event to report the current NPC approach failed.
+      Int iModEvent = ModEvent.Create("DFW_MovementDone")
+      If (iModEvent)
+         ModEvent.PushInt(iModEvent, 2)
+         ModEvent.PushForm(iModEvent, aMovingNpc)
+         ModEvent.PushBool(iModEvent, False)
+         ModEvent.PushString(iModEvent, _szMoveToLocationModId)
+         If (!ModEvent.Send(iModEvent))
+            Log("Failed to send Event DFW_MovementDone(2, False, " + _szMoveToLocationModId + \
+                ")", DL_ERROR, DC_INTERACTION)
+         EndIf
+      EndIf
+   EndIf
+
+   _szMoveToLocationModId = sModId
+   _aAliasLocationTarget.ForceLocationTo(oTarget)
+   _aAliasMoveToLocation.ForceRefTo(aActor)
+   Return iReturnCode
+EndFunction
+
+Int Function MoveToObject(Actor aActor, ObjectReference oTarget, String sModId, \
+                          Bool bForce=False)
+   Int iReturnCode = SUCCESS
+
+   ; Check if there already is an NPC performing the movement.
+   Actor aMovingNpc = (_aAliasMoveToObject.GetReference() As Actor)
+   If (aMovingNpc)
+      If (!bForce)
+         ; If we are not told to override the current NPC fail the request.
+         Return FAIL
+      EndIf
+      iReturnCode = WARNING
+
+      ; Otherwise send an event to report the current NPC approach failed.
+      Int iModEvent = ModEvent.Create("DFW_MovementDone")
+      If (iModEvent)
+         ModEvent.PushInt(iModEvent, 3)
+         ModEvent.PushForm(iModEvent, aMovingNpc)
+         ModEvent.PushBool(iModEvent, False)
+         ModEvent.PushString(iModEvent, _szMoveToObjectModId)
+         If (!ModEvent.Send(iModEvent))
+            Log("Failed to send Event DFW_MovementDone(3, False, " + _szMoveToObjectModId + \
+                ")", DL_ERROR, DC_INTERACTION)
+         EndIf
+      EndIf
+   EndIf
+
+   _szMoveToObjectModId = sModId
+   _aAliasObjectTarget.ForceRefTo(oTarget)
+   _aAliasMoveToObject.ForceRefTo(aActor)
+   Return iReturnCode
+EndFunction
+
+; This function prevents multiple mods from handling a DFW_CallForHelp event.  Only handle the
+; event if you call this function and it returns true.  If it returns false the event has
+; already been handled by another mod.
+; Upon receiving the event you should delay for a random time between 0 and 0.5 seconds which
+; will allow different mods to respond to call for help events if able.
+Bool Function HandleCallForHelp()
+   If ((1 == _iCallOutType) && (0 < _iCallOutResponse))
+      _iCallOutResponse = 0
+      Return True
+   EndIf
+   Return False
+EndFunction
+
+; This function prevents multiple mods from handling a DFW_CallForAttention event.  Only handle
+; the event if you call this function and it returns true.  If it returns false the event has
+; already been handled by another mod.
+; Upon receiving the event you should delay for a random time between 0 and 0.5 seconds which
+; will allow different mods to respond to call for attention events if able.
+Bool Function HandleCallForAttention()
+   If ((2 == _iCallOutType) && (0 < _iCallOutResponse))
+      _iCallOutResponse = 0
+      Return True
+   EndIf
+   Return False
+EndFunction
+
+; Indicates the call for help or attention has been handled and should no longer be considered
+; in progress.
+Function CallOutDone()
+   _iCallOutType = 0
+   _iCallOutTimeout = 0
+   _iCallOutResponse = 0
+EndFunction
+
+; Forces an actor to re-evaluate his AI package by forcing him into an alias and then removing
+; him, thereby changing his package stack.  A dedicated alias should really be used for this
+; but for now we will rely on one of our current aliases being available.
+Function ReEvaluatePackage(Actor aActor)
+   If (_aAliasApproachPlayer.ForceRefIfEmpty(aActor))
+      _aAliasApproachPlayer.Clear()
+   ElseIf (_aAliasMoveToLocation.ForceRefIfEmpty(aActor))
+      _aAliasMoveToLocation.Clear()
+   ElseIf (_aAliasMoveToObject.ForceRefIfEmpty(aActor))
+      _aAliasMoveToObject.Clear()
+   EndIf
+   aActor.EvaluatePackage()
 EndFunction
 
