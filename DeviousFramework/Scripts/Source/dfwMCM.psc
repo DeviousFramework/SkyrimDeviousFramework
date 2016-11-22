@@ -472,8 +472,8 @@ EndEvent
 ; Unrelated to the Devious Framework Version.
 Int Function GetVersion()
    ; Reset the version number.
-   ;If (12 < CurrentVersion)
-   ;   CurrentVersion = 12
+   ;If (11 < CurrentVersion)
+   ;   CurrentVersion = 11
    ;EndIf
 
    ; Update all quest variables upon loading each game.
@@ -874,8 +874,12 @@ Function DisplayStatusPage(Bool bSecure)
    EndIf
 
    ; Report the name of the player's current cell.
-   String szCellName = _aPlayer.GetParentCell()
+   Cell oCurrCell = _aPlayer.GetParentCell()
+   String szCellName = oCurrCell
    szCellName = Substring(szCellName, 7, GetLength(szCellName) - 20)
+   If ("Wilderness" == szCellName)
+      szCellName += " 0x" + _qDfwUtil.ConvertHexToString(oCurrCell.GetFormID(), 8)
+   EndIf
    If (_aPlayer.IsInInterior())
       szCellName += " (I)"
    EndIf

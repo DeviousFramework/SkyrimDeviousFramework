@@ -197,6 +197,8 @@ Location[] SUBURBS_WINDHELM
 Location    REGION_WINTERHOLD
 Location    SUBURB_WINTERHOLD_COLLEGE
 Location[] SUBURBS_WINTERHOLD
+Cell[]     SPECIAL_CELLS
+Location[] SPECIAL_CELL_LOCATIONS
 
 ; Master distances (MD_) constants.
 ; Note: These must remain backwards compatible.
@@ -536,12 +538,12 @@ EndEvent
 Function UpdateScript()
    ; Reset the version number.
    ; To make sure the Utility script is loaded.
-   ;If (1.00 < _fCurrVer)
-   ;   _fCurrVer = 1.00
-   ;EndIf
+   If (1.01 < _fCurrVer)
+      _fCurrVer = 1.01
+   EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 1.01
+   Float fScriptVer = 1.02
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
@@ -651,6 +653,9 @@ Function UpdateScript()
       _aAliasMoveToLocation = (GetAlias(3) As ReferenceAlias)
       _aAliasObjectTarget = (GetAlias(4) As ReferenceAlias)
       _aAliasMoveToObject = (GetAlias(5) As ReferenceAlias)
+   EndIf
+
+   If (1.02 > _fCurrVer)
       InitRegions()
    EndIf
 
@@ -740,19 +745,27 @@ Function InitRegions()
    SUBURBS_WHITERUN[8] = (Game.GetFormFromFile(0x00018E3F, "Skyrim.esm") As Location) ; PelagiaFarmLocation
 
     REGION_WINDHELM = (Game.GetFormFromFile(0x00018A57, "Skyrim.esm") As Location)
-   SUBURBS_WINDHELM = New Location[7]
+   SUBURBS_WINDHELM = New Location[10]
    SUBURBS_WINDHELM[0] = (Game.GetFormFromFile(0x00018C8F, "Skyrim.esm") As Location) ; BrandyMugFarmLocation
-   SUBURBS_WINDHELM[1] = (Game.GetFormFromFile(0x00018E35, "Skyrim.esm") As Location) ; HlaaluFarmLocation
-   SUBURBS_WINDHELM[2] = (Game.GetFormFromFile(0x00018E36, "Skyrim.esm") As Location) ; HollyfrostFarmLocation
-   SUBURBS_WINDHELM[3] = (Game.GetFormFromFile(0x000EF572, "Skyrim.esm") As Location) ; RefugeesRestLocation
-   SUBURBS_WINDHELM[4] = (Game.GetFormFromFile(0x00018A4E, "Skyrim.esm") As Location) ; KynesgroveLocation
-   SUBURBS_WINDHELM[5] = (Game.GetFormFromFile(0x00020A02, "Skyrim.esm") As Location) ; KynesgroveBraidwoodInnLocation
-   SUBURBS_WINDHELM[6] = (Game.GetFormFromFile(0x00020A07, "Skyrim.esm") As Location) ; KynesgroveSteamscorchGullyMineLocation
+   SUBURBS_WINDHELM[1] = (Game.GetFormFromFile(0x000BEDEE, "Skyrim.esm") As Location) ; BrandyMugFarmInteriorLocation
+   SUBURBS_WINDHELM[2] = (Game.GetFormFromFile(0x00018E35, "Skyrim.esm") As Location) ; HlaaluFarmLocation
+   SUBURBS_WINDHELM[3] = (Game.GetFormFromFile(0x0001705D, "Skyrim.esm") As Location) ; HlaaluFarmInteriorLocation
+   SUBURBS_WINDHELM[4] = (Game.GetFormFromFile(0x00018E36, "Skyrim.esm") As Location) ; HollyfrostFarmLocation
+   SUBURBS_WINDHELM[5] = (Game.GetFormFromFile(0x0001705B, "Skyrim.esm") As Location) ; HollyfrostFarmInteriorLocation
+   SUBURBS_WINDHELM[6] = (Game.GetFormFromFile(0x000EF572, "Skyrim.esm") As Location) ; RefugeesRestLocation
+   SUBURBS_WINDHELM[7] = (Game.GetFormFromFile(0x00018A4E, "Skyrim.esm") As Location) ; KynesgroveLocation
+   SUBURBS_WINDHELM[8] = (Game.GetFormFromFile(0x00020A02, "Skyrim.esm") As Location) ; KynesgroveBraidwoodInnLocation
+   SUBURBS_WINDHELM[9] = (Game.GetFormFromFile(0x00020A07, "Skyrim.esm") As Location) ; KynesgroveSteamscorchGullyMineLocation
 
     REGION_WINTERHOLD = (Game.GetFormFromFile(0x00018A51, "Skyrim.esm") As Location)
     SUBURB_WINTERHOLD_COLLEGE = (Game.GetFormFromFile(0x00076F3A, "Skyrim.esm") As Location)
    SUBURBS_WINTERHOLD
    SUBURBS_WINTERHOLD[0] = (Game.GetFormFromFile(0x00018E45, "Skyrim.esm") As Location) ; WhistlingMineLocation
+
+   SPECIAL_CELLS = New Cell[1]
+   SPECIAL_CELL_LOCATIONS = New Location[1]
+   SPECIAL_CELLS[0] = (Game.GetFormFromFile(0x00009307, "Skyrim.esm") As Cell)
+   SPECIAL_CELL_LOCATIONS[0] = REGION_DRAGON_BRIDGE 
 EndFunction
 
 Function OnPlayerLoadGame()
@@ -1539,8 +1552,14 @@ EndFunction
 
 Function OnLocationChange(Location oOldLocation, Location oNewLocation)
    _oCurrLocation = oNewLocation
+
+   Cell oCell
+   If (!oNewLocation)
+      oCell = _aPlayer.GetParentCell()
+   EndIf
+
    ; Figure out which "Region" we are now in.
-   _oCurrRegion = GetRegion(oNewLocation)
+   _oCurrRegion = GetRegion(oNewLocation, oCell)
 
    String szRegion = "Wilderness"
    If (_oCurrRegion)
@@ -1736,6 +1755,11 @@ EndEvent
 
 Event OnKeyUp(Int iKeyCode, Float fHoldTime)
    If ((_qMcm.iModHelpKey == iKeyCode) || (_qMcm.iModAttentionKey == iKeyCode))
+      ; If a menu is open (e.g. the console or inventory) ignore KeyPress events.
+      If (Utility.IsInMenuMode())
+         Return
+      EndIf
+
       ; If the player has called out too recently ignore this attempt.
       If (_iCallOutTimeout)
          Return
@@ -2220,32 +2244,54 @@ Function CleanupNearbyList()
    If (_fNearbyCleanupTime && (Utility.GetCurrentRealTime() < _fNearbyCleanupTime))
       Return
    EndIf
-   Log("Cleaning Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   Float fCurrTime = Utility.GetCurrentRealTime()
+   _fNearbyCleanupTime = fCurrTime + 3
+   Log("Cleaning Nearby: " + fCurrTime, DL_TRACE, DC_NEARBY)
 
    Cell oPlayerCell = _aPlayer.GetParentCell()
    Int iIndex = _aoNearby.Length - 1
    While (0 <= iIndex)
-      Actor aNearby = (_aoNearby[iIndex] As Actor)
+      Actor aNearby = None
+      If (MutexLock(_iNearbyMutex))
+         ; Performing the whole cleanup involves more context switching than I would like to put
+         ; into a mutex lock so we must lock the mutex multiple times.  By doing so we must also
+         ; validate that the list has not changed in the process.  Make sure the index is valid.
+         If (iIndex <= _aoNearby.Length - 1)
+            aNearby = (_aoNearby[iIndex] As Actor)
+         EndIf
+
+         MutexRelease(_iNearbyMutex)
+      EndIf
+
       ; I'm not sure what distance spell ranges are in (iSettingsNearbyDistance) but it must be
       ; converted to the same units as GetDistance().  A rough estimate is 22.2 to 1.  Add extra
       ; so the actor is removed at a notably longer distance than he is added.
-      If (aNearby.IsDead() || \
-          ((30 * _qMcm.iSettingsNearbyDistance) < aNearby.GetDistance(_aPlayer)))
+      If (aNearby && (aNearby.IsDead() || \
+                      ((30 * _qMcm.iSettingsNearbyDistance) < aNearby.GetDistance(_aPlayer))))
          ; Note: Converting the form ID to hex is a little bit expensive for something triggered
          ;       by every nearby actor; however, for now it will help diagnose which magic
          ;       effect script instances are becoming stray.
          Log("Clear Nearby 0x" + \
-             _qDfwUtil.ConvertHexToString(_aoNearby[iIndex].GetFormId(), 8) + ": " + \
-             (_aoNearby[iIndex] As Actor).GetDisplayName(), DL_TRACE, DC_NEARBY)
+             _qDfwUtil.ConvertHexToString(aNearby.GetFormId(), 8) + ": " + \
+             aNearby.GetDisplayName(), DL_TRACE, DC_NEARBY)
 
          ; This actor is too far from the player.  Remove him from the list.
          If (MutexLock(_iNearbyMutex))
-            _aoNearby = _qDfwUtil.RemoveFormFromArray(_aoNearby, None, iIndex)
-            _aiNearbyFlags = _qDfwUtil.RemoveIntFromArray(_aiNearbyFlags, 0, iIndex)
+            ; Find the actor in the list again in case the list has changed.
+            ; Performing the whole cleanup involves more context switching than I would like to
+            ; put into a mutex lock so we must lock the mutex multiple times.  By doing so we
+            ; must also validate that the list has not changed in the process.  Only remove the
+            ; actor if he is still in the list.
+            Int iActorIndex = _aoNearby.Find(aNearby)
+            If (-1 != iActorIndex)
+               iIndex = iActorIndex
+               _aoNearby = _qDfwUtil.RemoveFormFromArray(_aoNearby, None, iIndex)
+               _aiNearbyFlags = _qDfwUtil.RemoveIntFromArray(_aiNearbyFlags, 0, iIndex)
 
-            If (_aoNearby.Length != _aiNearbyFlags.Length)
-               Log("Nearby Removed Wrong: " + _aoNearby.Length + " != " + \
-                   _aiNearbyFlags.Length, DL_CRIT, DC_NEARBY)
+               If (_aoNearby.Length != _aiNearbyFlags.Length)
+                  Log("Nearby Removed Wrong: " + _aoNearby.Length + " != " + \
+                      _aiNearbyFlags.Length, DL_CRIT, DC_NEARBY)
+               EndIf
             EndIf
 
             MutexRelease(_iNearbyMutex)
@@ -2257,7 +2303,6 @@ Function CleanupNearbyList()
    EndWhile
 
    ; Don't try to clean up the nearby list more than every three seconds.
-   _fNearbyCleanupTime = Utility.GetCurrentRealTime() + 3
    Log("Cleaning Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
 EndFunction
 
@@ -2485,7 +2530,7 @@ EndFunction
 ;            Bool IsPlayerCriticallyBusy(Bool bIncludeBleedout)
 ;             Int SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs)
 ;                 SceneDone(String szSceneName)
-;        Location GetRegion(Location oLocation)
+;        Location GetRegion(Location oLocation, Cell oCell)
 ;          String GetCurrentScene()
 ;                 BlockHealthRegen()
 ;                 RestoreHealthRegen()
@@ -2518,13 +2563,14 @@ EndFunction
 ;          String GetMasterMod(Int iMasterDistance, Int iInstance)
 ;             Int SetMaster(Actor aNewMaster, String szMod, Int iPermissions,
 ;                           Int iMasterDistance, Bool bOverride)
-;             Int ClearMaster(Actor aMaster, Bool bEscaped)
+;             Int ClearMaster(Actor aMaster, String szMod, Bool bEscaped)
 ;             Int ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant, Bool bOverride)
 ;                 AddPermission(Actor aMaster, Int iPermissionMask)
 ;                 RemovePermission(Actor aMaster, Int iPermissionMask)
 ;            Bool IsAllowed(Int iAction)
 ;          --- Player Status ---
 ;        Location GetCurrentLocation()
+;        Location GetCurrentRegion()
 ;             Int GetNakedLevel()
 ;            Bool IsPlayerBound(Bool bIncludeHidden, Bool bOnlyLocked)
 ;            Bool IsPlayerArmLocked()
@@ -2600,7 +2646,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "2.01"
+   Return "2.02"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -2655,7 +2701,17 @@ EndFunction
 ; Returns a location represnting the region (or town area) the location is close to.
 ; Regions not close to a town or civilization are None (considered "Wilderness").
 ; Note: This is not likely a particularly fast function and should be used sparingly.
-Location Function GetRegion(Location oLocation)
+Location Function GetRegion(Location oLocation, Cell oCell=None)
+   If (!oLocation)
+      If (oCell)
+         Int iIndex = SPECIAL_CELLS.Find(oCell)
+         If (-1 != iIndex)
+            Return SPECIAL_CELL_LOCATIONS[iIndex]
+         EndIf
+      EndIf
+      Return None
+   EndIf
+
    ; Check for the base regions first as they are quickest to search.
    If ((oLocation == REGION_DAWNSTAR)    || (oLocation == REGION_DRAGON_BRIDGE)   || \
        (oLocation == REGION_FALKREATH)   || (oLocation == REGION_HIGH_HROTHGAR)   || \
@@ -3090,28 +3146,30 @@ Int Function SetMaster(Actor aNewMaster, String szMod, Int iPermissions, \
    Return iStatus
 EndFunction
 
-Int Function ClearMaster(Actor aMaster, Bool bEscaped=False)
+Int Function ClearMaster(Actor aMaster, String szMod="", Bool bEscaped=False)
    String szName = "None"
    If (aMaster)
       szName = aMaster.GetDisplayName()
+
+      ; Clear the Master with the ZAZ Animation Pack as well.
+      aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionMaster)
+      aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionPlayerMaster)
    EndIf
    Log("Clearing Master: " + szName, DL_INFO, DC_MASTER)
 
-   ; Clear the Master with the ZAZ Animation Pack as well.
-   aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionMaster)
-   aMaster.RemoveFromFaction(_qZbfSlave.zbfFactionPlayerMaster)
-
    String szControllingMod
    Int iStatus = WARNING
-   If (_aMasterClose == aMaster)
+   If ((aMaster && (_aMasterClose == aMaster)) || (!aMaster && (_aMasterModClose == szMod)))
       _aMasterClose = None
       szControllingMod = _aMasterModClose
+      _aMasterModClose = ""
       _iPermissionsClose = 0
       iStatus = SUCCESS
    EndIf
-   If (_aMasterDistant == aMaster)
+   If ((aMaster && (_aMasterDistant == aMaster)) || (!aMaster && (_aMasterModDistant == szMod)))
       _aMasterDistant = None
       szControllingMod = _aMasterModDistant
+      _aMasterModDistant = ""
       _iPermissionsDistant = 0
       iStatus = SUCCESS
    EndIf
