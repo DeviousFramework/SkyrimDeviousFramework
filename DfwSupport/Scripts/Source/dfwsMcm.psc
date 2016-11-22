@@ -55,6 +55,7 @@ Bool _bSecureSdPlusLeash
 
 ; *** Toggle Options ***
 Bool _bIncludeOwners
+Bool _bWalkToSsAuction
 Bool _bSexDispositions
 Bool _bCatchZazEvents
 Bool _bCatchSdPlus
@@ -64,6 +65,7 @@ Bool _bAllowSex
 Bool _bAutoAddFurniture
 Bool _bHotkeyPackage
 Bool Property bIncludeOwners    Auto
+Bool Property bWalkToSsAuction  Auto
 Bool Property bSexDispositions  Auto
 Bool Property bCatchZazEvents   Auto
 Bool Property bCatchSdPlus      Auto
@@ -75,12 +77,10 @@ Bool Property bHotkeyPackage    Auto
 
 ; *** Float Slider Options ***
 Float _fPollTimeDef
-Float _fChanceFurnitureTransfer
 Float _fLeashGameChanceDef
 Float _fFurnitureLockChance
 Float _fFurnitureReleaseChance
 Float Property fPollTime                Auto
-Float Property fChanceFurnitureTransfer Auto
 Float Property fLeashGameChance         Auto
 Float Property fFurnitureLockChance     Auto
 Float Property fFurnitureReleaseChance  Auto
@@ -103,6 +103,8 @@ Int _iDurationMax
 Int _iChanceOfRelease
 Int _iDominanceAffectsRelease
 Int _iMaxAngerForRelease
+Int _iChanceFurnitureTransfer
+Int _iLeashChanceSimple
 Int _iChanceIdleRestraints
 Int _iFurnitureMinLockTime
 Int Property iLeashGameStyle          Auto
@@ -121,6 +123,8 @@ Int Property iDurationMax             Auto
 Int Property iChanceOfRelease         Auto
 Int Property iDominanceAffectsRelease Auto
 Int Property iMaxAngerForRelease      Auto
+Int Property iChanceFurnitureTransfer Auto
+Int Property iLeashChanceSimple       Auto
 Int Property iChanceIdleRestraints    Auto
 Int Property iFurnitureMinLockTime    Auto
 
@@ -220,15 +224,13 @@ Function UpdateScript()
    EndIf
 
    If (5 > CurrentVersion)
-      _bAutoAddFurniture        = False
-      _iFurnitureMinLockTime    = 30
-      _bCatchSdPlus             = False
-      _fChanceFurnitureTransfer = 1.0
+      _bAutoAddFurniture     = False
+      _iFurnitureMinLockTime = 30
+      _bCatchSdPlus          = False
 
-      bAutoAddFurniture        = _bAutoAddFurniture
-      iFurnitureMinLockTime    = _iFurnitureMinLockTime
-      bCatchSdPlus             = _bCatchSdPlus
-      fChanceFurnitureTransfer = _fChanceFurnitureTransfer
+      bAutoAddFurniture     = _bAutoAddFurniture
+      iFurnitureMinLockTime = _iFurnitureMinLockTime
+      bCatchSdPlus          = _bCatchSdPlus
    EndIf
 
    If (6 > CurrentVersion)
@@ -269,6 +271,16 @@ Function UpdateScript()
       ; Make sure to synchronize data in the main script as well.
       SendSettingChangedEvent()
    EndIf
+
+   If (9 > CurrentVersion)
+      _iChanceFurnitureTransfer = 25
+      _iLeashChanceSimple       = 10
+      _bWalkToSsAuction         = True
+
+      iChanceFurnitureTransfer = _iChanceFurnitureTransfer
+      iLeashChanceSimple       = _iLeashChanceSimple
+      bWalkToSsAuction         = _bWalkToSsAuction
+   EndIf
 EndFunction
 
 Event OnConfigInit()
@@ -288,8 +300,8 @@ EndEvent
 Int Function GetVersion()
    ; Reset the version number.
    ; This can be used to manage saves between releases.
-   ;If (8 < CurrentVersion)
-   ;   CurrentVersion = 8
+   ;If (7 < CurrentVersion)
+   ;   CurrentVersion = 7
    ;EndIf
 
    ; Update all quest variables upon loading each game.
@@ -299,7 +311,7 @@ Int Function GetVersion()
    _qDfwUtil    = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
    _qDfwMcm     = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
-   Return 8
+   Return 9
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -459,17 +471,22 @@ Function DisplayLeashGamePage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddHeaderOption("Chances Start/Stop")
+   AddHeaderOption("Starting the Leash Game")
    AddSliderOptionST("ST_LGM_LEASH_GAME",     "Leash Game Chance",            fLeashGameChance, "{1}", a_flags=iFlags)
    AddSliderOptionST("ST_LGM_INC_VULNERABLE", "Increase When Vulnerable",     iIncreaseWhenVulnerable, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_DISTANCE",       "Maximum Distance",             iMaxDistance, a_flags=iFlags)
    AddToggleOptionST("ST_LGM_INCLUD_OWNERS",  "Include Owners",               bIncludeOwners, a_flags=iFlags)
+
+   AddEmptyOption()
+   AddHeaderOption("Ending the Leash Game")
    AddSliderOptionST("ST_LGM_DURATION_MIN",   "Minimum Duration",             iDurationMin, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_DURATION_MAX",   "Maximum Duration",             iDurationMax, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_CHANCE_RELEASE", "Chance of Release",            iChanceOfRelease, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_RELEASE_DOM",    "Dominance Affects Release",    iDominanceAffectsRelease, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_RELEASE_ANGER",  "Maximum Anger for Release",    iMaxAngerForRelease, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_CHANCE_XFER",    "Chance of Furniture Transfer", fChanceFurnitureTransfer, "{2}", a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_XFER",    "Chance of Furniture Transfer", iChanceFurnitureTransfer, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_SIMPLE",  "Chance of Simple Slavery",     iChanceFurnitureTransfer, a_flags=iFlags)
+   AddToggleOptionST("ST_LGM_WALK_TO_SS",     "Walk to SS Auction",           bWalkToSsAuction)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -1180,36 +1197,67 @@ EndState
 
 State ST_LGM_CHANCE_XFER
    Event OnSliderOpenST()
-      SetSliderDialogStartValue(fChanceFurnitureTransfer)
-      SetSliderDialogDefaultValue(_fChanceFurnitureTransfer)
-      If (10 <= fChanceFurnitureTransfer)
-         SetSliderDialogRange(0, 100)
-         SetSliderDialogInterval(1)
-      Else
-         SetSliderDialogRange(0, 10)
-         SetSliderDialogInterval(0.05)
-      EndIf
+      SetSliderDialogStartValue(iChanceFurnitureTransfer)
+      SetSliderDialogDefaultValue(_iChanceFurnitureTransfer)
+      SetSliderDialogRange(0, (100 - iLeashChanceSimple))
+      SetSliderDialogInterval(1)
    EndEvent
 
    Event OnSliderAcceptST(Float fValue)
-      fChanceFurnitureTransfer = fValue
-      SetSliderOptionValueST(fChanceFurnitureTransfer, "{2}")
-
-      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
-      SendSettingChangedEvent("Leash")
+      iChanceFurnitureTransfer = (fValue As Int)
+      SetSliderOptionValueST(iChanceFurnitureTransfer)
    EndEvent
 
    Event OnDefaultST()
-      fChanceFurnitureTransfer = _fChanceFurnitureTransfer
-      SetSliderOptionValueST(fChanceFurnitureTransfer, "{2}")
-
-      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
-      SendSettingChangedEvent("Leash")
+      iChanceFurnitureTransfer = _iChanceFurnitureTransfer
+      SetSliderOptionValueST(iChanceFurnitureTransfer)
    EndEvent
 
    Event OnHighlightST()
-      SetInfoText("The chance the slaver will lock the player up in nearby Favourite BDSM furniture and leave her.\n" +\
-                  "This will only happen if the player is all locked up.")
+      SetInfoText("As the leash game ends this is the chance the slaver will lock the player in nearby furniture\n" +\
+                  "instead of simply releasing her.")
+   EndEvent
+EndState
+
+State ST_LGM_CHANCE_SIMPLE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLeashChanceSimple)
+      SetSliderDialogDefaultValue(_iLeashChanceSimple)
+      SetSliderDialogRange(0, (100 - iChanceFurnitureTransfer))
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLeashChanceSimple = (fValue As Int)
+      SetSliderOptionValueST(iLeashChanceSimple)
+   EndEvent
+
+   Event OnDefaultST()
+      iLeashChanceSimple = _iLeashChanceSimple
+      SetSliderOptionValueST(iLeashChanceSimple)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("As the leash game ends this is the chance the slaver will sell the player to the Simple Slavery auction\n" +\
+                  "instead of simply releasing her.")
+   EndEvent
+EndState
+
+State ST_LGM_WALK_TO_SS
+   Event OnSelectST()
+      bWalkToSsAuction = !bWalkToSsAuction
+      SetToggleOptionValueST(bWalkToSsAuction)
+   EndEvent
+
+   Event OnDefaultST()
+      bWalkToSsAuction = _bWalkToSsAuction
+      SetToggleOptionValueST(bWalkToSsAuction)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When transferring the player to a Simple Slavery auction the slavery will walk to the auction before\n" +\
+                  "starting the Simple Slavery mod.  If disabled the normal blank screen transition will occur.\n" +\
+                  "This will only occur if the player is in the same DFW region as a Simple Slavery auction house.")
    EndEvent
 EndState
 

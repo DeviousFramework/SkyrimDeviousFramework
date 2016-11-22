@@ -96,6 +96,11 @@ Form[] _aoFavouriteCell
 Form[] _aoFavouriteLocation
 Form[] _aoFavouriteRegion
 
+; Lists of different Simple Slavery slave auction sites.
+Location[] _aoSimpleSlaveryRegion
+Location[] _aoSimpleSlaveryLocation
+ObjectReference[] _aoSimpleSlaveryEntranceObject
+
 ; Quest Alias References.
 ; TODO: These could probably be script variables filled using GetAlias(iAliasId).
 ReferenceAlias Property _aAliasLeashHolder     Auto
@@ -107,11 +112,12 @@ Faction _oFactionLeashTargetCrime
 
 ; This is the short term goal of the leash holder.  What he is trying to accomplish via dialogue
 ; or his own actions.
-; <0 = Delay after last goal      0 = No goal                 1 = Diarm player
-;  2 = Undress player (armour)    3 = Take player weapons     4 = Lock player's hands
-;  5 = Undress player fully       6 = Gag player              7 = Walk behind the slaver
-;  8 = Restrain the player        9 = Reel in the Player     10 = Discipline Talking Escape
-; 11 = Punish/Leave in Furniture 12 = Approach for Interest  13 = Lying About Release
+; <0 = Delay after last goal       0 = No goal                 1 = Diarm player
+;  2 = Undress player (armour)     3 = Take player weapons     4 = Lock player's hands
+;  5 = Undress player fully        6 = Gag player              7 = Walk behind the slaver
+;  8 = Restrain the player         9 = Reel in the Player     10 = Discipline Talking Escape
+; 11 = Punish/Leave in Furniture  12 = Approach for Interest  13 = Lying About Release
+; 14 = Transfer to Simple Slavery
 Int _iLeashHolderGoal Conditional
 
 ; Keep track of everything the player is being punished for.
@@ -279,7 +285,6 @@ Bool _bFastTravelBlocked
 ; for faster access.
 Bool _bMcmCatchSdPlus
 Bool _bMcmIncludeOwners
-Float _fMcmChanceFurnitureTransfer
 Float _fMcmFurnitureReleaseChance
 Float _fMcmLeashGameChance
 Float _fMcmPollTime
@@ -312,12 +317,12 @@ EndEvent
 ; This function is primarily to ensure new variables are initialized for new script versions.
 Function UpdateScript()
    ; Reset the version number.
-   ;If (1.00 < _fCurrVer)
-   ;   _fCurrVer = 1.00
-   ;EndIf
+   If (1.01 < _fCurrVer)
+      _fCurrVer = 1.01
+   EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 1.01
+   Float fScriptVer = 1.02
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
@@ -386,7 +391,8 @@ Function UpdateScript()
          ObjectReference oFurniture = (_aoFavouriteFurniture[iIndex] As ObjectReference)
          Location oFurnitureLocation = oFurniture.GetCurrentLocation()
          aoTempLocation = _qDfwUtil.AddFormToArray(aoTempLocation, oFurnitureLocation)
-         Location oFurnitureRegion = _qFramework.GetRegion(oFurnitureLocation)
+         Location oFurnitureRegion = _qFramework.GetRegion(oFurnitureLocation, \
+                                                           oFurniture.GetParentCell())
          aoTempRegion = _qDfwUtil.AddFormToArray(aoTempRegion, oFurnitureRegion)
          iIndex += 1
       EndWhile
@@ -411,6 +417,10 @@ Function UpdateScript()
       RegisterForModEvent("DFWS_MCM_Changed",     "UpdateLocalMcmSettings")
       UpdateLocalMcmSettings()
       Log("Registering Callbacks Done", DL_CRIT, S_MOD)
+   EndIf
+
+   If (1.02 > _fCurrVer)
+      InitSimpleSlaveryAuctions()
    EndIf
 
    ; Finally update the version number.
@@ -464,7 +474,6 @@ Function UpdateLocalMcmSettings(String sCategory="")
 
    If (!sCategory || ("Leash" == sCategory))
       _bMcmIncludeOwners           = _qMcm.bIncludeOwners
-      _fMcmChanceFurnitureTransfer = _qMcm.fChanceFurnitureTransfer
       _fMcmLeashGameChance         = _qMcm.fLeashGameChance
       _iMcmChanceIdleRestraints    = _qMcm.iChanceIdleRestraints
       _iMcmFurnitureAltRelease     = _qMcm.iFurnitureAltRelease
@@ -486,6 +495,19 @@ Function UpdateLocalMcmSettings(String sCategory="")
       _iMcmBlockTravel             = _qMcm.iBlockTravel
       _iMcmLogLevel                = _qMcm.iLogLevel
       _iMcmLogLevelScreen          = _qMcm.iLogLevelScreen
+   EndIf
+EndFunction
+
+Function InitSimpleSlaveryAuctions()
+   _aoSimpleSlaveryRegion         = New Location[1]
+   _aoSimpleSlaveryLocation       = New Location[1]
+   _aoSimpleSlaveryEntranceObject = New ObjectReference[1]
+
+   ; Riften
+   _aoSimpleSlaveryEntranceObject[0] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   If (_aoSimpleSlaveryEntranceObject[0])
+      _aoSimpleSlaveryRegion[0] = (Game.GetFormFromFile(0x00018A58, "Skyrim.esm") As Location)
+      _aoSimpleSlaveryLocation[0] = _aoSimpleSlaveryRegion[0]
    EndIf
 EndFunction
 
@@ -1260,6 +1282,28 @@ Event MovementDone(Int iType, Form oActor, Bool bSucceeded, String sModId)
             ActorSitStateWait(_aLeashHolder)
             _qZbfSlaveActions.BindPlayer(akMaster=_aLeashHolder, asMessage=S_MOD + "_PrepBdsm")
          EndIf
+      EndIf
+   ElseIf (S_MOD + "_SimpleSlavery" == sModId)
+      If (2 == iType)
+         ; We have arrived at the auction's location.
+         Location oCurrLocation = _qFramework.GetCurrentLocation() 
+         Int iIndex = _aoSimpleSlaveryLocation.Find(oCurrLocation)
+         If (-1 != iIndex)
+            ; We have arrived at the auction's location.  Move to the entrance door.
+            _qFramework.MoveToObject(aActor, _aoSimpleSlaveryEntranceObject[iIndex], sModId)
+         Else
+            iIndex = _aoSimpleSlaveryRegion.Find(oCurrLocation)
+            If (-1 != iIndex)
+               ; We have arrived in the region.  Now move to the location.
+               _qFramework.MoveToLocation(aActor, _aoSimpleSlaveryLocation[iIndex], sModId)
+            Else
+               Log("Error: Cannot Find SS Entrance.", DL_ERROR, S_MOD)
+            EndIf
+         EndIf
+      ElseIf (3 == iType)
+         ; We have arrived at the entrance.  For now start the auction from here.
+         StopLeashGame()
+         SendModEvent("SSLV Entry")
       EndIf
    EndIf
 EndEvent
@@ -2157,6 +2201,38 @@ Function PlayLeashGame()
             Float fRoll = Utility.RandomFloat(0, 100)
             Log("Leash Game End Roll: " + fRoll + "/" + iChance, DL_TRACE, S_MOD)
             If (iChance > fRoll)
+               Int iRandom = Utility.RandomInt(1, 100)
+               If (_qMcm.iChanceFurnitureTransfer > iRandom)
+                  Int iIndex = _aoFavouriteRegion.Find(_qFramework.GetCurrentRegion())
+                  If (oCurrFurniture)
+                     ; If the player is already in BDSM furniture simply stop the leash game.
+                     StopLeashGame()
+                  ElseIf ((0 <= iIndex) && \
+                          !_qFramework.SceneStarting(S_MOD + "_MoveToFurniture", 60))
+                     ; If the leash holder is not in the furniture's location move there first.
+                     _oTransferFurniture = (_aoFavouriteFurniture[iIndex] As ObjectReference)
+                     Location oFurnitureLocation = _oTransferFurniture.GetCurrentLocation()
+                     If (oFurnitureLocation != _aLeashHolder.GetCurrentLocation())
+                        _qFramework.MoveToLocation(_aLeashHolder, oFurnitureLocation, \
+                                                   S_MOD + "_Furniture")
+                     Else
+                        _qFramework.MoveToObject(_aLeashHolder, _oTransferFurniture, \
+                                                 S_MOD + "_Furniture")
+                     EndIf
+                  EndIf
+               ElseIf ((_qMcm.iChanceFurnitureTransfer + _qMcm.iLeashChanceSimple) > iRandom)
+                  Int iIndex = _aoSimpleSlaveryRegion.Find(_qFramework.GetCurrentRegion())
+                  If ((-1 != iIndex) && _qMcm.bWalkToSsAuction)
+                     _iLeashHolderGoal = 14
+                     _qFramework.MoveToLocation(_aLeashHolder, \
+                                                _aoSimpleSlaveryLocation[iIndex], \
+                                                S_MOD + "_SimpleSlavery")
+                  Else
+                     StopLeashGame()
+                     SendModEvent("SSLV Entry")
+                  EndIf
+                  Return
+               EndIf
                ; The leash game has ended.  The player will be set free.
                Log(_aLeashHolder.GetDisplayName() + " unties your leash and lets you go.", \
                    DL_CRIT, S_MOD)
@@ -2468,28 +2544,6 @@ Function PlayLeashGame()
          _bFullyRestrained = False
          _bIsCompleteSlave = False
       EndIf
-
-      ; If there is a Favourite BDSM device nearby consider locking the player in it.
-      If (_fMcmChanceFurnitureTransfer > Utility.RandomFloat(0, 100))
-         Int iIndex = _aoFavouriteRegion.Find(_qFramework.GetCurrentRegion())
-         If (0 <= iIndex)
-            If (oCurrFurniture)
-               ; If the player is already in BDSM furniture simply stop the leash game.
-               StopLeashGame()
-            ElseIf (!_qFramework.SceneStarting(S_MOD + "_MoveToFurniture", 60))
-               ; If the leash holder is not in the furniture's location move there first.
-               _oTransferFurniture = (_aoFavouriteFurniture[iIndex] As ObjectReference)
-               Location oFurnitureLocation = _oTransferFurniture.GetCurrentLocation()
-               If (oFurnitureLocation != _aLeashHolder.GetCurrentLocation())
-                  _qFramework.MoveToLocation(_aLeashHolder, oFurnitureLocation, \
-                                             S_MOD + "_Furniture")
-               Else
-                  _qFramework.MoveToObject(_aLeashHolder, _oTransferFurniture, \
-                                           S_MOD + "_Furniture")
-               EndIf
-            EndIf
-         EndIf
-      EndIf
       Return
    EndIf
 
@@ -2589,7 +2643,7 @@ Function StopSdPlus()
    If (_bEnslavedSdPlus)
       Log("Player no longer SD+ Enslaved.", DL_CRIT, S_MOD)
 
-      _qFramework.ClearMaster(_qFramework.GetMaster(_qFramework.MD_CLOSE))
+      _qFramework.ClearMaster(None, S_MOD_SD)
       If (_qMcm.bLeashSdPlus)
          _qFramework.RestoreHealthRegen()
          _qFramework.RestoreMagickaRegen()
@@ -3113,7 +3167,17 @@ EndFunction
 ; iContext: 0: No Releant Context  1: Leash Game  2: Furniture
 ; iActions uses the same definition as _iFurnitureGoals.
 ; iCooperation: How cooperative the player is.  Positive numbers indicate cooperation.
-Function DialogueComplete(Int iContext, Int iActions, Actor aNpc, Int iCooperation=0)
+Function DialogueComplete(Int iContext, Int iActions, Actor aNpc, Int iCooperation=0, \
+                          Bool bWaitForEnd=True)
+   ; If we are expected to wait for the dialogue to end, do so now.
+   If (bWaitForEnd)
+      Float fSecurity = 30
+      While ((0 < fSecurity) && aNpc.IsInDialogueWithPlayer())
+         Utility.Wait(0.05)
+         fSecurity -= 0.05
+      EndWhile
+   EndIf
+
    ; If we were handling a callout end the scene.
    String szCurrScene = _qFramework.GetCurrentScene()
    If (S_MOD + "_CallOut" == szCurrScene)
@@ -3174,12 +3238,18 @@ Function FavouriteCurrentFurniture()
       Return
    EndIf
 
+   ; If the Location doesn't exist most likely we are in the wilderness.  If the Region is
+   ; valid it means we are close enough for it to be counted so treat that as the location.
+   Location oLocation = _qFramework.GetCurrentLocation()
+   Location oRegion = _qFramework.GetCurrentRegion()
+   If (!oLocation)
+      oLocation = oRegion
+   EndIf
+
    _aoFavouriteFurniture = _qDfwUtil.AddFormToArray(_aoFavouriteFurniture, oCurrFurniture)
    _aoFavouriteCell = _qDfwUtil.AddFormToArray(_aoFavouriteCell, oCurrFurniture.GetParentCell())
-   _aoFavouriteLocation = _qDfwUtil.AddFormToArray(_aoFavouriteLocation, \
-                                                   _qFramework.GetCurrentLocation())
-   _aoFavouriteRegion = _qDfwUtil.AddFormToArray(_aoFavouriteRegion, \
-                                                 _qFramework.GetCurrentRegion())
+   _aoFavouriteLocation = _qDfwUtil.AddFormToArray(_aoFavouriteLocation, oLocation)
+   _aoFavouriteRegion = _qDfwUtil.AddFormToArray(_aoFavouriteRegion, oRegion)
 EndFunction
 
 Form[] Function GetFavouriteFurniture()
@@ -3219,7 +3289,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "2.01"
+   Return "2.02"
 EndFunction
 
 Float Function GetLastUpdateTime()
