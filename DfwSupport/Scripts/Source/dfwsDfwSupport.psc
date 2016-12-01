@@ -23,6 +23,9 @@ Scriptname dfwsDfwSupport extends Quest Conditional
 ; You should have received a copy of the GNU General Public License along with The Devious
 ; Framework Skyrim support mod.  If not, see <http://www.gnu.org/licenses/>.
 ;
+; Notes:
+; _qZadLibs.GetWornDevice() can be a very slow function.  Try to avoid using this.
+;
 ; History:
 ; 1.0 2016-06-10 by legume
 ; Initial version.
@@ -101,6 +104,10 @@ Location[] _aoSimpleSlaveryRegion
 Location[] _aoSimpleSlaveryLocation
 ObjectReference[] _aoSimpleSlaveryEntranceObject
 
+; Internal objects in the simple slavery auction house.
+ObjectReference _oSimpleSlaveryInternalDoor
+Actor _aSimpleSlaveryAuctioneer
+
 ; Quest Alias References.
 ; TODO: These could probably be script variables filled using GetAlias(iAliasId).
 ReferenceAlias Property _aAliasLeashHolder     Auto
@@ -110,15 +117,26 @@ ReferenceAlias _aAliasFurnitureLocker
 ; A crime faction for the leash target so he can be protected if the player assaults him.
 Faction _oFactionLeashTargetCrime
 
-; This is the short term goal of the leash holder.  What he is trying to accomplish via dialogue
-; or his own actions.
-; <0 = Delay after last goal       0 = No goal                 1 = Diarm player
-;  2 = Undress player (armour)     3 = Take player weapons     4 = Lock player's hands
-;  5 = Undress player fully        6 = Gag player              7 = Walk behind the slaver
-;  8 = Restrain the player         9 = Reel in the Player     10 = Discipline Talking Escape
-; 11 = Punish/Leave in Furniture  12 = Approach for Interest  13 = Lying About Release
-; 14 = Transfer to Simple Slavery
+; This is the short term goal of the leash holder.
+; What he is trying to accomplish via dialogue or his own actions.
+; <0: Delay after last goal       0: No goal                 1: Diarm player
+;  2: Undress player (armour)     3: Take player weapons     4: Lock player's hands
+;  5: Undress player fully        6: Gag player              7: Walk behind the slaver
+;  8: Restrain the player         9: Reel in the Player     10: Discipline Talking Escape
+; 11: Punish/Leave in Furniture  12: Approach for Interest  13: Lying About Release
 Int _iLeashHolderGoal Conditional
+
+; 0: Player is not controlled
+; 1: Keep the player with no particular agenda
+; 2: Dominate the player and make sure she is secure
+; 3: Punish the player
+; 4: Transfer the player from one form of control to another
+; 5: Release the player or prepare her for release
+Int _iLongTermAgenda Conditional
+; The meaning of the details depend on the value of the long term agenda.
+; LTA 4: 1: Transfer to BDSM furniture.
+; LTA 4: 2: Transfer to the Simple Slavery auction house.
+Int _iLongTermAgendaDetails Conditional
 
 ; Keep track of everything the player is being punished for.
 ; 0x0001 = Talking of Escape
@@ -182,7 +200,6 @@ Bool _bPlayerUngagged
 Int _iEscapeAttempts
 
 ; Keeps track of how long various punishments are to last for.
-Bool _bPunishmentsRemaning
 Int _iBlindfoldRemaining Conditional
 Bool _bReleaseBlindfold
 Int _iGagRemaining Conditional
@@ -194,9 +211,12 @@ ObjectReference _oPunishmentFurniture
 ObjectReference _oTransferFurniture
 
 ; A list of all items stolen from the player.
+Form[] _aoItemStolen
+; Old variable with the wrong name.  No longer used.
 Form[] _oItemStolen
 
 ; A set of equipment we locked on the slave.
+Bool _bFindItems
 Armor _oGag
 Armor _oArmRestraint
 Armor _oLegRestraint
@@ -259,7 +279,7 @@ Bool _bFurnitureBusy
 ; 0x0080: Undress
 ; 0x0100: Add Restraints
 ; 0x0200: Play(Sex/Whip)
-; 0x0400: Take the player's gold 
+; 0x0400: Take the player's gold
 ; 0x8000: Lock Furniture
 Int _iFurnitureGoals
 
@@ -317,12 +337,12 @@ EndEvent
 ; This function is primarily to ensure new variables are initialized for new script versions.
 Function UpdateScript()
    ; Reset the version number.
-   If (1.01 < _fCurrVer)
-      _fCurrVer = 1.01
-   EndIf
+   ;If (1.02 < _fCurrVer)
+   ;   _fCurrVer = 1.02
+   ;EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 1.02
+   Float fScriptVer = 1.03
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
@@ -419,8 +439,18 @@ Function UpdateScript()
       Log("Registering Callbacks Done", DL_CRIT, S_MOD)
    EndIf
 
-   If (1.02 > _fCurrVer)
+   If (1.03 > _fCurrVer)
       InitSimpleSlaveryAuctions()
+      If (_oItemStolen)
+         _aoItemStolen = _oItemStolen
+      EndIf
+      _oSimpleSlaveryInternalDoor = (Game.GetFormFromFile(0x00025108, "SimpleSlavery.esp") As ObjectReference)
+      _aSimpleSlaveryAuctioneer   = (Game.GetFormFromFile(0x0002530A, "SimpleSlavery.esp") As Actor)
+
+      If (0 < _iLeashGameDuration)
+         _iLongTermAgenda = 1
+         _iLongTermAgendaDetails = 0
+      EndIf
    EndIf
 
    ; Finally update the version number.
@@ -499,15 +529,50 @@ Function UpdateLocalMcmSettings(String sCategory="")
 EndFunction
 
 Function InitSimpleSlaveryAuctions()
-   _aoSimpleSlaveryRegion         = New Location[1]
-   _aoSimpleSlaveryLocation       = New Location[1]
-   _aoSimpleSlaveryEntranceObject = New ObjectReference[1]
+   _aoSimpleSlaveryRegion         = New Location[6]
+   _aoSimpleSlaveryLocation       = New Location[6]
+   _aoSimpleSlaveryEntranceObject = New ObjectReference[6]
 
    ; Riften
    _aoSimpleSlaveryEntranceObject[0] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
    If (_aoSimpleSlaveryEntranceObject[0])
       _aoSimpleSlaveryRegion[0] = (Game.GetFormFromFile(0x00018A58, "Skyrim.esm") As Location)
       _aoSimpleSlaveryLocation[0] = _aoSimpleSlaveryRegion[0]
+   EndIf
+
+   ; High Hrothgar (moves to Riften)
+   _aoSimpleSlaveryEntranceObject[1] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   If (_aoSimpleSlaveryEntranceObject[1])
+      _aoSimpleSlaveryRegion[1] = (Game.GetFormFromFile(0x00018A34, "Skyrim.esm") As Location)
+      _aoSimpleSlaveryLocation[1] = _aoSimpleSlaveryRegion[0]
+   EndIf
+
+   ; Ivarstead (moves to Riften)
+   _aoSimpleSlaveryEntranceObject[2] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   If (_aoSimpleSlaveryEntranceObject[2])
+      _aoSimpleSlaveryRegion[2] = (Game.GetFormFromFile(0x00018A4B, "Skyrim.esm") As Location)
+      _aoSimpleSlaveryLocation[2] = _aoSimpleSlaveryRegion[0]
+   EndIf
+
+   ; Riverwood (moves to Riften)
+   _aoSimpleSlaveryEntranceObject[3] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   If (_aoSimpleSlaveryEntranceObject[3])
+      _aoSimpleSlaveryRegion[3] = (Game.GetFormFromFile(0x00013163, "Skyrim.esm") As Location)
+      _aoSimpleSlaveryLocation[3] = _aoSimpleSlaveryRegion[0]
+   EndIf
+
+   ; Shors Stone (moves to Riften)
+   _aoSimpleSlaveryEntranceObject[4] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   If (_aoSimpleSlaveryEntranceObject[4])
+      _aoSimpleSlaveryRegion[4] = (Game.GetFormFromFile(0x00018A4C, "Skyrim.esm") As Location)
+      _aoSimpleSlaveryLocation[4] = _aoSimpleSlaveryRegion[0]
+   EndIf
+
+   ; Windhelm (moves to Riften)
+   _aoSimpleSlaveryEntranceObject[5] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   If (_aoSimpleSlaveryEntranceObject[5])
+      _aoSimpleSlaveryRegion[5] = (Game.GetFormFromFile(0x00018A57, "Skyrim.esm") As Location)
+      _aoSimpleSlaveryLocation[5] = _aoSimpleSlaveryRegion[0]
    EndIf
 EndFunction
 
@@ -523,6 +588,23 @@ Event OnUpdate()
       OnLoadGame()
    Else
       PerformOnUpdate()
+
+      ; If we haven't found all BDSM items search for one each update poll.
+      If (_bFindItems)
+         If (!_oGag)
+            FindGag(_aLeashHolder)
+         ElseIf (!_oArmRestraint)
+            FindArmRestraint(_aLeashHolder)
+         ElseIf (!_oLegRestraint)
+            FindLegRestraint(_aLeashHolder)
+         ElseIf (!_oCollar)
+            FindCollar(_aLeashHolder)
+         ElseIf (!_oBlindfold)
+            FindBlindfold(_aLeashHolder)
+         Else
+            _bFindItems = False
+         EndIf
+      EndIf
    EndIf
 
    ; Register for our next update event.
@@ -603,7 +685,7 @@ Function PerformOnUpdate()
    EndIf
 
    ; Decrease the player's punishments if she has any.
-   If (_bPunishmentsRemaning)
+   If (3 == _iLongTermAgenda)
       If (0 < _iBlindfoldRemaining)
          _iBlindfoldRemaining -= 1
          If (!_iBlindfoldRemaining)
@@ -633,7 +715,8 @@ Function PerformOnUpdate()
          EndIf
       EndIf
       If (!_iBlindfoldRemaining && !_iGagRemaining && !_iFurnitureRemaining)
-         _bPunishmentsRemaning = False
+         _iLongTermAgenda = 1
+         _iLongTermAgendaDetails = 0
       EndIf
    EndIf
 
@@ -945,7 +1028,7 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
             _bFurnitureForFun = True
          EndIf
          _fFurnitureReleaseTime = 0
-         UnbindPlayersArms(aMaster)
+         UnequipBdsmItem(_aoArmRestraints, _qZadLibs.zad_DeviousArmbinder, aMaster)
          bSceneContinuing = True
          _qZbfSlaveActions.RestrainInDevice(oFurniture, aMaster, S_MOD + "_LeashToBdsm")
       Else
@@ -957,7 +1040,8 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
          ; The player is being locked in furniture as a punishment.  Don't stop the leash game.
          _qFramework.SceneDone(S_MOD + "_MoveToFurniture")
          _iFurnitureRemaining += ((180 + (180 * _iEscapeAttempts)) / _fMcmPollTime As Int)
-         _bPunishmentsRemaning = True
+         _iLongTermAgenda = 3
+         _iLongTermAgendaDetails = 0
          ; Allow sex while the player is being punished.
          _qFramework.AddPermission(aMaster, _qFramework.AP_SEX)
          _qFramework.SetLeashTarget(None)
@@ -1125,7 +1209,7 @@ Event UpdateDfwMcm(String sCategory="")
 
    If ("SafewordLeash" == sCategory)
       Log("Safeword Leash.", DL_CRIT, S_MOD)
-      StopLeashGame()
+      StopLeashGame(bReturnItems=True, bUnequip=True)
       _qFramework.SceneDone(S_MOD)
    EndIf
 EndEvent
@@ -1286,7 +1370,7 @@ Event MovementDone(Int iType, Form oActor, Bool bSucceeded, String sModId)
    ElseIf (S_MOD + "_SimpleSlavery" == sModId)
       If (2 == iType)
          ; We have arrived at the auction's location.
-         Location oCurrLocation = _qFramework.GetCurrentLocation() 
+         Location oCurrLocation = _qFramework.GetCurrentLocation()
          Int iIndex = _aoSimpleSlaveryLocation.Find(oCurrLocation)
          If (-1 != iIndex)
             ; We have arrived at the auction's location.  Move to the entrance door.
@@ -1301,10 +1385,27 @@ Event MovementDone(Int iType, Form oActor, Bool bSucceeded, String sModId)
             EndIf
          EndIf
       ElseIf (3 == iType)
-         ; We have arrived at the entrance.  For now start the auction from here.
-         StopLeashGame()
-         SendModEvent("SSLV Entry")
+         If (_oSimpleSlaveryInternalDoor && _aSimpleSlaveryAuctioneer)
+            aActor.MoveTo(_oSimpleSlaveryInternalDoor)
+            _qFramework.MoveToObject(aActor, _aSimpleSlaveryAuctioneer, S_MOD + "_SS_Internal")
+         Else
+            ; We can't progress the scene inside the auction house.  Start Simple Slavery now.
+            ; The short delay helps the player transfer with the proper equipment.
+            StopLeashGame(bReturnItems=True, bUnequip=True)
+            Utility.Wait(1)
+            SendModEvent("SSLV Entry")
+         EndIf
       EndIf
+   ElseIf (S_MOD + "_SS_Internal" == sModId)
+      ; We have arrived at the entrance.  For now start the auction from here.
+      ; The short delay helps the player transfer with the proper equipment.
+      StopLeashGame(bReturnItems=True, bUnequip=True)
+      Utility.Wait(1)
+      ; Move the leash holder to their package location so they are not in the auction house.
+      aActor.EvaluatePackage()
+      aActor.MoveToMyEditorLocation()
+      aActor.MoveToPackageLocation()
+      SendModEvent("SSLV Entry")
    EndIf
 EndEvent
 
@@ -1462,22 +1563,38 @@ Int Function StartSex(Actor aNpc, Bool bRape)
    Return SUCCESS
 EndFunction
 
-Function StopLeashGame(Bool bClearMaster=True)
+Function StopLeashGame(Bool bClearMaster=True, Bool bReturnItems=False, Bool bUnequip=False)
+   If (bReturnItems)
+      ReturnItems(_aLeashHolder)
+   EndIf
+
+   If (bUnequip)
+      UnequipBdsmItem(_aoGags,          _qZadLibs.zad_DeviousGag,       _aLeashHolder)
+      UnequipBdsmItem(_aoArmRestraints, _qZadLibs.zad_DeviousArmbinder, _aLeashHolder)
+      UnequipBdsmItem(_aoLegRestraints, _qZadLibs.zad_DeviousBoots,     _aLeashHolder)
+      UnequipBdsmItem(_aoCollars,       _qZadLibs.zad_DeviousCollar,    _aLeashHolder)
+      UnequipBdsmItem(_aoBlindfolds,    _qZadLibs.zad_DeviousBlindfold, _aLeashHolder)
+   EndIf
+
    ; If the leash holder's movement has been stopped for any reason restore it.
    If (_bLeashHolderStopped)
       _bLeashHolderStopped = False
       _aLeashHolder.EnableAI()
    EndIf
 
-   _iLeashGameDuration = 0
-   _iLeashHolderGoal = 0
    _qFramework.RestoreHealthRegen()
    _qFramework.DisableMagicka(False)
    _qFramework.SetLeashTarget(None)
+
    If (bClearMaster)
       _qFramework.ClearMaster(_aLeashHolder)
    EndIf
+
    _aAliasLastLeashHolder.ForceRefTo(_aLeashHolder)
+   _iLeashHolderGoal = 0
+   _iLongTermAgenda = 0
+   _iLongTermAgendaDetails = 0
+   _iLeashGameDuration = 0
    _aLeashHolder = None
    _aAliasLeashHolder.Clear()
 
@@ -1554,8 +1671,8 @@ Function AssaultPlayer(Float fHealthThreshold=1.0, Bool bUnquipWeapons=False, \
       If (bStealWeapons)
          _aPlayer.RemoveItem(oWeaponRight, 999, akOtherContainer=_aLeashHolder)
          _aPlayer.RemoveItem(oWeaponLeft, 999, akOtherContainer=_aLeashHolder)
-         _oItemStolen = _qDfwUtil.AddFormToArray(_oItemStolen, oWeaponRight)
-         _oItemStolen = _qDfwUtil.AddFormToArray(_oItemStolen, oWeaponLeft)
+         _aoItemStolen = _qDfwUtil.AddFormToArray(_aoItemStolen, oWeaponRight)
+         _aoItemStolen = _qDfwUtil.AddFormToArray(_aoItemStolen, oWeaponLeft)
          If (1 > _iWeaponsStolen)
             _iWeaponsStolen = 1
          EndIf
@@ -1599,23 +1716,257 @@ Bool Function CheckPlayerFullyBound()
    Return _bIsCompleteSlave
 EndFunction
 
-Function UnbindPlayersArms(Actor aNpc)
-   ; Unequip the player's arm restraints.
+; Checks if an Inventory BDSM item is worn.
+Bool Function IsWorn(Armor oInventoryDevice)
+   Armor oItemRendered = _qZadLibs.GetRenderedDevice(oInventoryDevice)
+   Return (oItemRendered && _aPlayer.GetItemCount(oItemRendered))
+EndFunction
+
+; Inventory searching has been tried using SKSE's GetNumItems/GetNthForm API; however, the
+; mechanism used here has shown to be orders of magnitude faster than that function.
+Function SearchInventory(Actor aNpc)
+   ; Keep a copy of the keywords to reduce context switching to the Zaz script.
+   Keyword oKeywordGag       = _qZadLibs.zad_DeviousGag
+   Keyword oKeywordArmBinder = _qZadLibs.zad_DeviousArmbinder
+   Keyword oKeywordYoke      = _qZadLibs.zad_DeviousYoke
+   Keyword oKeywordGloves    = _qZadLibs.zad_DeviousGloves
+   Keyword oKeywordBoots     = _qZadLibs.zad_DeviousBoots
+   Keyword oKeywordCollar    = _qZadLibs.zad_DeviousCollar
+   Keyword oKeywordBlindfold = _qZadLibs.zad_DeviousBlindfold
+
+   ; Try to find an appropriate gag in the player's inventory.
+   If (!_oGag)
+      Int iIndex = _aoGags.Length - 1
+      Armor oItemFound
+      While (!_oGag && (0 <= iIndex))
+         If (_aPlayer.GetItemCount(_aoGags[iIndex]))
+            oItemFound = _aoGags[iIndex]
+            If (IsWorn(oItemFound))
+               _oGag = oItemFound
+            EndIf
+         EndIf
+         iIndex -= 1
+      EndWhile
+      If (!_oGag && oItemFound)
+         _oGag = oItemFound
+      EndIf
+   EndIf
+
+   ; Try to find an appropriate arm restraint in the player's inventory.
    If (!_oArmRestraint)
-      _oArmRestraint = _qZadLibs.GetWornDevice(_aPlayer, _qZadLibs.zad_DeviousArmbinder)
+      Int iIndex = _aoArmRestraints.Length - 1
+      Armor oItemFound
+      While (!_oArmRestraint && (0 <= iIndex))
+         If (_aPlayer.GetItemCount(_aoArmRestraints[iIndex]))
+            oItemFound = _aoArmRestraints[iIndex]
+            If (IsWorn(oItemFound))
+               _oArmRestraint = oItemFound
+            EndIf
+         EndIf
+         iIndex -= 1
+      EndWhile
+      If (!_oArmRestraint && oItemFound)
+         _oArmRestraint = oItemFound
+      EndIf
    EndIf
+
+   ; Try to find an appropriate hobble in the player's inventory.
+   If (!_oLegRestraint)
+      Int iIndex = _aoLegRestraints.Length - 1
+      Armor oItemFound
+      While (!_oLegRestraint && (0 <= iIndex))
+         If (_aPlayer.GetItemCount(_aoLegRestraints[iIndex]))
+            oItemFound = _aoLegRestraints[iIndex]
+            If (IsWorn(oItemFound))
+               _oLegRestraint = oItemFound
+            EndIf
+         EndIf
+         iIndex -= 1
+      EndWhile
+      If (!_oLegRestraint && oItemFound)
+         _oLegRestraint = oItemFound
+      EndIf
+   EndIf
+
+   ; Try to find an appropriate collar in the player's inventory.
+   If (!_oCollar)
+      Int iIndex = _aoCollars.Length - 1
+      Armor oItemFound
+      While (!_oCollar && (0 <= iIndex))
+         If (_aPlayer.GetItemCount(_aoCollars[iIndex]))
+            oItemFound = _aoCollars[iIndex]
+            If (IsWorn(oItemFound))
+               _oCollar = oItemFound
+            EndIf
+         EndIf
+         iIndex -= 1
+      EndWhile
+      If (!_oCollar && oItemFound)
+         _oCollar = oItemFound
+      EndIf
+   EndIf
+
+   ; Try to find an appropriate blindfold in the player's inventory.
+   If (!_oBlindfold)
+      Int iIndex = _aoBlindfolds.Length - 1
+      Armor oItemFound
+      While (!_oBlindfold && (0 <= iIndex))
+         If (_aPlayer.GetItemCount(_aoBlindfolds[iIndex]))
+            oItemFound = _aoBlindfolds[iIndex]
+            If (IsWorn(oItemFound))
+               _oBlindfold = oItemFound
+            EndIf
+         EndIf
+         iIndex -= 1
+      EndWhile
+      If (!_oBlindfold && oItemFound)
+         _oBlindfold = oItemFound
+      EndIf
+   EndIf
+EndFunction
+
+; This assumes the player's inventory has already been searched with SearchInventory().
+Function FindGag(Actor aNpc)
+   If (!_oGag)
+      Int iIndex = _aoGags.Length - 1
+      While (0 <= iIndex)
+         If (aNpc.GetItemCount(_aoGags[iIndex]))
+            _oGag = _aoGags[iIndex]
+            Return
+         EndIf
+         iIndex -= 1
+      EndWhile
+      _oGag = _aoGags[Utility.RandomInt(0, _aoGags.Length - 1)]
+   EndIf
+EndFunction
+
+; This assumes the player's inventory has already been searched with SearchInventory().
+Function FindArmRestraint(Actor aNpc)
    If (!_oArmRestraint)
-      _oArmRestraint = _qZadLibs.GetWornDevice(_aPlayer, _qZadLibs.zad_DeviousYoke)
+      Int iIndex = _aoArmRestraints.Length - 1
+      While (0 <= iIndex)
+         If (aNpc.GetItemCount(_aoArmRestraints[iIndex]))
+            _oArmRestraint = _aoArmRestraints[iIndex]
+            Return
+         EndIf
+         iIndex -= 1
+      EndWhile
+      _oArmRestraint = _aoArmRestraints[Utility.RandomInt(0, _aoArmRestraints.Length - 1)]
    EndIf
-   If (!_oArmRestraint)
-      _oArmRestraint = _qZadLibs.GetWornDevice(_aPlayer, _qZadLibs.zad_DeviousGloves)
+EndFunction
+
+; This assumes the player's inventory has already been searched with SearchInventory().
+Function FindLegRestraint(Actor aNpc)
+   If (!_oLegRestraint)
+      Int iIndex = _aoLegRestraints.Length - 1
+      While (0 <= iIndex)
+         If (aNpc.GetItemCount(_aoLegRestraints[iIndex]))
+            _oLegRestraint = _aoLegRestraints[iIndex]
+            Return
+         EndIf
+         iIndex -= 1
+      EndWhile
+      _oLegRestraint = _aoLegRestraints[Utility.RandomInt(0, _aoLegRestraints.Length - 1)]
    EndIf
-   If (_oArmRestraint)
-      Armor oArmRestraintRendered = _qZadLibs.GetRenderedDevice(_oArmRestraint)
-      _qZadLibs.RemoveDevice(_aPlayer, _oArmRestraint, oArmRestraintRendered, \
-                             _qZadLibs.zad_DeviousArmbinder)
-      _aPlayer.RemoveItem(_oArmRestraint, 1, akOtherContainer=aNpc)
+EndFunction
+
+; This assumes the player's inventory has already been searched with SearchInventory().
+Function FindCollar(Actor aNpc)
+   If (!_oCollar)
+      Int iIndex = _aoCollars.Length - 1
+      While (0 <= iIndex)
+         If (aNpc.GetItemCount(_aoCollars[iIndex]))
+            _oCollar = _aoCollars[iIndex]
+            Return
+         EndIf
+         iIndex -= 1
+      EndWhile
+      _oCollar = _aoCollars[Utility.RandomInt(0, _aoCollars.Length - 1)]
    EndIf
+EndFunction
+
+; This assumes the player's inventory has already been searched with SearchInventory().
+Function FindBlindfold(Actor aNpc)
+   If (!_oBlindfold)
+      Int iIndex = _aoBlindfolds.Length - 1
+      While (0 <= iIndex)
+         If (aNpc.GetItemCount(_aoBlindfolds[iIndex]))
+            _oBlindfold = _aoBlindfolds[iIndex]
+            Return
+         EndIf
+         iIndex -= 1
+      EndWhile
+      _oBlindfold = _aoBlindfolds[Utility.RandomInt(0, _aoBlindfolds.Length - 1)]
+   EndIf
+EndFunction
+
+Function EquipBdsmItem(Armor oItem, Keyword oKeyword, Actor aNpc=None)
+   If (oItem)
+      Armor oItemRendered = _qZadLibs.GetRenderedDevice(oItem)
+      _qZadLibs.EquipDevice(_aPlayer, oItem, oItemRendered, oKeyword)
+      If (aNpc)
+         aNpc.RemoveItem(oItem, 1)
+      EndIf
+   EndIf
+EndFunction
+
+Function UnequipBdsmItem(Armor[] _aoItemList, Keyword oKeyword, Actor aNpc=None)
+   Armor oItem
+
+   ; First check if the player is wearing one of the items from the list.
+   If (_aoItemList)
+      Int iIndex = _aoItemList.Length - 1
+      While (!oItem && (0 <= iIndex))
+         If (_aPlayer.GetItemCount(_aoItemList[iIndex]))
+            If (IsWorn(_aoItemList[iIndex]))
+               oItem = _aoItemList[iIndex]
+            EndIf
+         EndIf
+         iIndex -= 1
+      EndWhile
+   EndIf
+
+   ; If we found the item try to remove that.
+   If (oItem)
+      Armor oItemRendered = _qZadLibs.GetRenderedDevice(oItem)
+      _qZadLibs.RemoveDevice(_aPlayer, oItem, oItemRendered, oKeyword)
+      _aPlayer.RemoveItem(oItem, 1, akOtherContainer=aNpc)
+   Else
+      ; Otherwise use the Zad generic function to remove the device by keyword.
+      _qZadLibs.ManipulateGenericDeviceByKeyword(_aPlayer, oKeyword, False)
+   EndIf
+EndFunction
+
+Function ReturnItems(Actor aNpc)
+   Log(aNpc.GetDisplayName() + " returns your things.", DL_CRIT, S_MOD)
+   Int iIndex = _aoItemStolen.Length - 1
+   While (0 <= iIndex)
+      aNpc.RemoveItem(_aoItemStolen[iIndex], 999, akOtherContainer=_aPlayer)
+      iIndex -=1
+   EndWhile
+   _aoItemStolen = None
+   _iWeaponsStolen = 0
+EndFunction
+
+; TODO: The favourite furniture lists should be protected by a mutex.
+ObjectReference Function FindFurniture(Location oRegion=None)
+   If (!oRegion)
+      oRegion = _qFramework.GetCurrentRegion()
+   EndIf
+
+   Form[] aoFurniture
+   Int iIndex = _aoFavouriteRegion.Length - 1
+   While (iIndex)
+      If (_aoFavouriteRegion[iIndex] == oRegion)
+         aoFurniture = _qDfwUtil.AddFormToArray(aoFurniture, _aoFavouriteFurniture[iIndex])
+      EndIf
+      iIndex -= 1
+   EndWhile
+   Int iLength = aoFurniture.Length
+   If (iLength)
+      Return (aoFurniture[Utility.RandomInt(0, iLength - 1)] As ObjectReference)
+   EndIf
+   Return None
 EndFunction
 
 Int Function StartWhippingScene(Actor aActor, Int iDuration, String szMessage)
@@ -1695,13 +2046,8 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
       Else
          Log(szName + " pulls you to the ground and locks you in a blindfold.", DL_CRIT, S_MOD)
       EndIf
-
-      If (!_oBlindfold)
-         _oBlindfold = _aoBlindfolds[Utility.RandomInt(0, _aoBlindfolds.Length - 1)]
-      EndIf
-      Armor oRestraintRendered = _qZadLibs.GetRenderedDevice(_oBlindfold)
-      _qZadLibs.EquipDevice(_aPlayer, _oBlindfold, oRestraintRendered, _qZadLibs.zad_DeviousBlindfold)
-      aNpc.RemoveItem(_oBlindfold, 1)
+      FindBlindfold(aNpc)
+      EquipBdsmItem(_oBlindfold, _qZadLibs.zad_DeviousBlindfold, aNpc)
       iNewItems += 0x10
 
       _iAssault -= 0x0400
@@ -1709,12 +2055,8 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
 
    ; 0x0200 = Restrain in Collar
    If (0x0200 <= _iAssault)
-      If (!_oCollar)
-         _oCollar = _aoCollars[Utility.RandomInt(0, _aoCollars.Length - 1)]
-      EndIf
-      Armor oRestraintRendered = _qZadLibs.GetRenderedDevice(_oCollar)
-      _qZadLibs.EquipDevice(_aPlayer, _oCollar, oRestraintRendered, _qZadLibs.zad_DeviousCollar)
-      aNpc.RemoveItem(_oCollar, 1)
+      FindCollar(aNpc)
+      EquipBdsmItem(_oCollar, _qZadLibs.zad_DeviousCollar, aNpc)
       iNewItems += 0x01
 
       _iAssault -= 0x0200
@@ -1723,14 +2065,7 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
    ; 0x0100 = UnGag
    If (0x0100 <= _iAssault)
       ; Unequip the player's gag.
-      If (!_oGag)
-         _oGag = _qZadLibs.GetWornDevice(_aPlayer, _qZadLibs.zad_DeviousGag)
-      EndIf
-      If (_oGag)
-         Armor oGagRendered = _qZadLibs.GetRenderedDevice(_oGag)
-         _qZadLibs.RemoveDevice(_aPlayer, _oGag, oGagRendered, _qZadLibs.zad_DeviousGag)
-         _aPlayer.RemoveItem(_oGag, 1, akOtherContainer=aNpc)
-      EndIf
+      UnequipBdsmItem(_aoGags, _qZadLibs.zad_DeviousGag, aNpc)
       _bPlayerUngagged = True
       _iGagRemaining = 0
 
@@ -1761,42 +2096,30 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
          Armor oRestraint
          Keyword oKeyword
          If (1 == iOption)
-            If (!_oGag)
-               _oGag = _aoGags[Utility.RandomInt(0, _aoGags.Length - 1)]
-            EndIf
+            FindGag(aNpc)
             oRestraint = _oGag
             oKeyword = _qZadLibs.zad_DeviousGag
             iItem = 0x02
             _bPlayerUngagged = False
          ElseIf (2 == iOption)
-            If (!_oArmRestraint)
-               Int iIndex = Utility.RandomInt(0, _aoArmRestraints.Length - 1)
-               _oArmRestraint = _aoArmRestraints[iIndex]
-            EndIf
+            FindArmRestraint(aNpc)
             oRestraint = _oArmRestraint
             oKeyword = _qZadLibs.zad_DeviousArmbinder
             iItem = 0x04
          ElseIf (3 == iOption)
-            If (!_oLegRestraint)
-               Int iIndex = Utility.RandomInt(0, _aoLegRestraints.Length - 1)
-               _oLegRestraint = _aoLegRestraints[iIndex]
-            EndIf
+            FindLegRestraint(aNpc)
             oRestraint = _oLegRestraint
             oKeyword = _qZadLibs.zad_DeviousBoots
             iItem = 0x08
          ElseIf (4 == iOption)
-            If (!_oCollar)
-               _oCollar = _aoCollars[Utility.RandomInt(0, _aoCollars.Length - 1)]
-            EndIf
+            FindCollar(aNpc)
             oRestraint = _oCollar
             oKeyword = _qZadLibs.zad_DeviousCollar
             iItem = 0x01
          EndIf
 
          If (oRestraint)
-            Armor oRestraintRendered = _qZadLibs.GetRenderedDevice(oRestraint)
-            _qZadLibs.EquipDevice(_aPlayer, oRestraint, oRestraintRendered, oKeyword)
-            aNpc.RemoveItem(oRestraint, 1)
+            EquipBdsmItem(oRestraint, oKeyword, aNpc)
             iNewItems += iItem
 
             ; If the player is being gagged and gag mode is Auto Remove start a timer.
@@ -1805,7 +2128,8 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
                If (50 < _qFramework.GetActorAnger(aNpc))
                   iBehaviour += 3
                EndIf
-               _bPunishmentsRemaning = True
+               _iLongTermAgenda = 3
+               _iLongTermAgendaDetails = 0
                _iGagRemaining += ((60 + (120 * iBehaviour)) / _fMcmPollTime As Int)
             EndIf
          EndIf
@@ -1856,7 +2180,7 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
          Form oInventoryItem = _aPlayer.GetNthForm(iIndex)
          If (41 == oInventoryItem.GetType())
             _aPlayer.RemoveItem(oInventoryItem, 999, akOtherContainer=aNpc)
-            _oItemStolen = _qDfwUtil.AddFormToArray(_oItemStolen, oInventoryItem)
+            _aoItemStolen = _qDfwUtil.AddFormToArray(_aoItemStolen, oInventoryItem)
          EndIf
          iIndex -= 1
       EndWhile
@@ -1873,20 +2197,12 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
          Else
             Log(szName + " pulls you to the ground and locks up your arms.", DL_CRIT, S_MOD)
          EndIf
-
-         If (!_oArmRestraint)
-            Int iIndex = Utility.RandomInt(0, _aoArmRestraints.Length - 1)
-            _oArmRestraint = _aoArmRestraints[iIndex]
-         EndIf
-
+         FindArmRestraint(aNpc)
          ; Unequip the player's gloves/forearms as they interact oddly with arm binders.
          _aPlayer.UnequipItemSlot(33) ; 0x00000008
          _aPlayer.UnequipItemSlot(34) ; 0x00000010
 
-         Armor oArmRestraintRendered = _qZadLibs.GetRenderedDevice(_oArmRestraint)
-         _qZadLibs.EquipDevice(_aPlayer, _oArmRestraint, oArmRestraintRendered, \
-                               _qZadLibs.zad_DeviousArmbinder)
-         aNpc.RemoveItem(_oArmRestraint, 1)
+         EquipBdsmItem(_oArmRestraint, _qZadLibs.zad_DeviousArmbinder, aNpc)
          iNewItems += 0x04
       EndIf
       _iAssault -= 0x0004
@@ -1902,13 +2218,8 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
                 DL_CRIT, S_MOD)
          EndIf
 
-         If (!_oGag)
-            _oGag = _aoGags[Utility.RandomInt(0, _aoGags.Length - 1)]
-         EndIf
-
-         Armor oGagRendered = _qZadLibs.GetRenderedDevice(_oGag)
-         _qZadLibs.EquipDevice(_aPlayer, _oGag, oGagRendered, _qZadLibs.zad_DeviousGag)
-         aNpc.RemoveItem(_oGag, 1)
+         FindGag(aNpc)
+         EquipBdsmItem(_oGag, _qZadLibs.zad_DeviousGag, aNpc)
          iNewItems += 0x02
 
          ; If gag mode is Auto Remove start a timer.
@@ -1917,7 +2228,8 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
             If (50 < _qFramework.GetActorAnger(aNpc))
                iBehaviour += 3
             EndIf
-            _bPunishmentsRemaning = True
+            _iLongTermAgenda = 3
+            _iLongTermAgendaDetails = 0
             _iGagRemaining += ((60 + (120 * iBehaviour)) / _fMcmPollTime As Int)
          EndIf
 
@@ -1948,32 +2260,16 @@ Int Function FinalizeAssault(Actor aNpc, String szName)
 
    If (bReturnItems)
       Actor aLastLeashHolder = (_aAliasLastLeashHolder.GetReference() As Actor)
-      Log(aLastLeashHolder.GetDisplayName() + " returns your things.", \
-          DL_CRIT, S_MOD)
-      Int iIndex = _oItemStolen.Length - 1
-      While (0 <= iIndex)
-         aLastLeashHolder.RemoveItem(_oItemStolen[iIndex], 999, akOtherContainer=_aPlayer)
-         iIndex -=1
-      EndWhile
-      _oItemStolen = None
-      _iWeaponsStolen = 0
+      ReturnItems(aLastLeashHolder)
    EndIf
 
    If (bReleaseBlindfold)
       ; Unequip the player's blindfold.
-      If (!_oBlindfold)
-         _oBlindfold = _qZadLibs.GetWornDevice(_aPlayer, _qZadLibs.zad_DeviousBlindfold)
-      EndIf
-      If (_oBlindfold)
-         Armor oBlindfoldRendered = _qZadLibs.GetRenderedDevice(_oBlindfold)
-         _qZadLibs.RemoveDevice(_aPlayer, _oBlindfold, oBlindfoldRendered, \
-                                _qZadLibs.zad_DeviousBlindfold)
-         _aPlayer.RemoveItem(_oBlindfold, 1, akOtherContainer=aNpc)
-      EndIf
+      UnequipBdsmItem(_aoBlindfolds, _qZadLibs.zad_DeviousBlindfold, aNpc)
    EndIf
 
    If (bUnlockArms)
-      UnbindPlayersArms(aNpc)
+      UnequipBdsmItem(_aoArmRestraints, _qZadLibs.zad_DeviousArmbinder, aNpc)
       _bFullyRestrained = False
       _bIsCompleteSlave = False
    EndIf
@@ -2175,6 +2471,7 @@ Function PlayLeashGame()
    If (0 < _iDialogueBusy)
       ;Log("In Dialogue.", DL_TRACE, S_MOD)
       _iDialogueBusy -= 1
+      ; For pure conversation goals, end them when the dialogue times out.
       If ((0 == _iDialogueBusy) && ((12 == _iLeashHolderGoal) || (13 == _iLeashHolderGoal)))
          _iLeashHolderGoal = 0
       EndIf
@@ -2192,7 +2489,7 @@ Function PlayLeashGame()
       ;Log("Leash Game Ending.", DL_TRACE, S_MOD)
 
       ; Only consider stopping the leash game if nothing else is going on.
-      If ((0 >= _iLeashHolderGoal) && !_bPunishmentsRemaning)
+      If ((0 >= _iLeashHolderGoal) && (1 == _iLongTermAgenda))
          ; The slaver will only release the player if he is not particularly angry with her.
          If (_qMcm.iMaxAngerForRelease >= _qFramework.GetActorAnger(_aLeashHolder))
             Int iChance = _qMcm.iChanceOfRelease
@@ -2202,15 +2499,14 @@ Function PlayLeashGame()
             Log("Leash Game End Roll: " + fRoll + "/" + iChance, DL_TRACE, S_MOD)
             If (iChance > fRoll)
                Int iRandom = Utility.RandomInt(1, 100)
-               If (_qMcm.iChanceFurnitureTransfer > iRandom)
-                  Int iIndex = _aoFavouriteRegion.Find(_qFramework.GetCurrentRegion())
-                  If (oCurrFurniture)
-                     ; If the player is already in BDSM furniture simply stop the leash game.
-                     StopLeashGame()
-                  ElseIf ((0 <= iIndex) && \
-                          !_qFramework.SceneStarting(S_MOD + "_MoveToFurniture", 60))
+               If (_qMcm.iChanceFurnitureTransfer >= iRandom)
+                  _iLongTermAgenda = 4
+                  _iLongTermAgendaDetails = 1
+                  ObjectReference oFurnitureNearby = FindFurniture()
+                  If (!oCurrFurniture && oFurnitureNearby && \
+                      !_qFramework.SceneStarting(S_MOD + "_MoveToFurniture", 60))
                      ; If the leash holder is not in the furniture's location move there first.
-                     _oTransferFurniture = (_aoFavouriteFurniture[iIndex] As ObjectReference)
+                     _oTransferFurniture = oFurnitureNearby
                      Location oFurnitureLocation = _oTransferFurniture.GetCurrentLocation()
                      If (oFurnitureLocation != _aLeashHolder.GetCurrentLocation())
                         _qFramework.MoveToLocation(_aLeashHolder, oFurnitureLocation, \
@@ -2219,16 +2515,22 @@ Function PlayLeashGame()
                         _qFramework.MoveToObject(_aLeashHolder, _oTransferFurniture, \
                                                  S_MOD + "_Furniture")
                      EndIf
+                     Return
                   EndIf
-               ElseIf ((_qMcm.iChanceFurnitureTransfer + _qMcm.iLeashChanceSimple) > iRandom)
+               ElseIf ((_qMcm.iChanceFurnitureTransfer + _qMcm.iLeashChanceSimple) >= iRandom)
+                  _iLongTermAgenda = 4
+                  _iLongTermAgendaDetails = 2
                   Int iIndex = _aoSimpleSlaveryRegion.Find(_qFramework.GetCurrentRegion())
-                  If ((-1 != iIndex) && _qMcm.bWalkToSsAuction)
-                     _iLeashHolderGoal = 14
+                  If ((-1 != iIndex) && _qMcm.bWalkToSsAuction && \
+                      (_qMcm.bWalkFarSsAuction || \
+                       (_aoSimpleSlaveryLocation[iIndex] == _aoSimpleSlaveryRegion[iIndex])))
                      _qFramework.MoveToLocation(_aLeashHolder, \
                                                 _aoSimpleSlaveryLocation[iIndex], \
                                                 S_MOD + "_SimpleSlavery")
                   Else
-                     StopLeashGame()
+                     StopLeashGame(bReturnItems=True, bUnequip=True)
+                     ; The short delay helps the player transfer with the proper equipment.
+                     Utility.Wait(1)
                      SendModEvent("SSLV Entry")
                   EndIf
                   Return
@@ -2410,6 +2712,16 @@ Function PlayLeashGame()
 
    ; Otherwise Goal <= 0: The slaver doesn't have any particular intentions right now.
    ;Log("Goal " + _iLeashHolderGoal + ": No goal.", DL_TRACE, S_MOD)
+   If (2 == _iLongTermAgenda)
+      _iLongTermAgenda = 1
+      _iLongTermAgendaDetails = 0
+
+      ; If the gag is configured to be auto-remove, treat this as a punishment instead.
+      If ((2 == _iMcmGagMode) && _qFramework.IsPlayerGagged())
+         _iLongTermAgenda = 3
+         _iGagRemaining += ((60 + (120 * _iEscapeAttempts)) / _fMcmPollTime As Int)
+      EndIf
+   EndIf
 
    ; Check how upset the slaver is with the player and whether he is open to slaving her out.
    Int iCurrAnger = _qFramework.GetActorAnger(_aLeashHolder)
@@ -2558,8 +2870,7 @@ Function PlayLeashGame()
       ;Log("Starting Arm Restraints.", DL_TRACE, S_MOD)
 
       If (!_oArmRestraint)
-         Int iIndex = Utility.RandomInt(0, _aoArmRestraints.Length - 1)
-         _oArmRestraint = _aoArmRestraints[iIndex]
+         FindArmRestraint(_aLeashHolder)
          _aPlayer.AddItem(_oArmRestraint)
       EndIf
       StartConversation(_aLeashHolder, 4)
@@ -2772,8 +3083,8 @@ Function Cooperation(Int iGoal, Int iLevel)
          If (60 < _qFramework.GetActorAnger(_aLeashHolder))
             _aPlayer.RemoveItem(oWeaponRight, 999, akOtherContainer=_aLeashHolder)
             _aPlayer.RemoveItem(oWeaponLeft, 999, akOtherContainer=_aLeashHolder)
-            _oItemStolen = _qDfwUtil.AddFormToArray(_oItemStolen, oWeaponRight)
-            _oItemStolen = _qDfwUtil.AddFormToArray(_oItemStolen, oWeaponLeft)
+            _aoItemStolen = _qDfwUtil.AddFormToArray(_aoItemStolen, oWeaponRight)
+            _aoItemStolen = _qDfwUtil.AddFormToArray(_aoItemStolen, oWeaponLeft)
             If (1 > _iWeaponsStolen)
                _iWeaponsStolen = 1
             EndIf
@@ -2862,7 +3173,8 @@ Function Cooperation(Int iGoal, Int iLevel)
       ; 0x0001 = Talking of Escape
       If (Math.LogicalAnd(0x0001, _iPunishments))
          _iEscapeAttempts += 1
-         _bPunishmentsRemaning = True
+         _iLongTermAgenda = 3
+         _iLongTermAgendaDetails = 0
          _iBlindfoldRemaining += ((60 + (60 * _iEscapeAttempts)) / _fMcmPollTime As Int)
          _iGagRemaining += ((60 + (120 * _iEscapeAttempts)) / _fMcmPollTime As Int)
 
@@ -2882,7 +3194,8 @@ Function Cooperation(Int iGoal, Int iLevel)
       EndIf
 
       _iEscapeAttempts += 1
-      _bPunishmentsRemaning = True
+      _iLongTermAgenda = 3
+      _iLongTermAgendaDetails = 0
       _iBlindfoldRemaining += ((60 + (60 * _iEscapeAttempts)) / _fMcmPollTime As Int)
       _iGagRemaining += ((60 + (120 * _iEscapeAttempts)) / _fMcmPollTime As Int)
 
@@ -2906,11 +3219,11 @@ Function Cooperation(Int iGoal, Int iLevel)
       Else
          _qFramework.SetStrictGag()
          ; If the player is already blindfolded try locking her in nearby furniture.
-         Int iIndex = _aoFavouriteRegion.Find(_qFramework.GetCurrentRegion())
-         If ((-1 != iIndex) && _aPlayer.WornHasKeyword(_qZadLibs.zad_DeviousBlindfold) && \
+         ObjectReference oFurnitureNearby = FindFurniture()
+         If (oFurnitureNearby && _aPlayer.WornHasKeyword(_qZadLibs.zad_DeviousBlindfold) && \
              !_qFramework.SceneStarting(S_MOD + "_MoveToFurniture", 300))
             bRestrainedAssault = False
-            _oPunishmentFurniture = (_aoFavouriteFurniture[iIndex] As ObjectReference)
+            _oPunishmentFurniture = oFurnitureNearby
             _fFurnitureReleaseTime = 0
             ; If the leash holder is not in the furniture's location move there first.
 
@@ -3028,7 +3341,7 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
       Return SUCCESS
    EndIf
 
-   ; 0x0400: Take the player's gold 
+   ; 0x0400: Take the player's gold
    If (0x0400 <= _iFurnitureGoals)
       bAssault = True
       Int iLeveledMax = 100 * ((_aPlayer.GetLevel() / 10) + 1)
@@ -3164,7 +3477,7 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
 EndFunction
 
 ; Called by dialog scripts to indicate the player has completed a conversation.
-; iContext: 0: No Releant Context  1: Leash Game  2: Furniture
+; iContext: 0: No Relevant Context  1: Leash Game  2: Furniture
 ; iActions uses the same definition as _iFurnitureGoals.
 ; iCooperation: How cooperative the player is.  Positive numbers indicate cooperation.
 Function DialogueComplete(Int iContext, Int iActions, Actor aNpc, Int iCooperation=0, \
@@ -3289,7 +3602,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "2.02"
+   Return "2.03"
 EndFunction
 
 Float Function GetLastUpdateTime()
@@ -3343,6 +3656,8 @@ Int Function StartLeashGame(Actor aActor)
       _bFullyRestrained = False
       _bIsCompleteSlave = False
       _iLeashHolderGoal = 0
+      _iLongTermAgenda = 2
+      _iLongTermAgendaDetails = 0
       _iExpectedResponseTime = 8
 
       ; Make sure the leash holder is a member of a crime faction.
@@ -3355,20 +3670,24 @@ Int Function StartLeashGame(Actor aActor)
       ; If this is not the last NPC to play the leash game reset some personalized stats.
       ObjectReference oLastAlias = _aAliasLastLeashHolder.GetReference()
       If (oLastAlias && (_aLeashHolder != (oLastAlias As Actor)))
-         _iEscapeAttempts = 0
-         _oItemStolen = None
-         _oGag = None
+         _oGag          = None
          _oArmRestraint = None
          _oLegRestraint = None
-         _oCollar = None
+         _oCollar       = None
+         _oBlindfold    = None
+
+         _iEscapeAttempts = 0
+         _aoItemStolen = None
          _bPlayerUngagged = False
-         If ((2 != _iMcmGagMode) || !_qFramework.IsPlayerGagged())
-            _bPunishmentsRemaning = False
-            _iGagRemaining = 0
-         EndIf
+         _iGagRemaining = 0
          _iBlindfoldRemaining = 0
          _bReleaseBlindfold = False
+
+         ; Identify any BDSM items the NPC will want to use during the leash game.
+         SearchInventory(_aLeashHolder)
+         _bFindItems = True
       EndIf
+
       _bReequipWeapons = False
       _aAliasLastLeashHolder.Clear()
       _aAliasLeashHolder.ForceRefTo(_aLeashHolder)
