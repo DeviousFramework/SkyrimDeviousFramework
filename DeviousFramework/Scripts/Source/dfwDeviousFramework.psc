@@ -314,6 +314,9 @@ Bool _bFlagItemUnequpped    = True
 Bool _bFlagClothesEqupped   = True
 Bool _bFlagClothesUnequpped = True
 
+; A flag to indicate we should check if a move to location has been completed.
+Int _iFlagCheckMoveTo
+
 ;*** Keywords ***
 ; A local variable to store the SexLab Aroused "Is Naked" keyword for faster access.
 ; Note: This keyword doesn't appear to be used.
@@ -538,9 +541,9 @@ EndEvent
 Function UpdateScript()
    ; Reset the version number.
    ; To make sure the Utility script is loaded.
-   If (1.01 < _fCurrVer)
-      _fCurrVer = 1.01
-   EndIf
+   ;If (1.01 < _fCurrVer)
+   ;   _fCurrVer = 1.01
+   ;EndIf
 
    ; If the script is at the current version we are done.
    Float fScriptVer = 1.02
@@ -1107,6 +1110,15 @@ Function PerformOnUpdate()
       EndIf
    EndIf
 
+   ; If we recently changed to the target location, check if the "move to" package is complete.
+   If (0 < _iFlagCheckMoveTo)
+      Actor aMovingNpc = (_aAliasMoveToLocation.GetReference() As Actor)
+      If (_oCurrLocation == aMovingNpc.GetCurrentLocation())
+         MoveToLocationComplete()
+      EndIf
+      _iFlagCheckMoveTo -= 1
+   EndIf
+
    If (!_bFlagSet)
       ; If there are no flags set clean up the nearby actor list.
       CleanupNearbyList()
@@ -1572,6 +1584,14 @@ Function OnLocationChange(Location oOldLocation, Location oNewLocation)
    EndIf
    Log("Location Change: " + szOldLocation + " => " + oNewLocation.GetName() + " (" + \
        szRegion + ")", DL_INFO, DC_LOCATION)
+
+   ; If we have reached the location the NPC is moving to check if the NPC has arrived as well.
+   If (oNewLocation)
+      Location oTargetLocation = _aAliasLocationTarget.GetLocation()
+      If (oTargetLocation == oNewLocation)
+         _iFlagCheckMoveTo = 5
+      EndIf
+   EndIf
 EndFunction
 
 ; This is called from the _dfwNearbyDetectorEffect magic effect when it starts.
@@ -1862,6 +1882,7 @@ Function PlayerApproachComplete()
 EndFunction
 
 Function MoveToLocationComplete()
+   _iFlagCheckMoveTo = 0
    Actor aMovingNpc = (_aAliasMoveToLocation.GetReference() As Actor)
    Location oTargetLocation = _aAliasLocationTarget.GetLocation()
    _aAliasMoveToLocation.Clear()
@@ -2646,7 +2667,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "2.02"
+   Return "2.03"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -4237,6 +4258,14 @@ Int Function MoveToLocation(Actor aActor, Location oTarget, String sModId, Bool 
    _szMoveToLocationModId = sModId
    _aAliasLocationTarget.ForceLocationTo(oTarget)
    _aAliasMoveToLocation.ForceRefTo(aActor)
+
+   ; If the NPC is already in the right location set a flag to verify that in our next update.
+   ; We don't want to do it here in case the calling mod receives the event before we return
+   ; from this function.
+   If (oTarget == aActor.GetCurrentLocation())
+      _iFlagCheckMoveTo = 3
+   EndIf
+
    Return iReturnCode
 EndFunction
 

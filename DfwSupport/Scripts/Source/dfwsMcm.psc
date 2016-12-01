@@ -56,6 +56,7 @@ Bool _bSecureSdPlusLeash
 ; *** Toggle Options ***
 Bool _bIncludeOwners
 Bool _bWalkToSsAuction
+Bool _bWalkFarSsAuction
 Bool _bSexDispositions
 Bool _bCatchZazEvents
 Bool _bCatchSdPlus
@@ -66,6 +67,7 @@ Bool _bAutoAddFurniture
 Bool _bHotkeyPackage
 Bool Property bIncludeOwners    Auto
 Bool Property bWalkToSsAuction  Auto
+Bool Property bWalkFarSsAuction Auto
 Bool Property bSexDispositions  Auto
 Bool Property bCatchZazEvents   Auto
 Bool Property bCatchSdPlus      Auto
@@ -281,6 +283,11 @@ Function UpdateScript()
       iLeashChanceSimple       = _iLeashChanceSimple
       bWalkToSsAuction         = _bWalkToSsAuction
    EndIf
+
+   If (10 > CurrentVersion)
+      _bWalkFarSsAuction = True
+      bWalkFarSsAuction  = _bWalkFarSsAuction
+   EndIf
 EndFunction
 
 Event OnConfigInit()
@@ -311,7 +318,7 @@ Int Function GetVersion()
    _qDfwUtil    = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
    _qDfwMcm     = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
-   Return 9
+   Return 10
 EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
@@ -485,8 +492,9 @@ Function DisplayLeashGamePage(Bool bSecure)
    AddSliderOptionST("ST_LGM_RELEASE_DOM",    "Dominance Affects Release",    iDominanceAffectsRelease, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_RELEASE_ANGER",  "Maximum Anger for Release",    iMaxAngerForRelease, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_CHANCE_XFER",    "Chance of Furniture Transfer", iChanceFurnitureTransfer, a_flags=iFlags)
-   AddSliderOptionST("ST_LGM_CHANCE_SIMPLE",  "Chance of Simple Slavery",     iChanceFurnitureTransfer, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_CHANCE_SIMPLE",  "Chance of Simple Slavery",     iLeashChanceSimple, a_flags=iFlags)
    AddToggleOptionST("ST_LGM_WALK_TO_SS",     "Walk to SS Auction",           bWalkToSsAuction)
+   AddToggleOptionST("ST_LGM_WALK_FAR_SS",    "Allow Travel",                 bWalkFarSsAuction)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -1258,6 +1266,23 @@ State ST_LGM_WALK_TO_SS
       SetInfoText("When transferring the player to a Simple Slavery auction the slavery will walk to the auction before\n" +\
                   "starting the Simple Slavery mod.  If disabled the normal blank screen transition will occur.\n" +\
                   "This will only occur if the player is in the same DFW region as a Simple Slavery auction house.")
+   EndEvent
+EndState
+
+State ST_LGM_WALK_FAR_SS
+   Event OnSelectST()
+      bWalkFarSsAuction = !bWalkFarSsAuction
+      SetToggleOptionValueST(bWalkFarSsAuction)
+   EndEvent
+
+   Event OnDefaultST()
+      bWalkFarSsAuction = _bWalkFarSsAuction
+      SetToggleOptionValueST(bWalkFarSsAuction)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When walking to Simple Slavery auctions the slaver will walk from nearby towns as well.\n" +\
+                  "The slaver will walk to Riften from towns as far away as Riverwood and Windhelm.")
    EndEvent
 EndState
 
