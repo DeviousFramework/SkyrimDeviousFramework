@@ -1,14 +1,14 @@
 ;BEGIN FRAGMENT CODE - Do not edit anything between this and the end comment
-;NEXT FRAGMENT INDEX 2
+;NEXT FRAGMENT INDEX 4
 Scriptname dfwsTfLpwa10 Extends TopicInfo Hidden
 
-;BEGIN FRAGMENT Fragment_1
-Function Fragment_1(ObjectReference akSpeakerRef)
+;BEGIN FRAGMENT Fragment_3
+Function Fragment_3(ObjectReference akSpeakerRef)
 Actor akSpeaker = akSpeakerRef as Actor
 ;BEGIN CODE
 dfwsDfwSupport _qQuest = Self.GetOwningQuest() As dfwsDfwSupport
 _qQuest.IncDominance(akSpeaker, 1)
-_qQuest.Cooperation(1, 3)
+_qQuest.Cooperation(1, 3, akSpeaker)
 ;END CODE
 EndFunction
 ;END FRAGMENT

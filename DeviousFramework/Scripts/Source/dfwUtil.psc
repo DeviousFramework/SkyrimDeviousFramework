@@ -421,17 +421,17 @@ Form[] Function RemoveFormFromArray(Form[] aoArray, Form oItem, Int iPos=-1)
    Return aoNewArray
 EndFunction
 
-Function TeleportToward(ObjectReference oTarget, Int iPercent, Bool bRotate=True)
+Function TeleportToward(Actor aSource, ObjectReference oTarget, Int iPercent, Bool bRotate=True)
    ; The offset is measured distance from the actor.  The percent is distance from the player.
    iPercent = (100 - iPercent)
 
    ; Calculate the offset.
-   Float fDeltaX = ((_aPlayer.X - oTarget.X) * iPercent / 100)
-   Float fDeltaY = ((_aPlayer.Y - oTarget.Y) * iPercent / 100)
-   Float fDeltaZ = ((_aPlayer.Z - oTarget.Z) * iPercent / 100)
+   Float fDeltaX = ((aSource.X - oTarget.X) * iPercent / 100)
+   Float fDeltaY = ((aSource.Y - oTarget.Y) * iPercent / 100)
+   Float fDeltaZ = ((aSource.Z - oTarget.Z) * iPercent / 100)
 
    ; Move the player closer to the target.  Add 50 to Z for uneven ground.
-   _aPlayer.MoveTo(oTarget, fDeltaX, fDeltaY, fDeltaZ + 50, bRotate)
+   aSource.MoveTo(oTarget, fDeltaX, fDeltaY, fDeltaZ + 50, bRotate)
 EndFunction
 
 Bool Function IsChestSlot(Int iSlotMask)

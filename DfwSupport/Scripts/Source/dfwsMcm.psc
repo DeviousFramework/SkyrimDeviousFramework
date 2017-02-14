@@ -63,6 +63,7 @@ Bool _bCatchSdPlus
 Bool _bLeashSdPlus
 Bool _bBlockHelpless
 Bool _bAllowSex
+Bool _bFurnitureHide
 Bool _bAutoAddFurniture
 Bool _bHotkeyPackage
 Bool Property bIncludeOwners    Auto
@@ -74,6 +75,7 @@ Bool Property bCatchSdPlus      Auto
 Bool Property bLeashSdPlus      Auto
 Bool Property bBlockHelpless    Auto
 Bool Property bAllowSex         Auto
+Bool Property bFurnitureHide    Auto
 Bool Property bAutoAddFurniture Auto
 Bool Property bHotkeyPackage    Auto
 
@@ -93,6 +95,7 @@ Int _iLeashProtectedDelay
 Int _iIncreaseWhenVulnerable
 Int _iMaxDistance
 Int _iLeashLength
+Int _iLeashResist
 Int _iSecurityLevel
 Int _iBlockTravel
 Int _iGagMode
@@ -114,6 +117,7 @@ Int Property iLeashProtectedDelay     Auto
 Int Property iIncreaseWhenVulnerable  Auto
 Int Property iMaxDistance             Auto
 Int Property iLeashLength             Auto
+Int Property iLeashResist             Auto
 Int Property iBlockTravel             Auto
 Int Property iGagMode                 Auto
 Int Property iFurnitureTeaseChance    Auto
@@ -288,19 +292,23 @@ Function UpdateScript()
       _bWalkFarSsAuction = True
       bWalkFarSsAuction  = _bWalkFarSsAuction
    EndIf
+
+   If (11 > CurrentVersion)
+      _bFurnitureHide = True
+      bFurnitureHide  = _bFurnitureHide
+   EndIf
+
+   If (12 > CurrentVersion)
+      _iLeashResist = 3
+      iLeashResist  = _iLeashResist
+
+      ; Give the main script some time to initialize before reporting the script has new values.
+      Utility.Wait(5)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndIf
 EndFunction
-
-Event OnConfigInit()
-   Debug.Trace("[DFWS-MCM] Script Initialized.")
-
-   UpdateScript()
-
-   ; Make sure the DFW Support polling interval is running.
-   ; The first polling interval should configure the script.
-   ; Do this here so the main script can rely on our data having been initialized first.
-   Debug.Trace("[DFWS-MCM] Starting Support Mod: " + fPollTime)
-   _qDfwSupport.UpdatePollingInterval(fPollTime)
-EndEvent
 
 ; Version of the MCM script.
 ; Unrelated to the Devious Framework Version.
@@ -318,8 +326,20 @@ Int Function GetVersion()
    _qDfwUtil    = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
    _qDfwMcm     = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
-   Return 10
+   Return 12
 EndFunction
+
+Event OnConfigInit()
+   Debug.Trace("[DFWS-MCM] Script Initialized.")
+
+   UpdateScript()
+
+   ; Make sure the DFW Support polling interval is running.
+   ; The first polling interval should configure the script.
+   ; Do this here so the main script can rely on our data having been initialized first.
+   Debug.Trace("[DFWS-MCM] Starting Support Mod: " + fPollTime)
+   _qDfwSupport.UpdatePollingInterval(fPollTime)
+EndEvent
 
 Event OnVersionUpdate(Int iNewVersion)
    UpdateScript()
@@ -521,6 +541,7 @@ Function DisplayLeashGamePage(Bool bSecure)
    AddEmptyOption()
    AddHeaderOption("Options")
    AddSliderOptionST("ST_LGM_LEASH_LENGTH",   "Leash Length",                 iLeashLength, a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_LEASH_RESIST",   "Chance to Resist",             iLeashResist, a_flags=iFlags)
    AddToggleOptionST("ST_LGM_BLOCK_HELPLESS", "Block Deviously Helpless",     bBlockHelpless, a_flags=iFlags)
    AddToggleOptionST("ST_LGM_ALLOW_SEX",      "Allow Sex",                    bAllowSex, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_CHANCE_IDLE",    "Chance of Idle Restraints",    iChanceIdleRestraints, a_flags=iFlags)
@@ -534,14 +555,15 @@ Function DisplayBdsmFurniturePage(Bool bSecure)
    EndIf
 
    AddHeaderOption("Chances")
-   AddSliderOptionST("ST_BDSMF_LOCK",     "Chance of Locking", fFurnitureLockChance, "{1}", a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_LOCK",     "Chance of Locking", fFurnitureLockChance,    "{1}", a_flags=iFlags)
    AddSliderOptionST("ST_BDSMF_RELEASE",  "Chance of Release", fFurnitureReleaseChance, "{1}", a_flags=iFlags)
-   AddSliderOptionST("ST_BDSMF_TEASE",    "Teasing Chance",    iFurnitureTeaseChance, a_flags=iFlags)
-   AddSliderOptionST("ST_BDSMF_ALT",      "Alternate Release", iFurnitureAltRelease, a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_TEASE",    "Teasing Chance",    iFurnitureTeaseChance,   a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_ALT",      "Alternate Release", iFurnitureAltRelease,    a_flags=iFlags)
 
    AddEmptyOption()
    AddHeaderOption("Options")
-   AddSliderOptionST("ST_BDSMF_MIN_TIME", "Initial Lock Time", iFurnitureMinLockTime, a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_MIN_TIME", "Initial Lock Time",         iFurnitureMinLockTime, a_flags=iFlags)
+   AddToggleOptionST("ST_BDSMF_HIDE",     "Hide Furniture During Sex", bFurnitureHide)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -551,7 +573,7 @@ Function DisplayBdsmFurniturePage(Bool bSecure)
       AddTextOptionST("ST_BDSMF_FAV",     "Add Favourite:",     oCurrFurniture.GetDisplayName())
    EndIf
    AddToggleOptionST("ST_BDSMF_AUTO_FAV", "Auto Add Favourite", bAutoAddFurniture, a_flags=iFlags)
-   AddMenuOptionST("ST_BDSMF_AUTO_SHOW",  "Remove/View Favourite Furniture", "Open")
+   AddMenuOptionST("ST_BDSMF_SHOW_LIST",  "Remove/View Favourite Furniture", "Open")
 EndFunction
 
 Function DisplayDebugPage(Bool bSecure)
@@ -1014,6 +1036,37 @@ State ST_LGM_LEASH_LENGTH
    EndEvent
 EndState
 
+State ST_LGM_LEASH_RESIST
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLeashResist)
+      SetSliderDialogDefaultValue(_iLeashResist)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLeashResist = (fValue As Int)
+      SetSliderOptionValueST(iLeashResist)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnDefaultST()
+      iLeashResist = _iLeashResist
+      SetSliderOptionValueST(iLeashResist)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The % chance of resisting the leash when it is yanked.\n" +\
+                  "Note: This only applies to the leash game.")
+   EndEvent
+EndState
+
+
 State ST_LGM_BLOCK_HELPLESS
    Event OnSelectST()
       bBlockHelpless = !bBlockHelpless
@@ -1460,6 +1513,22 @@ State ST_BDSMF_MIN_TIME
    EndEvent
 EndState
 
+State ST_BDSMF_HIDE
+   Event OnSelectST()
+      bFurnitureHide = !bFurnitureHide
+      SetToggleOptionValueST(bFurnitureHide)
+   EndEvent
+
+   Event OnDefaultST()
+      bFurnitureHide = _bFurnitureHide
+      SetToggleOptionValueST(bFurnitureHide)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Hide BDSM furniture the player is sitting in during sex scenes.")
+   EndEvent
+EndState
+
 State ST_BDSMF_FAV
    Event OnSelectST()
       _qDfwSupport.FavouriteCurrentFurniture()
@@ -1496,7 +1565,7 @@ State ST_BDSMF_AUTO_FAV
    EndEvent
 EndState
 
-State ST_BDSMF_AUTO_SHOW
+State ST_BDSMF_SHOW_LIST
    Event OnMenuOpenST()
       Form[] aoFavourites = _qDfwSupport.GetFavouriteFurniture()
       Form[] aoCells      = _qDfwSupport.GetFavouriteCell()
@@ -1511,13 +1580,21 @@ State ST_BDSMF_AUTO_SHOW
       While (0 <= iIndex)
          ObjectReference oFurniture = (aoFavourites[iIndex] As ObjectReference)
          Cell oCell = (aoCells[iIndex] As Cell)
+         String szCell = "No Cell"
+         If (oCell)
+            szCell = oCell.GetName()
+         EndIf
          Location oLocation = (aoLocations[iIndex] As Location)
+         String szLocation = "No Location"
+         If (oLocation)
+            szLocation = oLocation.GetName()
+         EndIf
          Location oRegion = (aoRegions[iIndex] As Location)
          String szRegion = "Wilderness"
          If (oRegion)
             szRegion = oRegion.GetName()
          EndIf
-         aszOptions[iIndex + 1] = oFurniture.GetDisplayName() + ": " + oCell.GetName() + "(" + oLocation.GetName() + "-" + szRegion + ")"
+         aszOptions[iIndex + 1] = oFurniture.GetDisplayName() + ": " + szCell + "(" + szLocation + "-" + szRegion + ")"
          iIndex -= 1
       EndWhile
 
