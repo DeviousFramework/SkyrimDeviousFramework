@@ -84,6 +84,7 @@ Bool _bDefBlockShoes
 Bool _bDefBlockArmour
 Bool _bDefBlockArms
 Bool _bDefBlockLeash
+Bool _bDefSaveGameConfirm
 Bool _bDefSetDeviousFix
 Bool _bDefModLeashVisible
 Bool _bDefLeashInterrupt
@@ -95,6 +96,7 @@ Bool Property bBlockShoes  Auto
 Bool Property bBlockArmour Auto
 Bool Property bBlockArms   Auto
 Bool Property bBlockLeash  Auto
+Bool Property bSaveGameConfirm       Auto
 Bool Property bSettingsDetectUnequip Auto
 Bool Property bModLeashVisible       Auto
 Bool Property bModLeashInterrupt     Auto
@@ -102,7 +104,9 @@ Bool Property bModBlockOnGameLoad    Auto
 
 ; *** Float Slider Options ***
 Float _fDefSetPollTime
+Float _fDefSaveMinTime
 Float Property fSettingsPollTime Auto
+Float Property fModSaveMinTime   Auto
 
 ; *** Integer Slider Options ***
 Int _iDefSetPollNearby
@@ -120,6 +124,7 @@ Int _iDefWillingMerchants
 Int _iDefWillingBdsm
 Int _iDefRapeRedressTimeout
 Int _iDefNakedRedressTimeout
+Int _iDefLeashCombatChance
 Int _iDefLeashDamage
 Int _iDefLeashMinLength
 Int _iDefSlaThreshold
@@ -128,6 +133,7 @@ Int _iDefSlaAdjustedMax
 Int _iDefDialogueTargetStyle
 Int _iDefDialogueTargetRetries
 Int _iDefCallTimeout
+Int _iDefSaveGameStyle
 Int _iDefLogLevel
 Int _iDefLogLevelScreenGeneral
 Int _iDefLogLevelScreenDebug
@@ -140,6 +146,7 @@ Int _iDefLogLevelScreenArousal
 Int _iDefLogLevelScreenInteraction
 Int _iDefLogLevelScreenLocation
 Int _iDefLogLevelScreenRedress
+Int _iDefLogLevelScreenSave
 Int _iDefVulNakedReduce
 Int Property iSettingsSecurity          Auto
 Int Property iSettingsPollNearby        Auto
@@ -157,6 +164,7 @@ Int Property iDispWillingMerchants      Auto
 Int Property iDispWillingBdsm           Auto
 Int Property iModRapeRedressTimeout     Auto
 Int Property iModNakedRedressTimeout    Auto
+Int Property iModLeashCombatChance      Auto
 Int Property iModLeashDamage            Auto
 Int Property iModLeashMinLength         Auto
 Int Property iModSlaThreshold           Auto
@@ -167,6 +175,8 @@ Int Property iModDialogueTargetRetries  Auto
 Int Property iModHelpKey                Auto
 Int Property iModAttentionKey           Auto
 Int Property iModCallTimeout            Auto
+Int Property iModSaveGameStyle          Auto
+Int Property iModSaveKey                Auto
 Int Property iLogLevel                  Auto
 Int Property iLogLevelScreenGeneral     Auto
 Int Property iLogLevelScreenDebug       Auto
@@ -179,6 +189,7 @@ Int Property iLogLevelScreenArousal     Auto
 Int Property iLogLevelScreenInteraction Auto
 Int Property iLogLevelScreenLocation    Auto
 Int Property iLogLevelScreenRedress     Auto
+Int Property iLogLevelScreenSave        Auto
 Int Property iVulnerabilityNakedReduce  Auto
 
 ; *** Enumeration Options ***
@@ -454,6 +465,45 @@ Function UpdateScript()
       iLogLevelScreenInteraction = _iDefLogLevelScreenInteraction
       iLogLevelScreenLocation    = _iDefLogLevelScreenLocation
    EndIf
+
+   If (13 > CurrentVersion)
+      _iDefLeashCombatChance = 20
+      iModLeashCombatChance  = _iDefLeashCombatChance
+   EndIf
+
+   If (14 > CurrentVersion)
+      _iDefSaveGameStyle   = 0
+      _bDefSaveGameConfirm = False
+
+      iModSaveGameStyle = _iDefSaveGameStyle
+      bSaveGameConfirm  = _bDefSaveGameConfirm
+   EndIf
+
+   If (15 > CurrentVersion)
+      _iDefLogLevelScreenSave = 3
+      _fDefSaveMinTime        = 5.0
+
+      iModSaveKey         = 0x00
+      iLogLevelScreenSave = _iDefLogLevelScreenSave
+      fModSaveMinTime     = _fDefSaveMinTime
+   EndIf
+EndFunction
+
+; Version of the MCM script.
+; Unrelated to the Devious Framework Version.
+Int Function GetVersion()
+   ; Reset the version number.
+   ;If (14 < CurrentVersion)
+   ;   CurrentVersion = 14
+   ;EndIf
+
+   ; Update all quest variables upon loading each game.
+   ; There are too many things that can cause them to become invalid.
+   _qFramework = ((Self As Quest) As dfwDeviousFramework)
+   _qDfwUtil = ((Self As Quest) As dfwUtil)
+   _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
+
+   Return 15
 EndFunction
 
 Event OnConfigInit()
@@ -467,23 +517,6 @@ Event OnConfigInit()
    Debug.Trace("[DFW-MCM] Starting Framework: " + fSettingsPollTime)
    _qFramework.UpdatePollingInterval(fSettingsPollTime)
 EndEvent
-
-; Version of the MCM script.
-; Unrelated to the Devious Framework Version.
-Int Function GetVersion()
-   ; Reset the version number.
-   ;If (11 < CurrentVersion)
-   ;   CurrentVersion = 11
-   ;EndIf
-
-   ; Update all quest variables upon loading each game.
-   ; There are too many things that can cause them to become invalid.
-   _qFramework = ((Self As Quest) As dfwDeviousFramework)
-   _qDfwUtil = ((Self As Quest) As dfwUtil)
-   _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
-
-   Return 12
-EndFunction
 
 Event OnVersionUpdate(Int iNewVersion)
    UpdateScript()
@@ -517,6 +550,16 @@ String Function DialogueStyleToString(Int iStyle)
    EndIf
 EndFunction
 
+String Function SaveGameStyleToString(Int iStyle)
+   If (0 == iStyle)
+      Return "Off"
+   ElseIf (1 == iStyle)
+      Return "Overwrite"
+   ElseIf (2 == iStyle)
+      Return "Full Control"
+   EndIf
+EndFunction
+
 String Function GetFactionName(Faction oFaction)
    String szFactionName = oFaction.GetName()
    If (!szFactionName)
@@ -525,6 +568,8 @@ String Function GetFactionName(Faction oFaction)
          szFactionName = "Player Faction"
       ElseIf (0x0001BCC0 == iFormId)
          szFactionName = "Bandit Faction"
+      ElseIf (0x00034B74 == iFormId)
+         szFactionName = "Necromancer Faction"
       ElseIf (0x0009C754 == iFormId)
          szFactionName = "Windhelm Blacksmith"
       ElseIf (0x0009DA3C == iFormId)
@@ -826,6 +871,7 @@ Function DisplayModFeaturesPage(Bool bSecure)
    AddTextOptionST("ST_MOD_LEASH_STYLE",        "Leash Style", LeashStyleToString(iModLeashStyle))
    AddToggleOptionST("ST_MOD_LEASH_VISIBLE",    "Leash Visible", bModLeashVisible)
    AddToggleOptionST("ST_MOD_LEASH_INTERRUPT",  "Leash Interrupt", bModLeashInterrupt)
+   AddSliderOptionST("ST_MOD_LEASH_COMBAT",     "Combat Chance", iModLeashCombatChance,  a_flags=iFlags)
    AddSliderOptionST("ST_MOD_LEASH_DAMAGE",     "Damage When Jerked", iModLeashDamage,  a_flags=iFlags)
    AddSliderOptionST("ST_MOD_LEASH_LENGTH",     "Minimum Leash Length", iModLeashMinLength,  a_flags=iFlags)
 
@@ -838,8 +884,8 @@ Function DisplayModFeaturesPage(Bool bSecure)
    AddEmptyOption()
    AddHeaderOption("Miscellaneous")
    AddToggleOptionST("ST_MOD_LOAD_BLOCK",        "Block Controls on Game Load", bModBlockOnGameLoad, a_flags=iFlags)
-   AddTextOptionST("ST_MOD_ENABLE_DIALOGUE",     "Greeting Dialogue Style", DialogueStyleToString(iModDialogueTargetStyle))
-   AddSliderOptionST("ST_MOD_DIALOGUE_RETRIES",  "Dialogue Target Retries", iModDialogueTargetRetries)
+   AddTextOptionST("ST_MOD_ENABLE_DIALOGUE",     "Greeting Dialogue Style",     DialogueStyleToString(iModDialogueTargetStyle))
+   AddSliderOptionST("ST_MOD_DIALOGUE_RETRIES",  "Dialogue Target Retries",     iModDialogueTargetRetries)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -863,8 +909,23 @@ Function DisplayModFeaturesPage(Bool bSecure)
 
    AddEmptyOption()
    AddHeaderOption("Blocking Exceptions")
-   AddMenuOptionST("ST_MOD_ADD_EXC_HOBBLE", "Add Exception to Hobble Block", "Select", a_flags=iFlags)
-   AddMenuOptionST("ST_MOD_REM_EXC_HOBBLE", "Remove/View Hobble Exceptions", "Open")
+   AddMenuOptionST("ST_MOD_ADD_EXC_HOBBLE",  "Add Exception to Hobble Block", "Select", a_flags=iFlags)
+   AddMenuOptionST("ST_MOD_REM_EXC_HOBBLE",  "Remove/View Hobble Exceptions", "Open")
+
+   AddEmptyOption()
+   AddHeaderOption("Save Game Control")
+   AddTextOptionST("ST_MOD_SAVE_TYPE",       "Save Game Control (Caution)", SaveGameStyleToString(iModSaveGameStyle), a_flags=iFlags)
+   Int iTempFlags = iFlags
+   If (0 == iModSaveGameStyle)
+      iTempFlags = OPTION_FLAG_DISABLED
+   EndIf
+   AddToggleOptionST("ST_MOD_SAVE_CONFIRM",  "...Are you Sure?",  bSaveGameConfirm, a_flags=iTempFlags)
+   iTempFlags = iFlags
+   If (!bSaveGameConfirm || (2 != iModSaveGameStyle))
+      iTempFlags = OPTION_FLAG_DISABLED
+   EndIf
+   AddKeyMapOptionST("ST_MOD_SAVE_KEY",      "Quick Save Key",    iModSaveKey, a_flags=iTempFlags)
+   AddSliderOptionST("ST_MOD_SAVE_MIN_TIME", "Minimum Save Time", fModSaveMinTime, "{0}min", a_flags=iTempFlags)
 EndFunction
 
 Function DisplayStatusPage(Bool bSecure)
@@ -884,14 +945,22 @@ Function DisplayStatusPage(Bool bSecure)
       szCellName += " (I)"
    EndIf
    AddLabel("Current Cell: " + szCellName)
-   Location oCurrLocation = (_qFramework.GetCurrentLocation() As Location)
+   Location oCurrLocation = _qFramework.GetCurrentLocation()
    AddLabel("Current Location: " + oCurrLocation.GetName())
-   Location oCurrRegion = (_qFramework.GetCurrentRegion() As Location)
+   Location oCurrRegion = _qFramework.GetCurrentRegion()
    String szRegion = "Wilderness"
    If (oCurrRegion)
       szRegion = oCurrRegion.GetName()
    EndIf
    AddLabel("Current Region: " + szRegion)
+   If (!oCurrRegion)
+      String szNearest = "Unknown"
+      Location oNearestRegion = _qFramework.GetNearestRegion()
+      If (oNearestRegion)
+         szNearest = oNearestRegion.GetName()
+      EndIf
+      AddLabel("Nearest Region: " + szNearest)
+   EndIf
 
    AddToggleOptionST("ST_INFO_FOR_PLAYER",  "Use Player for Info",       _bInfoForPlayer)
    AddToggleOptionST("ST_INFO_FACTIONS",    "Show Player Factions",      False)
@@ -1027,6 +1096,7 @@ Function DisplayDebugPage(Bool bSecure)
    AddSliderOptionST("ST_DBG_INTERACTION", "Screen - NPC Interaction",    iLogLevelScreenInteraction)
    AddSliderOptionST("ST_DBG_LOCATION",    "Screen - Location Changes",   iLogLevelScreenLocation)
    AddSliderOptionST("ST_DBG_REDRESS",     "Screen - Redress Timeouts",   iLogLevelScreenRedress)
+   AddSliderOptionST("ST_DBG_SAVE",        "Screen - DFW Save Games",     iLogLevelScreenSave)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -1784,6 +1854,30 @@ State ST_MOD_LEASH_INTERRUPT
    EndEvent
 EndState
 
+State ST_MOD_LEASH_COMBAT
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModLeashCombatChance)
+      SetSliderDialogDefaultValue(_iDefLeashCombatChance)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModLeashCombatChance = (fValue As Int)
+      SetSliderOptionValueST(iModLeashCombatChance)
+   EndEvent
+
+   Event OnDefaultST()
+      iModLeashCombatChance = _iDefLeashCombatChance
+      SetSliderOptionValueST(iModLeashCombatChance)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("If the player is in combat with the leash holder this is the chance the leash holder\n" +\
+                  "will use the leash to throw the player off balance.")
+   EndEvent
+EndState
+
 State ST_MOD_LEASH_DAMAGE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModLeashDamage)
@@ -1911,6 +2005,24 @@ State ST_MOD_SLA_MAX
    EndEvent
 EndState
 
+State ST_MOD_LOAD_BLOCK
+   Event OnSelectST()
+      bModBlockOnGameLoad = !bModBlockOnGameLoad
+      SetToggleOptionValueST(bModBlockOnGameLoad)
+   EndEvent
+
+   Event OnDefaultST()
+      bModBlockOnGameLoad = _bDefBlockOnGameLoad
+      SetToggleOptionValueST(bModBlockOnGameLoad)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Toggles whether control features should be re-blocked on loading a game.\n" +\
+                  "This applies to health/magika/stamina/fast travel/fighting/camera/sneaking/menus/activations/journal.\n" +\
+                  "Controls will only be blocked if a feature blocked them before the save.  Disable if you are having problems.")
+   EndEvent
+EndState
+
 State ST_MOD_ENABLE_DIALOGUE
    Event OnSelectST()
       iModDialogueTargetStyle += 1
@@ -1966,24 +2078,6 @@ State ST_MOD_DIALOGUE_RETRIES
       SetInfoText("Dialogue targets are less effective if the NPC is not in the nearby actor list.\n" +\
                   "When speaking to an NPC not yet in list you may see the Greetings dialogue a couple of times retrying.\n" +\
                   "0: A single attempt only.  No retries.  Recommended: 2.")
-   EndEvent
-EndState
-
-State ST_MOD_LOAD_BLOCK
-   Event OnSelectST()
-      bModBlockOnGameLoad = !bModBlockOnGameLoad
-      SetToggleOptionValueST(bModBlockOnGameLoad)
-   EndEvent
-
-   Event OnDefaultST()
-      bModBlockOnGameLoad = _bDefBlockOnGameLoad
-      SetToggleOptionValueST(bModBlockOnGameLoad)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Toggles whether control features should be re-blocked on loading a game.\n" +\
-                  "This applies to health/magika/stamina/fast travel/fighting/camera/sneaking/menus/activations/journal.\n" +\
-                  "Controls will only be blocked if a feature blocked them before the save.  Disable if you are having problems.")
    EndEvent
 EndState
 
@@ -2257,6 +2351,135 @@ State ST_MOD_REM_EXC_HOBBLE
    EndEvent
 EndState
 
+State ST_MOD_SAVE_TYPE
+   Event OnSelectST()
+      iModSaveGameStyle += 1
+      If (2 < iModSaveGameStyle)
+         iModSaveGameStyle = 0
+      EndIf
+      SetTextOptionValueST(SaveGameStyleToString(iModSaveGameStyle))
+
+      ; Reset the confirmation check box whenever the save game stlye changes.
+      bSaveGameConfirm = False
+      SetToggleOptionValueST(False, a_stateName="ST_MOD_SAVE_CONFIRM")
+      If (iModSaveGameStyle)
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_MOD_SAVE_CONFIRM")
+      Else
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_CONFIRM")
+      EndIf
+
+      ; Only enable the save game key for the full control style.
+      If (2 == iModSaveGameStyle)
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_MOD_SAVE_KEY")
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_MOD_SAVE_MIN_TIME")
+      Else
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_KEY")
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_MIN_TIME")
+      EndIf
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("SaveControl")
+   EndEvent
+
+   Event OnDefaultST()
+      iModSaveGameStyle = _iDefSaveGameStyle
+      SetTextOptionValueST(SaveGameStyleToString(iModSaveGameStyle))
+
+      ; Reset the confirmation check box whenever the save game stlye changes.
+      bSaveGameConfirm = False
+      SetToggleOptionValueST(False, a_stateName="ST_MOD_SAVE_CONFIRM")
+      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_CONFIRM")
+
+      ; Only enable the save game key for the full control style.
+      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_KEY")
+      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_MIN_TIME")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("SaveControl")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Warning: This setting can overwrite your saved games!  Don't use unless you are sure it is what you want.\n" +\
+                  "This feature makes it difficult to load games after you have been enslaved, forcing you to accept the enslavement.\n" +\
+                  "Overwrite: Quick/Auto Saves are overwritten when enslaved.")
+   EndEvent
+EndState
+
+State ST_MOD_SAVE_CONFIRM
+   Event OnSelectST()
+      bSaveGameConfirm = !bSaveGameConfirm
+      SetToggleOptionValueST(bSaveGameConfirm)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("SaveControl")
+   EndEvent
+
+   Event OnDefaultST()
+      bSaveGameConfirm = _bDefSaveGameConfirm
+      SetToggleOptionValueST(bSaveGameConfirm)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("SaveControl")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The Save Game Control feature has the potential to be buggy and dangerous.\n" +\
+                  "You must confirm you want to use the feature before it will be enabled.")
+   EndEvent
+EndState
+
+State ST_MOD_SAVE_KEY
+   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
+      ; Handle key registration here.  Events should be sent to all scripts in the same quest.
+      If (iModSaveKey && (iModSaveKey != iModHelpKey) && (iModSaveKey != iModAttentionKey))
+         UnregisterForKey(iModSaveKey)
+      EndIf
+
+      iModSaveKey = iKeyCode
+      Debug.Notification("[DFW-MCM] Registering for Key: " + Input.GetMappedControl(iModSaveKey)  + "(" + iModSaveKey + ")")
+      RegisterForKey(iModSaveKey)
+      SetKeyMapOptionValueST(iModSaveKey)
+   EndEvent
+
+   Event OnDefaultST()
+      If (iModSaveKey && (iModSaveKey != iModHelpKey) && (iModSaveKey != iModAttentionKey))
+         UnregisterForKey(iModSaveKey)
+      EndIf
+      iModSaveKey = 0x00
+      SetKeyMapOptionValueST(iModSaveKey)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When using \"Full Control\" as the save game control method only games saved with this hotkey\n" +\
+                  "or the DFW Auto Save can be loaded.")
+   EndEvent
+EndState
+
+State ST_MOD_SAVE_MIN_TIME
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(fModSaveMinTime)
+      SetSliderDialogDefaultValue(_fDefSaveMinTime)
+      SetSliderDialogRange(0, 30)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      fModSaveMinTime = (fValue As Int)
+      SetSliderOptionValueST(fModSaveMinTime, "{0}min")
+   EndEvent
+
+   Event OnDefaultST()
+      fModSaveMinTime = _fDefSaveMinTime
+      SetSliderOptionValueST(fModSaveMinTime, "{0}min")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When \"Full Control\" is ensabled this is the minimum time (in Real Time Minutes)\n" +\
+                  "that needs to pass after any quick or auto save before the next one can be made.\n" +\
+                  "Intended to reduce too many auto saves but can be used to make saving more difficult.")
+   EndEvent
+EndState
+
 
 ;***********************************************************************************************
 ;***                                    STATES: STATUS                                       ***
@@ -2372,7 +2595,6 @@ State ST_INFO_REACTIONS
    Event OnSelectST()
       SetToggleOptionValueST(True)
       String[] aszInfo
-
 
       ; Get factions for the player and for the nearest actor.
       Faction[] aoPlayerFactions = _aPlayer.GetFactions(-128, 127)
@@ -2861,7 +3083,7 @@ State ST_DBG_LOCATION
    Event OnHighlightST()
       SetInfoText("Set the level on the screen for change of location messages.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
-                  "Recommended: 3 - Information to see the messages.  2 - Error if you don't want to see them.")
+                  "Recommended: 3 - Location Changes.  4 - Nearby Regions as well.  2 - Turn these off.")
    EndEvent
 EndState
 
@@ -2893,6 +3115,37 @@ State ST_DBG_REDRESS
       SetInfoText("Set the level on the screen for rape and redress timeouts expiring.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information to see the messages.  2 - Error if you don't want to see them.")
+   EndEvent
+EndState
+
+State ST_DBG_SAVE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLogLevelScreenSave)
+      SetSliderDialogDefaultValue(_iDefLogLevelScreenSave)
+      SetSliderDialogRange(0, 5)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLogLevelScreenSave = (fValue As Int)
+      SetSliderOptionValueST(iLogLevelScreenSave)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnDefaultST()
+      iLogLevelScreenSave = _iDefLogLevelScreenSave
+      SetSliderOptionValueST(iLogLevelScreenSave)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Logging")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Set the level on the screen for messages related to the DFW save game control feature.\n" +\
+                  "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
+                  "Recommended: 3 - Information")
    EndEvent
 EndState
 

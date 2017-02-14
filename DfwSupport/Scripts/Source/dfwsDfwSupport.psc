@@ -31,8 +31,6 @@ Scriptname dfwsDfwSupport extends Quest Conditional
 ; Initial version.
 ;***********************************************************************************************
 
-Import StringUtil
-
 ;***********************************************************************************************
 ;***                                      CONSTANTS                                          ***
 ;***********************************************************************************************
@@ -171,6 +169,7 @@ Bool _bIsInCombat
 
 ; Is the leash holder attempting to engage the player in one of our dialogues.
 Int _iDialogueBusy
+Actor _aDialogueTarget
 
 ; The amount to reduce the player's movement speed when immobilizing her.
 Float _fMovementAmount
@@ -206,9 +205,10 @@ Int _iGagRemaining Conditional
 Bool _bReleaseGag
 Int _iFurnitureRemaining Conditional
 
-; Keep track of the furniture the player is being punished in.
+; Keep track of the player's current furniture for various reasons.
 ObjectReference _oPunishmentFurniture
 ObjectReference _oTransferFurniture
+ObjectReference _oHiddenFurniture
 
 ; A list of all items stolen from the player.
 Form[] _aoItemStolen
@@ -268,7 +268,6 @@ Float _fFurnitureReleaseTime Conditional
 Bool _bFurnitureForFun Conditional
 
 ; Variables to keep track of the progress of BDSM furniture for fun scenes.
-Bool _bFurnitureBusy
 ; 0x0001: Cooperating
 ; 0x0002: Release
 ; 0x0004: Ungag
@@ -280,6 +279,7 @@ Bool _bFurnitureBusy
 ; 0x0100: Add Restraints
 ; 0x0200: Play(Sex/Whip)
 ; 0x0400: Take the player's gold
+; 0x0800: Restrain the player's arms
 ; 0x8000: Lock Furniture
 Int _iFurnitureGoals
 
@@ -319,6 +319,16 @@ Int _iMcmLeashGameStyle
 Int _iMcmLogLevel
 Int _iMcmLogLevelScreen
 Int _iMcmMaxDistance
+Int _iMcmLeashResist
+;----------
+
+;----------------------------------------------------------------------------------------------
+; Mod Compatability.
+; Milk Mod Economy.  Some effort is needed to make sure scenes run smoothly.
+MilkQUEST _qMilkMod
+Spell _oMmeBeingMilkedSpell
+Bool _bMmeSuppressed
+
 ;----------
 
 
@@ -342,7 +352,7 @@ Function UpdateScript()
    ;EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 1.03
+   Float fScriptVer = 1.04
    If (fScriptVer == _fCurrVer)
       Return
    EndIf
@@ -440,17 +450,18 @@ Function UpdateScript()
    EndIf
 
    If (1.03 > _fCurrVer)
-      InitSimpleSlaveryAuctions()
       If (_oItemStolen)
          _aoItemStolen = _oItemStolen
       EndIf
-      _oSimpleSlaveryInternalDoor = (Game.GetFormFromFile(0x00025108, "SimpleSlavery.esp") As ObjectReference)
-      _aSimpleSlaveryAuctioneer   = (Game.GetFormFromFile(0x0002530A, "SimpleSlavery.esp") As Actor)
 
       If (0 < _iLeashGameDuration)
          _iLongTermAgenda = 1
          _iLongTermAgendaDetails = 0
       EndIf
+   EndIf
+
+   If (1.04 > _fCurrVer)
+      InitSimpleSlaveryAuctions()
    EndIf
 
    ; Finally update the version number.
@@ -472,6 +483,11 @@ Function OnLoadGame()
    _qZbfShell        = zbfBondageShell.GetApi()
    _qZbfSlave        = zbfSlaveControl.GetApi()
    _qZbfSlaveActions = zbfSlaveActions.GetApi()
+   _qMilkMod         = (Quest.GetQuest("MME_MilkQUEST") As MilkQUEST)
+
+   If (_qMilkMod && !_oMmeBeingMilkedSpell)
+      _oMmeBeingMilkedSpell = (Game.GetFormFromFile(0x000369A8, "MilkModNEW.esp") As Spell)
+   EndIf
 
    ; The game has been loaded.  Perform necessary actions here.
    UpdateScript()
@@ -510,6 +526,7 @@ Function UpdateLocalMcmSettings(String sCategory="")
       _iMcmIncreaseWhenVulnerable  = _qMcm.iIncreaseWhenVulnerable
       _iMcmLeashGameStyle          = _qMcm.iLeashGameStyle
       _iMcmMaxDistance             = _qMcm.iMaxDistance
+      _iMcmLeashResist             = _qMcm.iLeashResist
    EndIf
 
    If (!sCategory || ("Furniture" == sCategory))
@@ -529,47 +546,54 @@ Function UpdateLocalMcmSettings(String sCategory="")
 EndFunction
 
 Function InitSimpleSlaveryAuctions()
+   ; Setup auction house internal markers.
+   _oSimpleSlaveryInternalDoor = (Game.GetFormFromFile(0x00025108, "SimpleSlavery.esp") As ObjectReference)
+   _aSimpleSlaveryAuctioneer   = (Game.GetFormFromFile(0x0002530A, "SimpleSlavery.esp") As Actor)
+
+   ; Then make sure the region/location variables are set.
    _aoSimpleSlaveryRegion         = New Location[6]
    _aoSimpleSlaveryLocation       = New Location[6]
    _aoSimpleSlaveryEntranceObject = New ObjectReference[6]
 
+   Int iRiftenOuterDoorId = 0x0004D7D0
+
    ; Riften
-   _aoSimpleSlaveryEntranceObject[0] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   _aoSimpleSlaveryEntranceObject[0] = (Game.GetFormFromFile(iRiftenOuterDoorId, "SimpleSlavery.esp") As ObjectReference)
    If (_aoSimpleSlaveryEntranceObject[0])
       _aoSimpleSlaveryRegion[0] = (Game.GetFormFromFile(0x00018A58, "Skyrim.esm") As Location)
       _aoSimpleSlaveryLocation[0] = _aoSimpleSlaveryRegion[0]
    EndIf
 
    ; High Hrothgar (moves to Riften)
-   _aoSimpleSlaveryEntranceObject[1] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   _aoSimpleSlaveryEntranceObject[1] = (Game.GetFormFromFile(iRiftenOuterDoorId, "SimpleSlavery.esp") As ObjectReference)
    If (_aoSimpleSlaveryEntranceObject[1])
       _aoSimpleSlaveryRegion[1] = (Game.GetFormFromFile(0x00018A34, "Skyrim.esm") As Location)
       _aoSimpleSlaveryLocation[1] = _aoSimpleSlaveryRegion[0]
    EndIf
 
    ; Ivarstead (moves to Riften)
-   _aoSimpleSlaveryEntranceObject[2] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   _aoSimpleSlaveryEntranceObject[2] = (Game.GetFormFromFile(iRiftenOuterDoorId, "SimpleSlavery.esp") As ObjectReference)
    If (_aoSimpleSlaveryEntranceObject[2])
       _aoSimpleSlaveryRegion[2] = (Game.GetFormFromFile(0x00018A4B, "Skyrim.esm") As Location)
       _aoSimpleSlaveryLocation[2] = _aoSimpleSlaveryRegion[0]
    EndIf
 
    ; Riverwood (moves to Riften)
-   _aoSimpleSlaveryEntranceObject[3] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   _aoSimpleSlaveryEntranceObject[3] = (Game.GetFormFromFile(iRiftenOuterDoorId, "SimpleSlavery.esp") As ObjectReference)
    If (_aoSimpleSlaveryEntranceObject[3])
       _aoSimpleSlaveryRegion[3] = (Game.GetFormFromFile(0x00013163, "Skyrim.esm") As Location)
       _aoSimpleSlaveryLocation[3] = _aoSimpleSlaveryRegion[0]
    EndIf
 
    ; Shors Stone (moves to Riften)
-   _aoSimpleSlaveryEntranceObject[4] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   _aoSimpleSlaveryEntranceObject[4] = (Game.GetFormFromFile(iRiftenOuterDoorId, "SimpleSlavery.esp") As ObjectReference)
    If (_aoSimpleSlaveryEntranceObject[4])
       _aoSimpleSlaveryRegion[4] = (Game.GetFormFromFile(0x00018A4C, "Skyrim.esm") As Location)
       _aoSimpleSlaveryLocation[4] = _aoSimpleSlaveryRegion[0]
    EndIf
 
    ; Windhelm (moves to Riften)
-   _aoSimpleSlaveryEntranceObject[5] = (Game.GetFormFromFile(0x00002324, "SimpleSlavery.esp") As ObjectReference)
+   _aoSimpleSlaveryEntranceObject[5] = (Game.GetFormFromFile(iRiftenOuterDoorId, "SimpleSlavery.esp") As ObjectReference)
    If (_aoSimpleSlaveryEntranceObject[5])
       _aoSimpleSlaveryRegion[5] = (Game.GetFormFromFile(0x00018A57, "Skyrim.esm") As Location)
       _aoSimpleSlaveryLocation[5] = _aoSimpleSlaveryRegion[0]
@@ -858,7 +882,9 @@ Function PerformOnUpdate()
          aNearby = _qFramework.GetRandomActor(iIncludeFlags=_qFramework.AF_DOMINANT, \
                                               iExcludeFlags=_qFramework.AF_GUARDS)
       EndIf
-      If (aNearby && !_qFramework.SceneStarting(S_MOD + "_StartDialogue", 180))
+
+      If (aNearby && !_qFramework.GetPlayerTalkingTo() && \
+          !_qFramework.SceneStarting(S_MOD + "_StartDialogue", 180))
          _qFramework.ApproachPlayer(aNearby, 15, 2, S_MOD + "_StartDialogue")
       EndIf
    EndIf
@@ -930,13 +956,13 @@ EndEvent
 ; the player has completed.
 Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iSceneIndex)
    ;Log("ZAZ Slave Action Done: \"" + szMessage + "\"", DL_TRACE, S_MOD)
-   Bool bSceneContinuing
 
    ; We are only interested in animations that we started.
-   If (S_MOD != Substring(szMessage, 0, 4))
+   If (S_MOD != StringUtil.Substring(szMessage, 0, 4))
       Return
    EndIf
 
+   Bool bSceneContinuing
    Actor aMaster = (oMaster As Actor)
    String szName = aMaster.GetDisplayName()
 
@@ -958,6 +984,13 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
       EndIf
 
       bSceneContinuing = True
+      ; Disable Milk Mod Economy, preventing it from starting animations on the player.
+      If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+         _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
+         _bMmeSuppressed = True
+         ; Add a delay to make sure the spell has taken effect.
+         Utility.Wait(0.5)
+      EndIf
       _qZbfSlaveActions.RestrainInDevice(_oBdsmFurniture, aMaster, S_MOD)
    ElseIf ((S_MOD + "_F_Unlock" == szMessage) || (S_MOD + "_F_Release" == szMessage))
       Log(szName + " starts unlocking you from your device.", DL_CRIT, S_MOD)
@@ -968,6 +1001,13 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
       If ((S_MOD + "_F_Unlock" == szMessage) && (iMaxChance > fRoll))
          ; The NPC was just teasing the player and really keeps her locked up.
          bSceneContinuing = True
+         ; Disable Milk Mod Economy, preventing it from starting animations on the player.
+         If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+            _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
+            _bMmeSuppressed = True
+            ; Add a delay to make sure the spell has taken effect.
+            Utility.Wait(0.5)
+         EndIf
          _qZbfSlaveActions.RestrainInDevice(_oBdsmFurniture, aMaster, S_MOD + "_Teased")
       Else
          If (0 < _iMovementSafety)
@@ -998,6 +1038,12 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
          ; Goal 13: Lying About Release
          StartConversation(aMaster, 13)
       EndIf
+
+      ; If we have suppressed Milk Mod Economy re-enable it.
+      If (_bMmeSuppressed)
+         _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         _bMmeSuppressed = False
+      EndIf
    ElseIf (S_MOD + "_F_Assault" == szMessage)
       Int iNewItems = FinalizeAssault(aMaster, szName)
 
@@ -1008,6 +1054,13 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
       Else
          ; Otherwise finish the assualt by making sure she is locked back into the furniture.
          bSceneContinuing = True
+         ; Disable Milk Mod Economy, preventing it from starting animations on the player.
+         If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+            _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
+            _bMmeSuppressed = True
+            ; Add a delay to make sure the spell has taken effect.
+            Utility.Wait(0.5)
+         EndIf
          _qZbfSlaveActions.RestrainInDevice(_oBdsmFurniture, aMaster, S_MOD)
          ; Set dialog to busy 1 to allow for a short delay before the next conversation.
          _iDialogueBusy = 1
@@ -1030,6 +1083,13 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
          _fFurnitureReleaseTime = 0
          UnequipBdsmItem(_aoArmRestraints, _qZadLibs.zad_DeviousArmbinder, aMaster)
          bSceneContinuing = True
+         ; Disable Milk Mod Economy, preventing it from starting animations on the player.
+         If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+            _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
+            _bMmeSuppressed = True
+            ; Add a delay to make sure the spell has taken effect.
+            Utility.Wait(0.5)
+         EndIf
          _qZbfSlaveActions.RestrainInDevice(oFurniture, aMaster, S_MOD + "_LeashToBdsm")
       Else
          ; Something went wrong.  End the scene if possible.
@@ -1057,9 +1117,22 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
          StopLeashGame()
          _qFramework.SceneDone(S_MOD)
       EndIf
+
+      ; If we have suppressed Milk Mod Economy re-enable it.
+      If (_bMmeSuppressed)
+         _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         _bMmeSuppressed = False
+      EndIf
    ElseIf (S_MOD + "_BdsmToLeash" == szMessage)
       Log(szName + " locks your device and slips a rope around your neck.", DL_CRIT, S_MOD)
       bSceneContinuing = True
+      ; Disable Milk Mod Economy, preventing it from starting animations on the player.
+      If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+         _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
+         _bMmeSuppressed = True
+         ; Add a delay to make sure the spell has taken effect.
+         Utility.Wait(0.5)
+      EndIf
       _qZbfSlaveActions.RestrainInDevice(_oBdsmFurniture, aMaster, S_MOD)
       StartLeashGame(aMaster)
    ElseIf ((S_MOD + "_Inspect" == szMessage) || (S_MOD + "_F_Inspect" == szMessage))
@@ -1068,7 +1141,7 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
       _qZadArmbinder.IsLoose = False
       _qZadArmbinder.StruggleCount = 0
       _qFramework.SceneDone(S_MOD)
-   ElseIf (S_MOD + "_Whip" == Substring(szMessage, 0, 9))
+   ElseIf (S_MOD + "_Whip" == StringUtil.Substring(szMessage, 0, 9))
       ; Restore the base damage for the punishment cane if it was adjusted.
       If (_oWeaponZbfCane && _iZbfCaneBaseDamage)
          _aPlayer.ModActorValue("DamageResist", -10000)
@@ -1094,17 +1167,36 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
       If (0 < _iMovementSafety)
          ReMobilizePlayer()
       EndIf
+      ; If we have suppressed Milk Mod Economy re-enable it.
+      If (_bMmeSuppressed)
+         _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         _bMmeSuppressed = False
+      EndIf
       _qFramework.SceneDone(S_MOD)
    Else
       Log("Unknown Slave Action Event:  \"" + szMessage + "\"", DL_ERROR, S_MOD)
    EndIf
+
    ; If there are further pending actions perform them now.
    If (!bSceneContinuing && _iFurnitureGoals)
       ProcessFurnitureGoals(aMaster)
+
+      ; If we have completed all short-term goals clear the variable.
+      If (!_iFurnitureGoals && (0 < _iLeashHolderGoal))
+         _iLeashHolderGoal = -2
+      EndIf
    EndIf
 EndEvent
 
 Event PreSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender)
+   ; If we are configured to hide the player's BDSM furniture during sex, do so.
+   If (!_oHiddenFurniture && _qMcm.bFurnitureHide)
+      _oHiddenFurniture = _qFramework.GetBdsmFurniture()
+      If (_oHiddenFurniture)
+         _oHiddenFurniture.Disable()
+      EndIf
+   EndIf
+
    ; Make sure the player is involved in this scene.
    Actor[] aaEventActors = _qSexLab.HookActors(szArg)
    If (-1 == aaEventActors.Find(_aPlayer))
@@ -1186,6 +1278,17 @@ Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender
          EndIf
          iIndex -= 1
       EndWhile
+
+      ; If we have completed all short-term goals clear the variable.
+      If (!_iFurnitureGoals && (0 < _iLeashHolderGoal))
+         _iLeashHolderGoal = -2
+      EndIf
+   EndIf
+
+   ; If there is furniture we have previously hidden, reveal it now.
+   If (_oHiddenFurniture)
+      _oHiddenFurniture.Enable()
+      _oHiddenFurniture = None
    EndIf
 EndEvent
 
@@ -1227,6 +1330,7 @@ Event HandleCallOut(Int iCallType, Int iRange, Form oRecommendedActor)
             _qFramework.ReEvaluatePackage(_aLeashHolder)
          Endif
          _qFramework.HandleCallForAttention()
+         _qFramework.CallOutDone()
          Return
       EndIf
    EndIf
@@ -1303,9 +1407,10 @@ Event HandleCallOut(Int iCallType, Int iRange, Form oRecommendedActor)
    EndIf
 EndEvent
 
+; iType: 1: Approach Player  2: Move To Location  3: Move To Object
 Event MovementDone(Int iType, Form oActor, Bool bSucceeded, String sModId)
    ; We are only interested in animations that we started.
-   If (S_MOD != Substring(sModId, 0, 4))
+   If (S_MOD != StringUtil.Substring(sModId, 0, 4))
       Return
    EndIf
 
@@ -1315,7 +1420,7 @@ Event MovementDone(Int iType, Form oActor, Bool bSucceeded, String sModId)
    ; If the scene did not succeed, simply end the scene.
    If (!bSucceeded)
       String szCurrScene = _qFramework.GetCurrentScene()
-      If (S_MOD == Substring(szCurrScene, 0, 4))
+      If (S_MOD == StringUtil.Substring(szCurrScene, 0, 4))
          _qFramework.SceneDone(szCurrScene)
 
          If (S_MOD + "_CallOut" == sModId)
@@ -1640,24 +1745,28 @@ EndFunction
 Function AssaultPlayer(Float fHealthThreshold=1.0, Bool bUnquipWeapons=False, \
                        Bool bStealWeapons=False,   Bool bAddGag=False, \
                        Bool bStrip=False,          Bool bAddArmBinder=False)
+   ; If we are already in the middle of an animated assault ignore this request.
+   If (_qFramework.GetCurrentScene())
+      Return
+   EndIf
+
    ; If the player is already below the health threshold don't bother damaging her more.
    Float fDamageMultiplier = 1
    If (fHealthThreshold >= _aPlayer.GetActorValuePercentage("Health"))
       fDamageMultiplier = 0
    EndIf
 
-   ; If we are already in the middle of an animated assault ignore this request.
-   If (_qFramework.GetCurrentScene())
-      Return
-   EndIf
-
    ; Yank the leash.
-   _qFramework.YankLeash(fDamageMultiplier, _qFramework.LS_DRAG)
+   If (!_qFramework.GetBdsmFurniture())
+      If (!_iMcmLeashResist || (_iMcmLeashResist < Utility.RandomInt(1, 100)))
+         _qFramework.YankLeash(fDamageMultiplier, _qFramework.LS_DRAG)
+      EndIf
 
-   ; If a health threshold is specified and the player is not below it, nothing more to do.
-   If (1 != fHealthThreshold)
-      If (fHealthThreshold < _aPlayer.GetActorValuePercentage("Health"))
-         Return
+      ; If a health threshold is specified and the player is not below it, nothing more to do.
+      If (1 != fHealthThreshold)
+         If (fHealthThreshold < _aPlayer.GetActorValuePercentage("Health"))
+            Return
+         EndIf
       EndIf
    EndIf
 
@@ -1679,23 +1788,20 @@ Function AssaultPlayer(Float fHealthThreshold=1.0, Bool bUnquipWeapons=False, \
       EndIf
    EndIf
 
-   ; Figure out whether an animated assault should actually happen.
-   _iAssault = 0x0000
+   ; Add any goals to the assault that are requested.
    If (bStrip && (_qFramework.NS_NAKED != _qFramework.GetNakedLevel()))
-      _iAssault += 0x0001
+      _iAssault = Math.LogicalOr(0x0001, _iAssault)
    EndIf
-
    If (bAddGag && !_qFramework.IsPlayerGagged())
-      _iAssault += 0x0002
+      _iAssault = Math.LogicalOr(0x0002, _iAssault)
    EndIf
-
    If (bAddArmBinder && !_qFramework.IsPlayerArmLocked())
-      _iAssault += 0x0004
+      _iAssault = Math.LogicalOr(0x0004, _iAssault)
    EndIf
 
    ; Play an animation for the slaver to approach the player.
    ; The assault will happen on the done event (OnSlaveActionDone).
-   If (_iAssault)
+   If (_iAssault || _iAssaultTakeGold)
       PlayApproachAnimation(_aLeashHolder, "Assault")
    EndIf
 EndFunction
@@ -1725,15 +1831,6 @@ EndFunction
 ; Inventory searching has been tried using SKSE's GetNumItems/GetNthForm API; however, the
 ; mechanism used here has shown to be orders of magnitude faster than that function.
 Function SearchInventory(Actor aNpc)
-   ; Keep a copy of the keywords to reduce context switching to the Zaz script.
-   Keyword oKeywordGag       = _qZadLibs.zad_DeviousGag
-   Keyword oKeywordArmBinder = _qZadLibs.zad_DeviousArmbinder
-   Keyword oKeywordYoke      = _qZadLibs.zad_DeviousYoke
-   Keyword oKeywordGloves    = _qZadLibs.zad_DeviousGloves
-   Keyword oKeywordBoots     = _qZadLibs.zad_DeviousBoots
-   Keyword oKeywordCollar    = _qZadLibs.zad_DeviousCollar
-   Keyword oKeywordBlindfold = _qZadLibs.zad_DeviousBlindfold
-
    ; Try to find an appropriate gag in the player's inventory.
    If (!_oGag)
       Int iIndex = _aoGags.Length - 1
@@ -1951,7 +2048,7 @@ EndFunction
 ; TODO: The favourite furniture lists should be protected by a mutex.
 ObjectReference Function FindFurniture(Location oRegion=None)
    If (!oRegion)
-      oRegion = _qFramework.GetCurrentRegion()
+      oRegion = _qFramework.GetNearestRegion()
    EndIf
 
    Form[] aoFurniture
@@ -2319,14 +2416,13 @@ Function StartConversation(Actor aActor, Int iGoal=-1, Int iRefusalCount=-1, \
    ; Don't try to talk to the actor while he is in the process of sitting or standing.
    ActorSitStateWait(aActor)
 
-   ; If this is a leash holder conversation set a timeout in case it doesn't happen.
-   If (_aLeashHolder == aActor)
-      _iDialogueBusy = 20
-      If ((3 == iGoal) || (5 == iGoal) || (7 == iGoal) || (8 == iGoal) || (9 == iGoal) || \
-          (11 == iGoal))
-         ; For One Liners (comments the player can't respond to) set a shorter timeout.
-         _iDialogueBusy = 3
-      EndIf
+   ; Set a timeout in case the dialogue doesn't happen.
+   _aDialogueTarget = aActor
+   _iDialogueBusy = 20
+   If ((3 == iGoal) || (5 == iGoal) || (7 == iGoal) || (8 == iGoal) || (9 == iGoal) || \
+       (11 == iGoal))
+      ; For One Liners (comments the player can't respond to) set a shorter timeout.
+      _iDialogueBusy = 3
    EndIf
 
    ; Prepare the actor for DFW dialogue to ensure DFW conditions are available.
@@ -2376,6 +2472,7 @@ Function CheckStartLeashGame(Int iVulnerability)
                _bFurnitureForFun = True
                _fFurnitureReleaseTime = 0
                _qZbfSlaveActions.RestrainInDevice(None, aRandomActor, S_MOD + "_BdsmToLeash")
+               _qFramework.ForceSave()
             Else
                If (1 == _iMcmLeashGameStyle)
                   ; 1 = Auto.  Start the game.
@@ -2467,15 +2564,23 @@ Function PlayLeashGame()
 
    _iLeashGameDuration -= 1
 
-   ; Don't do processing during an assault or one of our dialogues.
+   ; If we are in a conversation count down the safety in case the conversation doesn't work.
    If (0 < _iDialogueBusy)
       ;Log("In Dialogue.", DL_TRACE, S_MOD)
       _iDialogueBusy -= 1
-      ; For pure conversation goals, end them when the dialogue times out.
-      If ((0 == _iDialogueBusy) && ((12 == _iLeashHolderGoal) || (13 == _iLeashHolderGoal)))
-         _iLeashHolderGoal = 0
+
+      If (0 == _iDialogueBusy)
+         _aDialogueTarget = None
+         ; For pure conversation goals, end them when the dialogue times out.
+         If ((12 == _iLeashHolderGoal) || (13 == _iLeashHolderGoal))
+            _iLeashHolderGoal = 0
+         EndIf
       EndIf
-      Return
+
+      ; If this is a conversation with the leash holder don't try to process the leash game.
+      If (_aLeashHolder == _aDialogueTarget)
+         Return
+      EndIf
    EndIf
 
    ; Don't do processing during one of our scenes.
@@ -2500,11 +2605,13 @@ Function PlayLeashGame()
             If (iChance > fRoll)
                Int iRandom = Utility.RandomInt(1, 100)
                If (_qMcm.iChanceFurnitureTransfer >= iRandom)
-                  _iLongTermAgenda = 4
-                  _iLongTermAgendaDetails = 1
                   ObjectReference oFurnitureNearby = FindFurniture()
                   If (!oCurrFurniture && oFurnitureNearby && \
                       !_qFramework.SceneStarting(S_MOD + "_MoveToFurniture", 60))
+                     _iLongTermAgenda = 4
+                     _iLongTermAgendaDetails = 1
+                     _qFramework.ForceSave()
+
                      ; If the leash holder is not in the furniture's location move there first.
                      _oTransferFurniture = oFurnitureNearby
                      Location oFurnitureLocation = _oTransferFurniture.GetCurrentLocation()
@@ -2520,7 +2627,8 @@ Function PlayLeashGame()
                ElseIf ((_qMcm.iChanceFurnitureTransfer + _qMcm.iLeashChanceSimple) >= iRandom)
                   _iLongTermAgenda = 4
                   _iLongTermAgendaDetails = 2
-                  Int iIndex = _aoSimpleSlaveryRegion.Find(_qFramework.GetCurrentRegion())
+                  _qFramework.ForceSave()
+                  Int iIndex = _aoSimpleSlaveryRegion.Find(_qFramework.GetNearestRegion())
                   If ((-1 != iIndex) && _qMcm.bWalkToSsAuction && \
                       (_qMcm.bWalkFarSsAuction || \
                        (_aoSimpleSlaveryLocation[iIndex] == _aoSimpleSlaveryRegion[iIndex])))
@@ -2559,6 +2667,14 @@ Function PlayLeashGame()
 
    ; Next handle cases of the player being locked in BDSM furniture.
    If (oCurrFurniture)
+      ; For now if the player is talking to the guard just don't start a conversation.
+      ; TODO: Eventually we want this to happen all the time.  Not just when in furniture;
+      ; however, we need the slaver to be upset with the player when this happens.
+      Actor aSpeakingNpc = _qFramework.GetPlayerTalkingTo()
+      If (aSpeakingNpc && aSpeakingNpc.IsGuard())
+         Return
+      EndIf
+
       If (!_qFramework.IsPlayerGagged())
          _iAssault = 0x8000 + 0x0002
          ; Goal 8: Restrain the player.
@@ -2592,28 +2708,18 @@ Function PlayLeashGame()
       ; The leash holder should be alarmed at this.
       iAnger = _qFramework.IncActorAnger(_aLeashHolder, _iLeashGoalRefusalCount, 0, 100)
 
-      If (55 < iAnger)
+      ; If the slaver hasn't spoken to the player about putting her weapons away do so now.
+      If (1 != _iLeashHolderGoal)
          ; If we were trying to strip the player take back assisted dressing.
          If (2 == _iLeashHolderGoal)
             _qFramework.RemovePermission(_aLeashHolder, _qFramework.AP_DRESSING_ASSISTED)
          EndIf
-
-         ; The leash holder is fed up, yank the player's leash.
-         _iLeashHolderGoal = 1
-         AssaultPlayer(0.3, bStealWeapons=True)
-      Else
-         ; If we were trying to strip the player take back assisted dressing.
-         If (2 == _iLeashHolderGoal)
-            _qFramework.RemovePermission(_aLeashHolder, _qFramework.AP_DRESSING_ASSISTED)
-         EndIf
-
-         ; Identify with the dialog system the leash holder wants to disarm the player.
-         If (3 > _iLeashGoalRefusalCount)
-            _iLeashGoalRefusalCount = 3
-         EndIf
-
          StartConversation(_aLeashHolder, 1)
+         Return
       EndIf
+
+      ; For the slaver's protection he yanks the player's leash.
+      AssaultPlayer(0.3, bStealWeapons=True)
       Return
    EndIf
 
@@ -2772,7 +2878,9 @@ Function PlayLeashGame()
          _iTotalWalkInFrontCount += 1
          _qFramework.IncActorAnger(_aLeashHolder, 1, 0, 65)
 
-         _qFramework.YankLeash()
+         If (!_iMcmLeashResist || (_iMcmLeashResist < Utility.RandomInt(1, 100)))
+            _qFramework.YankLeash()
+         EndIf
          StartConversation(_aLeashHolder, 7)
       EndIf
       Return
@@ -2866,13 +2974,18 @@ Function PlayLeashGame()
    ; Anger >= 75: 100%  Anger 50-65: 50%  Anger 40-50: 15%  Anger < 40: 8%
    If (((75 <= iAnger) || ((65 <= iAnger) && (50 >= iRandomEvent)) || \
         ((40 <= iAnger) && (15 >= iRandomEvent)) || ((40 > iAnger) && (8 >= iRandomEvent))) && \
+       _oArmRestraint && ((4 != _iLongTermAgenda) || (1 != _iLongTermAgendaDetails)) && \
        !_qFramework.IsPlayerArmLocked())
       ;Log("Starting Arm Restraints.", DL_TRACE, S_MOD)
 
       If (!_oArmRestraint)
          FindArmRestraint(_aLeashHolder)
-         _aPlayer.AddItem(_oArmRestraint)
       EndIf
+
+      ; Remove any of these items the play may have and make sure she has a single one.
+      _aPlayer.RemoveItem(_oArmRestraint, 999, abSilent=True)
+      _aPlayer.AddItem(_oArmRestraint)
+
       StartConversation(_aLeashHolder, 4)
       Return
    EndIf
@@ -2924,26 +3037,24 @@ Function StartSdPlus()
    If (!_bEnslavedSdPlus)
       Log("Player now SD+ Enslaved.", DL_CRIT, S_MOD)
 
-      If (_qFramework.IsAllowed(_qFramework.AP_ENSLAVE))
-         Actor aMaster = (StorageUtil.GetFormValue(_aPlayer, "_SD_CurrentOwner") As Actor)
-         If (SUCCESS <= _qFramework.SetMaster(aMaster, S_MOD_SD, _qFramework.AP_NO_BDSM, \
-                                              _qFramework.MD_CLOSE, True))
-            ; Identify the plyaer is now SD+ enslaved.
-            _bEnslavedSdPlus = True
+      Actor aMaster = (StorageUtil.GetFormValue(_aPlayer, "_SD_CurrentOwner") As Actor)
+      If (SUCCESS <= _qFramework.SetMaster(aMaster, S_MOD_SD, _qFramework.AP_NO_BDSM, \
+                                           _qFramework.MD_CLOSE, True))
+         ; Identify the plyaer is now SD+ enslaved.
+         _bEnslavedSdPlus = True
 
-            ; Check if the player is currently locked in her cage.
-            _bCagedSdPlus = False
-            If (_gSdPlusStateCaged.GetValue())
-               _bCagedSdPlus = True
-            EndIf
+         ; Check if the player is currently locked in her cage.
+         _bCagedSdPlus = False
+         If (_gSdPlusStateCaged.GetValue())
+            _bCagedSdPlus = True
+         EndIf
 
-            ; If we are configured to leash the player do so now.
-            If (_qMcm.bLeashSdPlus)
-               _qFramework.BlockHealthRegen()
-               _qFramework.BlockMagickaRegen()
-               If (!_bCagedSdPlus)
-                  _qFramework.SetLeashTarget(aMaster)
-               EndIf
+         ; If we are configured to leash the player do so now.
+         If (_qMcm.bLeashSdPlus)
+            _qFramework.BlockHealthRegen()
+            _qFramework.BlockMagickaRegen()
+            If (!_bCagedSdPlus)
+               _qFramework.SetLeashTarget(aMaster)
             EndIf
          EndIf
       EndIf
@@ -3022,7 +3133,9 @@ Function IncDominance(Actor aActor, Int iDelta)
    _qFramework.IncActorDominance(aActor, iDelta, 20, 80)
 
    ; Reset the dialogue timeout beacuse we are still in a dialogue.
-   _iDialogueBusy = 20
+   If (_iDialogueBusy)
+      _iDialogueBusy = 20
+   EndIf
 EndFunction
 
 ; The palyer has said something to verbally annoy the slaver.  Increase his annoyance count.
@@ -3035,7 +3148,6 @@ EndFunction
 Function PlayApproachAnimation(Actor aNpc, String szMessage)
    ; If we can't lock the DFW scene flag don't try to start a scene.
    If (_qFramework.SceneStarting(S_MOD, 60))
-;DebugLog("Approach " + szMessage + " Failed: " + _qFramework.GetCurrentScene())
       Return
    EndIf
 
@@ -3053,13 +3165,22 @@ EndFunction
 
 ; Called by dialog scripts to indicate the player has agreed to or refuses to cooperate.
 ; The level of cooperation: < 0 not cooperating, 0 = avoiding the subject, > 0 = cooperating.
-Function Cooperation(Int iGoal, Int iLevel)
+Function Cooperation(Int iGoal, Int iLevel, Actor aNpc, Bool bWaitForEnd=True)
+   ; If we are expected to wait for the dialogue to end, do so now.
+   If (bWaitForEnd)
+      Float fSecurity = 30
+      While ((0 < fSecurity) && aNpc.IsInDialogueWithPlayer())
+         Utility.Wait(0.05)
+         fSecurity -= 0.05
+      EndWhile
+   EndIf
+
    If (0 < iLevel)
-      _qFramework.IncActorAnger(_aLeashHolder, -1, 20, 80)
+      _qFramework.IncActorAnger(aNpc, -1, 20, 80)
    ElseIf (-1 == iLevel)
-      _qFramework.IncActorAnger(_aLeashHolder, 2, 20, 80)
+      _qFramework.IncActorAnger(aNpc, 2, 20, 80)
    ElseIf (-1 > iLevel)
-      _qFramework.IncActorAnger(_aLeashHolder, 4, 20, 80)
+      _qFramework.IncActorAnger(aNpc, 4, 20, 80)
    EndIf
 
    If (0 == iGoal)
@@ -3080,19 +3201,19 @@ Function Cooperation(Int iGoal, Int iLevel)
          _aPlayer.UnequipItem(oWeaponLeft)
 
          ; The leash holder is rather upset and will just take the weapons.
-         If (60 < _qFramework.GetActorAnger(_aLeashHolder))
-            _aPlayer.RemoveItem(oWeaponRight, 999, akOtherContainer=_aLeashHolder)
-            _aPlayer.RemoveItem(oWeaponLeft, 999, akOtherContainer=_aLeashHolder)
+         If (60 < _qFramework.GetActorAnger(aNpc))
+            _aPlayer.RemoveItem(oWeaponRight, 999, akOtherContainer=aNpc)
+            _aPlayer.RemoveItem(oWeaponLeft, 999, akOtherContainer=aNpc)
             _aoItemStolen = _qDfwUtil.AddFormToArray(_aoItemStolen, oWeaponRight)
             _aoItemStolen = _qDfwUtil.AddFormToArray(_aoItemStolen, oWeaponLeft)
             If (1 > _iWeaponsStolen)
                _iWeaponsStolen = 1
             EndIf
          EndIf
-      ElseIf (0 >= iLevel)
-         If (((-2 == iLevel) || (-3 == iLevel)) && _aPlayer.IsWeaponDrawn())
-            _qFramework.YankLeash(iOverrideLeashStyle=_qFramework.LS_DRAG)
-         EndIf
+      ElseIf (((-2 == iLevel) || (-3 == iLevel) || \
+               (_aPlayer.IsWeaponDrawn() && _qFramework.GetWeaponLevel())) && \
+              (!_iMcmLeashResist || (_iMcmLeashResist < Utility.RandomInt(1, 100))))
+         _qFramework.YankLeash(iOverrideLeashStyle=_qFramework.LS_DRAG)
       EndIf
    ElseIf (2 == iGoal)
       If (4 == iLevel)
@@ -3100,13 +3221,13 @@ Function Cooperation(Int iGoal, Int iLevel)
          ; Play an animation for the slaver to approach the player.
          ; The assault (weapon stealing) will happen on the done event (OnSlaveActionDone).
          _iAssault = 0x8000 + 0x0020 + 0x0008
-         PlayApproachAnimation(_aLeashHolder, "Assault")
+         PlayApproachAnimation(aNpc, "Assault")
       ElseIf (3 == iLevel)
          ; The player needs help unequipping her weapons.
          ; Play an animation for the slaver to approach the player.
          ; The assault (stripping) will happen on the done event (OnSlaveActionDone).
          _iAssault = 0x8000 + 0x0001
-         PlayApproachAnimation(_aLeashHolder, "Assault")
+         PlayApproachAnimation(aNpc, "Assault")
       ElseIf (-2 >= iLevel)
          ; The slaver is done asking.  Forcibly strip the player.
          AssaultPlayer(bStrip=False)
@@ -3114,38 +3235,16 @@ Function Cooperation(Int iGoal, Int iLevel)
 
       ; Set the player to have dressing assisted with the devious framework.  This is so the
       ; slaver can help the player equip sexy clothing over her leash.
-      _qFramework.AddPermission(_aLeashHolder, _qFramework.AP_DRESSING_ASSISTED)
+      _qFramework.AddPermission(aNpc, _qFramework.AP_DRESSING_ASSISTED)
    ElseIf (3 == iGoal)
       ; Goal 3: Take the player's weapons.
       _iAssault = 0x8000 + 0x0008
-      PlayApproachAnimation(_aLeashHolder, "Assault")
+      PlayApproachAnimation(aNpc, "Assault")
       _iLeashHolderGoal = 0
-   ElseIf (4 == iGoal)
-      If (3 == iLevel)
-         ; The player needs help equipping her arm restraint.
-         ; Play an animation for the slaver to approach the player.
-         ; Restraining the player's arms will happen on the done event (OnSlaveActionDone).
-         _iAssault = 0x8000 + 0x0004
-         PlayApproachAnimation(_aLeashHolder, "Assault")
-         _iLeashHolderGoal = 0
-      EndIf
    ElseIf (5 == iGoal)
       ; Goal 5: Strip the player fully.
       _iAssault = 0x8000 + 0x0040
-      PlayApproachAnimation(_aLeashHolder, "Assault")
-      _iLeashHolderGoal = 0
-   ElseIf (6 == iGoal)
-      ; The slaver is fed up with the player's backtalk and is going to gag her.
-      If (1 == iLevel)
-         ; The player is co-operating.  Gag her peacefully.
-         ; Play an animation for the slaver to approach the player.
-         ; Gagging the player's arms will happen on the done event (OnSlaveActionDone).
-         _iAssault = 0x8000 + 0x0002
-         PlayApproachAnimation(_aLeashHolder, "Assault")
-      Else
-         ; The player is not co-operating.  Use force.
-         AssaultPlayer(bAddGag=True)
-      EndIf
+      PlayApproachAnimation(aNpc, "Assault")
       _iLeashHolderGoal = 0
    ElseIf (7 == iGoal)
       ; After we have spoken to the player about it, don't bring it up for a while.
@@ -3155,7 +3254,7 @@ Function Cooperation(Int iGoal, Int iLevel)
       If (!_iAssault)
          _iAssault = 0x8000 + 0x0080
       EndIf
-      PlayApproachAnimation(_aLeashHolder, "Assault")
+      PlayApproachAnimation(aNpc, "Assault")
       _iLeashHolderGoal = 0
    ElseIf (9 == iGoal)
       ; Goal 9: Reel in the Player
@@ -3179,7 +3278,7 @@ Function Cooperation(Int iGoal, Int iLevel)
          _iGagRemaining += ((60 + (120 * _iEscapeAttempts)) / _fMcmPollTime As Int)
 
          ; Goal 10: Discipline Talking Escape
-         StartConversation(_aLeashHolder, 10)
+         StartConversation(aNpc, 10)
       EndIf
    ElseIf (10 == iGoal)
       ; Goal 10: Discipline Talking Escape
@@ -3222,18 +3321,17 @@ Function Cooperation(Int iGoal, Int iLevel)
          ObjectReference oFurnitureNearby = FindFurniture()
          If (oFurnitureNearby && _aPlayer.WornHasKeyword(_qZadLibs.zad_DeviousBlindfold) && \
              !_qFramework.SceneStarting(S_MOD + "_MoveToFurniture", 300))
+            _qFramework.ForceSave()
             bRestrainedAssault = False
             _oPunishmentFurniture = oFurnitureNearby
             _fFurnitureReleaseTime = 0
             ; If the leash holder is not in the furniture's location move there first.
 
             Location oFurnitureLocation = _oPunishmentFurniture.GetCurrentLocation()
-            If (oFurnitureLocation != _aLeashHolder.GetCurrentLocation())
-               _qFramework.MoveToLocation(_aLeashHolder, oFurnitureLocation, \
-                                          S_MOD + "_Furniture")
+            If (oFurnitureLocation != aNpc.GetCurrentLocation())
+               _qFramework.MoveToLocation(aNpc, oFurnitureLocation, S_MOD + "_Furniture")
             Else
-               _qFramework.MoveToObject(_aLeashHolder, _oPunishmentFurniture, \
-                                        S_MOD + "_Furniture")
+               _qFramework.MoveToObject(aNpc, _oPunishmentFurniture, S_MOD + "_Furniture")
             EndIf
          ElseIf (-1 >= iLevel)
             _iAssault += 0x0400
@@ -3253,7 +3351,7 @@ Function Cooperation(Int iGoal, Int iLevel)
       ; If the palyer is restrained and we can restrain/punish her further do so now.
       If (bRestrainedAssault)
          _iAssault += 0x1000
-         PlayApproachAnimation(_aLeashHolder, "Assault")
+         PlayApproachAnimation(aNpc, "Assault")
          _iLeashHolderGoal = 0
       EndIf
    ElseIf (-3 == iGoal)
@@ -3272,11 +3370,12 @@ Function Cooperation(Int iGoal, Int iLevel)
    ElseIf (-6 == iGoal)
       ; The player has been well behaved and is being ungagged.
       _iAssault = 0x8000 + 0x0100
-      PlayApproachAnimation(_aLeashHolder, "Assault")
+      PlayApproachAnimation(aNpc, "Assault")
    EndIf
 
-   ; Enticing the player's co-operation (or lack thereof) indicates the end of the conversation.
+   ; Enticing the NPC's co-operation (or lack thereof) indicates the end of the conversation.
    _iDialogueBusy = 0
+   _aDialogueTarget = None
 EndFunction
 
 ; Called by dialog scripts to indicate the player has received outside assistance.
@@ -3326,8 +3425,8 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
    Bool bHaveSex = False
    Bool bWhip    = False
    Bool bAssault     = False
-   _iAssault         = 0x0000
    _iAssaultTakeGold = 0
+   Bool bCooperating = Math.LogicalAnd(_iFurnitureGoals, 0x0001)
 
    ; First check if the furniture needs to be locked.
    ; 0x8000: Lock Furniture
@@ -3339,6 +3438,14 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
 
       _iFurnitureGoals -= 0x8000
       Return SUCCESS
+   EndIf
+
+   ; 0x0800: Restrain the player's arms
+   If (0x0800 <= _iFurnitureGoals)
+      bAssault = True
+      _iAssault = Math.LogicalOr(0x0004, _iAssault)
+
+      _iFurnitureGoals -= 0x0800
    EndIf
 
    ; 0x0400: Take the player's gold
@@ -3367,7 +3474,7 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
    ; 0x0100: Add Restraints
    If (0x0100 <= _iFurnitureGoals)
       bAssault = True
-      _iAssault += 0x0080
+      _iAssault = Math.LogicalOr(0x0080, _iAssault)
 
       _iFurnitureGoals -= 0x0100
    EndIf
@@ -3376,7 +3483,7 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
    If (0x0080 <= _iFurnitureGoals)
       If (_qFramework.NS_NAKED != _qFramework.GetNakedLevel())
          bAssault = True
-         _iAssault += 0x0001
+         _iAssault = Math.LogicalOr(0x0001, _iAssault)
       EndIf
 
       _iFurnitureGoals -= 0x0080
@@ -3385,7 +3492,13 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
    ; 0x0040: Gag
    If (0x0040 <= _iFurnitureGoals)
       bAssault = True
-      _iAssault += 0x0002
+      _iAssault = Math.LogicalOr(0x0002, _iAssault)
+
+      Int iBehaviour = _iEscapeAttempts + 1
+      If (50 < _qFramework.GetActorAnger(aNpc))
+         iBehaviour += 3
+      EndIf
+      _iGagRemaining += ((60 + (120 * iBehaviour)) / _fMcmPollTime As Int)
 
       _iFurnitureGoals -= 0x0040
    EndIf
@@ -3409,14 +3522,21 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
 
       ; Perform the assult now.
       ; The assault will happen on the done event (OnSlaveActionDone).
-      _iAssault += 0x8000
-      PlayApproachAnimation(aNpc, "Assault")
+      If (bCooperating)
+         _iAssault = Math.LogicalOr(0x8000, _iAssault)
+         PlayApproachAnimation(aNpc, "Assault")
+      Else
+         ; The player is not co-operating.  Use force.
+         AssaultPlayer()
+      EndIf
       Return SUCCESS
    EndIf
 
    ; 0x0020: Secure Gag
    If (0x0020 <= _iFurnitureGoals)
       _qFramework.SetStrictGag()
+
+      _iGagRemaining += ((_iGagRemaining * 0.5) As Int)
 
       _iFurnitureGoals -= 0x0020
    EndIf
@@ -3434,7 +3554,7 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
 
    ; 0x0008: Sex
    If (bHaveSex || (0x0008 <= _iFurnitureGoals))
-      StartSex(aNpc, !Math.LogicalAnd(_iFurnitureGoals, 0x0001))
+      StartSex(aNpc, !bCooperating)
 
       If (0x0008 <= _iFurnitureGoals)
          _iFurnitureGoals -= 0x0008
@@ -3446,7 +3566,7 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
    If (0x0004 <= _iFurnitureGoals)
       ; Perform an assault to ungag the player.
       ; The assault will happen on the done event (OnSlaveActionDone).
-      _iAssault += 0x8000 + 0x0100
+      _iAssault = Math.LogicalOr(0x8000 + 0x0100, _iAssault)
       PlayApproachAnimation(aNpc, "Assault")
 
       _iFurnitureGoals -= 0x0004
@@ -3459,6 +3579,9 @@ Int Function ProcessFurnitureGoals(Actor aNpc)
       If (Utility.RandomInt(1, 100) <= iWillingnessToHelp)
          PlayApproachAnimation(aNpc, "Unlock")
       Else
+         ; Add a delay here because speaking again so soon after a conversation doesn't work.
+         Utility.Wait(2)
+
          ; Goal 13: Lying About Release
          StartConversation(aNpc, 13)
          ; Only clear the release flag is the NPC is lying.  If the NPC is releasing the player
@@ -3478,10 +3601,12 @@ EndFunction
 
 ; Called by dialog scripts to indicate the player has completed a conversation.
 ; iContext: 0: No Relevant Context  1: Leash Game  2: Furniture
+;           3: Intermediate Conversation.  The conversation ended but did not resolve any scene.
 ; iActions uses the same definition as _iFurnitureGoals.
+; iSpecialActions: 0x0001: Permit Assisted Dressing
 ; iCooperation: How cooperative the player is.  Positive numbers indicate cooperation.
 Function DialogueComplete(Int iContext, Int iActions, Actor aNpc, Int iCooperation=0, \
-                          Bool bWaitForEnd=True)
+                          Int iSpeciaActions=0, Bool bWaitForEnd=True)
    ; If we are expected to wait for the dialogue to end, do so now.
    If (bWaitForEnd)
       Float fSecurity = 30
@@ -3500,7 +3625,7 @@ Function DialogueComplete(Int iContext, Int iActions, Actor aNpc, Int iCooperati
       _qFramework.SceneDone(szCurrScene)
    EndIf
 
-   ; If the conversation was a result of the conversation goal reset it.
+   ; If the conversation was a result of a conversation goal reset it.
    If ((12 == _iLeashHolderGoal) || (13 == _iLeashHolderGoal))
       _iLeashHolderGoal = -1
    EndIf
@@ -3514,24 +3639,51 @@ Function DialogueComplete(Int iContext, Int iActions, Actor aNpc, Int iCooperati
          _qFramework.IncActorKindness(aNpc, 2 * iRandom, 0, 80)
       EndIf
       _iVerbalAnnoyance += 1
-   ElseIf ((0 < iCooperation) && !Math.LogicalAnd(0x0002, iActions))
-      ; The player is cooperating and not being released.  Increase the NPC's dominance.
-      Int iMax = 60 + (10 * iCooperation)
-      Int iRandom = Utility.RandomInt(0, iCooperation)
-      If (iRandom)
-         _qFramework.IncActorDominance(aNpc, iRandom, 0, iMax)
-      EndIf
+   ElseIf (0 < iCooperation)
+      ; The player is cooperating.  Decrease the NPC's anger.
+      _qFramework.IncActorAnger(aNpc, 0 - iCooperation, 0, 80)
       _iVerbalAnnoyance -= 1
+
+      ; If the player is cooperating and not being released.  Increase the NPC's dominance.
+      If (!Math.LogicalAnd(0x0002, iActions))
+         Int iMax = 60 + (10 * iCooperation)
+         Int iRandom = Utility.RandomInt(0, iCooperation)
+         If (iRandom)
+            _qFramework.IncActorDominance(aNpc, iRandom, 0, iMax)
+         EndIf
+      EndIf
    EndIf
 
-   If (!_bFurnitureBusy)
-      _iFurnitureGoals = iActions
-      ; Keep track of the player's cooperation in the _iFurnitureGoals flags.
-      If (0 < iCooperation)
-         _iFurnitureGoals = Math.LogicalOr(0x0001, _iFurnitureGoals)
-      EndIf
+   ; If there are any special actions process them first.
+   If (iSpeciaActions)
+      ; 0x0001: Permit Assisted Dressing
+      If (0x0001 <= iSpeciaActions)
+         _qFramework.AddPermission(aNpc, _qFramework.AP_DRESSING_ASSISTED)
 
-      ProcessFurnitureGoals(aNpc)
+         iSpeciaActions -= 0x0001
+      EndIf
+   EndIf
+
+   _iFurnitureGoals = Math.LogicalOr(iActions, _iFurnitureGoals)
+   ; Keep track of the player's cooperation in the _iFurnitureGoals flags.
+   If (0 < iCooperation)
+      _iFurnitureGoals = Math.LogicalOr(0x0001, _iFurnitureGoals)
+   EndIf
+
+   ProcessFurnitureGoals(aNpc)
+
+   ; If we have completed all short-term goals clear the variable.
+   If ((1 == iContext) && !_iFurnitureGoals && (0 < _iLeashHolderGoal))
+      _iLeashHolderGoal = -2
+   EndIf
+
+   ; Identify the dialogue is done.
+   _iDialogueBusy = 0
+   _aDialogueTarget = None
+   If (3 == iContext)
+      ; If the dialogue did not complete a scene set a small delay to allow for any extra
+      ; actions that are needed as part of the dialogue/scene.
+      _iDialogueBusy = 2
    EndIf
 EndFunction
 
@@ -3602,7 +3754,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "2.03"
+   Return "2.04"
 EndFunction
 
 Float Function GetLastUpdateTime()

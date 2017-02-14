@@ -7,7 +7,7 @@ Function Fragment_0(ObjectReference akSpeakerRef)
 Actor akSpeaker = akSpeakerRef as Actor
 ;BEGIN CODE
 dfwsDfwSupport _qQuest = Self.GetOwningQuest() As dfwsDfwSupport
-_qQuest.Cooperation(3, 0)
+_qQuest.Cooperation(3, 0, akSpeaker)
 ;END CODE
 EndFunction
 ;END FRAGMENT
