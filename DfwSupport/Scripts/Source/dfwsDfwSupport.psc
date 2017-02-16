@@ -3754,7 +3754,7 @@ EndFunction
 ;
 
 String Function GetModVersion()
-   Return "2.04"
+   Return "2.05"
 EndFunction
 
 Float Function GetLastUpdateTime()
