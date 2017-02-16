@@ -3105,7 +3105,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "2.04"
+   Return "2.05"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -3677,6 +3677,11 @@ Function QuickSave()
 EndFunction
 
 Function AutoSave()
+   ; Autosave should only be done with the Full Control save game style.
+   If (2 != _iMcmSaveGameControlStyle)
+      Return
+   EndIf
+
    Float fCurrTime = Game.GetRealHoursPassed()
    If (fCurrTime < (_fLastSave + (_qMcm.fModSaveMinTime / 60.0)))
       Log("Cannot Save: Too Soon.", DL_DEBUG, DC_SAVE)
@@ -3696,9 +3701,7 @@ Function AutoSave()
 
       ; Add a delay before resetting _bBlockLoad as the Save doesn't happen immediately.
       Utility.Wait(0.5)
-      If (2 == _iMcmSaveGameControlStyle)
-         _bBlockLoad = True
-      EndIf
+      _bBlockLoad = True
    EndIf
 EndFunction
 
