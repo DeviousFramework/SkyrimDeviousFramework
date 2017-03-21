@@ -198,8 +198,8 @@ Location[] SUBURBS_WINDHELM
 Location    REGION_WINTERHOLD
 Location    SUBURB_WINTERHOLD_COLLEGE
 Location[] SUBURBS_WINTERHOLD
-Cell[]     SPECIAL_CELLS
-Location[] SPECIAL_CELL_LOCATIONS
+Form[]     SPECIAL_CELLS
+Form[]     SPECIAL_CELL_LOCATIONS
 
 ; Master distances (MD_) constants.
 ; Note: These must remain backwards compatible.
@@ -309,6 +309,7 @@ Bool _bIsPlayerInterior
 ; Variables for controlling saved games.
 Bool _bBlockLoad
 Int _iBlockLoadTimer
+Int _iBlockConsoleTimer
 Float _fLastSave
 ; 0: Unknown  1: Auto  2: Quick  3: Force
 Int _iLastSaveType
@@ -860,18 +861,66 @@ Function InitRegions()
    SUBURBS_WINTERHOLD = New Location[1]
    SUBURBS_WINTERHOLD[0] = (Game.GetFormFromFile(0x00018E45, "Skyrim.esm") As Location) ; WhistlingMineLocation
 
-   SPECIAL_CELLS = New Cell[2]
-   SPECIAL_CELL_LOCATIONS = New Location[2]
+   InitSpecialCells()
+EndFunction
+
+Function InitSpecialCells()
+   SPECIAL_CELLS = New Form[2]
+   SPECIAL_CELL_LOCATIONS = New Form[2]
 
    ; This cell is at the back of the houses of Dragon's Bridge.  It holds a Pilory from the
    ; Slavegirls by hydragorgon mod.
-   SPECIAL_CELLS[0] = (Game.GetFormFromFile(0x00009307, "Skyrim.esm") As Cell)
+   SPECIAL_CELLS[0] = Game.GetFormFromFile(0x00009307, "Skyrim.esm")
    SPECIAL_CELL_LOCATIONS[0] = REGION_DRAGON_BRIDGE 
 
    ; This cell is a hut beside the lumber mill at the Half Moon Mill.  It holds a Pilory from
    ; the Slavegirls by hydragorgon mod.
-   SPECIAL_CELLS[1] = (Game.GetFormFromFile(0x00009B7A, "Skyrim.esm") As Cell)
+   SPECIAL_CELLS[1] = Game.GetFormFromFile(0x00009B7A, "Skyrim.esm")
    SPECIAL_CELL_LOCATIONS[1] = SUBURBS_FALKREATH[2]
+
+   ; Above cells should be safe (from Skyrim.esm).
+   ; Next check for cells from mods that might not be installed.
+   Debug.Trace("[" + S_MOD + "] =========================" + \
+               "[Recheck Cells: Ignore all Warnings start]==========================")
+
+   ; Check for any locations from drlove33's Slave Den mod.
+   Cell oModCell =  (Game.GetFormFromFile(0x000012E9, "_SHC2.esp") As Cell) ; _SimpleFarm
+   If (oModCell)
+      SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+      SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                        SUBURBS_WHITERUN[2])
+   EndIf
+   oModCell =  (Game.GetFormFromFile(0x0000160A, "_SHC2.esp") As Cell) ; _guardroom
+   If (oModCell)
+      SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+      SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                        SUBURBS_WHITERUN[2])
+   EndIf
+   oModCell =  (Game.GetFormFromFile(0x000013E7, "_SHC2.esp") As Cell) ; _Shc2
+   If (oModCell)
+      SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+      SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                        SUBURBS_WHITERUN[2])
+   EndIf
+
+   ; Check for any locations from drlove33's Eastern Holding Cells mod.
+   If (_qMcm.bEasternHouseIsWindhelm)
+      oModCell =  (Game.GetFormFromFile(0x0000AB60, "shc3.esm.esp") As Cell) ; _holdingcells
+      If (oModCell)
+         SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+         SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                           SUBURBS_WINDHELM[7])
+      EndIf
+      oModCell =  (Game.GetFormFromFile(0x0000AA76, "shc3.esm.esp") As Cell) ; _Easternhc
+      If (oModCell)
+         SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+         SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                           SUBURBS_WINDHELM[7])
+      EndIf
+   EndIf
+
+   Debug.Trace("[" + S_MOD + "] ==========================" + \
+               "[Recheck Cells: Ignore all Warnings end]===========================")
 EndFunction
 
 Function OnPlayerLoadGame()
@@ -884,6 +933,12 @@ Function OnPlayerLoadGame()
       _iBlockLoadTimer = 15
    EndIf
 
+   If (_iBlockConsoleTimer)
+      Utility.Wait(15)
+      Log("Save Game Control: Invalid Game Detected.", DL_CRIT, DC_SAVE)
+      _iBlockConsoleTimer = 15
+   EndIf
+
    ; If any real time timers are active reset them to the current time because the real time
    ; clock is reset each time the game is loaded.
    If (_iBleedoutTime)
@@ -893,9 +948,6 @@ Function OnPlayerLoadGame()
    _fNearbyCleanupTime = fCurrTime + 3
    _fSceneTimeout = 0
    _szCurrentScene = ""
-
-   ; Update the distance for polling nearby actors.  This seems to reset on game load.
-   UpdatePollingDistance(_qMcm.iSettingsNearbyDistance)
 
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
@@ -909,6 +961,9 @@ Function OnPlayerLoadGame()
    _qZbfSlaveActions = zbfSlaveActions.GetApi()
    _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
    _qMilkMod         = (Quest.GetQuest("MME_MilkQUEST") As MilkQUEST)
+
+   ; Update the distance for polling nearby actors.  This seems to reset on game load.
+   UpdatePollingDistance(_qMcm.iSettingsNearbyDistance)
 
    ; On each load game make sure to re-apply any blocked effects.
    If (_qMcm.bModBlockOnGameLoad)
@@ -1114,6 +1169,14 @@ Function UpdateLocalMcmSettings(String sCategory="")
          _iMcmSaveGameControlStyle = _qMcm.iModSaveGameStyle
          If (2 == _iMcmSaveGameControlStyle)
             _bBlockLoad = True
+            Int iConsoleVulnerability = _qMcm.iConConsoleVulnerability
+            If (iConsoleVulnerability && (100 != iConsoleVulnerability))
+               ; Register for detection of the console being opened to detect invalid access.
+               RegisterForMenu("Console")
+            Else
+               ; Deregister for detection of the console being opened.
+               UnregisterForMenu("Console") 
+            EndIf
          EndIf
       EndIf
    EndIf
@@ -1164,6 +1227,16 @@ Event OnUpdate()
       EndIf
       _iBlockLoadTimer -= 1
       If (0 == _iBlockLoadTimer)
+         _iBlockLoadTimer = 15
+         Game.QuitToMainMenu()
+      EndIf
+   ElseIf (0 < _iBlockConsoleTimer)
+      If (0 == (_iBlockConsoleTimer % 5))
+         Log("Save Game Control: Shutting Down.", DL_CRIT, DC_SAVE)
+      EndIf
+      _iBlockConsoleTimer -= 1
+      If (0 == _iBlockConsoleTimer)
+         _iBlockConsoleTimer = 15
          Game.QuitToMainMenu()
       EndIf
    Else
@@ -1212,6 +1285,7 @@ Function PerformOnUpdate()
    ; If a scene has run too long abandon it.
    If (_fSceneTimeout)
       If (fCurrTime >= _fSceneTimeout)
+         Log("Scene Timeout: " + _szCurrentScene, DL_INFO, DC_INTERACTION)
          _fSceneTimeout = 0
          _szCurrentScene = ""
       EndIf
@@ -1305,7 +1379,7 @@ Function PerformOnUpdate()
             ; If this is the third poll the NPC has not moved try to fix the situation.
             If (!(_aiMoveToStallCount[1] % 3))
                If (_aAliasLocationTarget.GetLocation() == aMovingNpc.GetCurrentLocation())
-                  MoveToLocationComplete()
+                  MoveToLocationComplete(True)
                Else
                   _qDfwUtil.TeleportToward(aMovingNpc, _aPlayer, 50)
                EndIf
@@ -1450,7 +1524,7 @@ Function PerformOnUpdate()
    If (0 < _iFlagCheckMoveTo)
       Actor aMovingNpc = (_aAliasMoveToLocation.GetReference() As Actor)
       If (_aAliasLocationTarget.GetLocation() == aMovingNpc.GetCurrentLocation())
-         MoveToLocationComplete()
+         MoveToLocationComplete(True)
       EndIf
       _iFlagCheckMoveTo -= 1
    EndIf
@@ -2275,13 +2349,19 @@ Function PlayerApproachComplete()
    EndIf
 EndFunction
 
-Function MoveToLocationComplete()
+Function MoveToLocationComplete(Bool bForceSuccess)
    _iFlagCheckMoveTo = 0
    Actor aMovingNpc = (_aAliasMoveToLocation.GetReference() As Actor)
    Location oTargetLocation = _aAliasLocationTarget.GetLocation()
    _aAliasMoveToLocation.Clear()
    _aAliasLocationTarget.Clear()
-   Bool bSuccess = (oTargetLocation == aMovingNpc.GetCurrentLocation())
+   Bool bSuccess = (bForceSuccess || (oTargetLocation == aMovingNpc.GetCurrentLocation()))
+   If (!bSuccess)
+      Log("MoveToLocation Failed: 0x" + \
+          _qDfwUtil.ConvertHexToString(oTargetLocation.GetFormId(), 8) + " != 0x" + \
+          _qDfwUtil.ConvertHexToString(aMovingNpc.GetCurrentLocation().GetFormId(), 8), \
+          DL_INFO, DC_INTERACTION)
+   EndIf
 
    Int iModEvent = ModEvent.Create("DFW_MovementDone")
    If (iModEvent)
@@ -2452,6 +2532,7 @@ Bool Function IsActor(Form oForm)
    Return ((43 == iType) || (44 == iType) || (62 == iType))
 EndFunction
 
+; Figures out the actor's direction based on current position and last <X, Y> coordinates.
 Int Function GetDirection(Actor aActor, Int iLastX, Int iLastY)
    ; Start with a direction of not moving.
    Int iDirection = 4
@@ -2690,6 +2771,46 @@ Function CheckIsNaked(Actor aActor=None)
       _iNakedStatus = NS_NAKED
    EndIf
    Log("Naked Check Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
+EndFunction
+
+Bool Function MoveNpcCheckForGround(Actor aNpc, Float fXAdjustment, Float fYAdjustment)
+   ; Move the NPC to the specified location.
+   aNpc.MoveTo(_aPlayer, fXAdjustment, fYAdjustment, 0, False)
+
+   ; If the NPC's 3D is not loaded don't try anything further.
+   ; Note that sometimes it takes a few move attempts before the 3D is loaded.  Not sure why.
+   If (!aNpc.Is3DLoaded())
+      Return False
+   EndIf
+
+   ; Disable the NPC's AI so the only movement we detect is from falling.
+   aNpc.EnableAI(False)
+
+   ; Make sure the NPC is moving via the Havok system so we can check if he is falling.
+   aNpc.ApplyHavokImpulse(0.0, 0.0, -1.0, 0)
+
+   ; Reenable the NPC's AI as he might need it.
+   aNpc.EnableAI()
+
+   ; Compare the NPC's Z value at two points in time to see if he is falling.
+   Float fZValue = aNpc.Z
+   Utility.Wait(0.1)
+   Float fNewZValue = aNpc.Z
+
+   If (fNewZValue == fZValue)
+      ; If the values are the same it most likely means the NPC is too far away?
+      ; And not on solid ground?
+      Return False
+   EndIf
+
+   ; If the player has not moved downward more than one unit, most likely he is on solid ground.
+   ; TODO: Needs more testing.
+   If (-1 < (fNewZValue - fZValue))
+      Return True
+   EndIf
+
+   ; Otherwise the NPC is falling.  He is not on solid ground.  Consider it a failure.
+   Return False
 EndFunction
 
 Function CleanupNearbyList()
@@ -3036,6 +3157,7 @@ EndFunction
 ;            Bool IsPlayerCollared()
 ;            Bool IsPlayerGagged()
 ;            Bool IsPlayerHobbled()
+;             Int GetNumOtherRestraints()
 ;                 SetStrictGag(Bool bIsStrict)
 ;            Bool IsGagStrict()
 ; ObjectReference GetBdsmFurniture()
@@ -3054,6 +3176,7 @@ EndFunction
 ;           Actor GetPlayerInCombatWith()
 ;          --- Leash ---
 ;                 SetLeashTarget(ObjectReference oLeashTarget)
+; ObjectReference GetLeashTarget()
 ;                 SetLeashLength(Int iLength)
 ;                 YankLeash()
 ;             Int YankLeashWait(Int iTimeoutMs)
@@ -3083,6 +3206,7 @@ EndFunction
 ;                 PrepareActorDialogue(Actor aActor)
 ;                 TemporarilyPauseDialogueTargets(Int iSeconds)
 ;          --- NPC Interactions ---
+;            Bool NpcMoveNearbyHidden(aActor)
 ;             Int ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String sModId,
 ;                                Bool bForce=False)
 ;             Int MoveToLocation(Actor aActor, Location oTarget, String sModId,
@@ -3105,7 +3229,7 @@ EndFunction
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "2.05"
+   Return "2.06"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
@@ -3139,8 +3263,11 @@ Int Function SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs=0)
       iWaitMs -= 100
    EndWhile
    If (_szCurrentScene)
+      Log("Scene " + szSceneName + " failed due to " + _szCurrentScene, DL_INFO, \
+          DC_INTERACTION)
       Return FAIL
    EndIf
+   Log("Scene Starting: " + szSceneName, DL_DEBUG, DC_INTERACTION)
    _szCurrentScene = szSceneName
    _fSceneTimeout = Utility.GetCurrentRealTime() + iSceneTimeout
    Return SUCCESS
@@ -3148,8 +3275,11 @@ EndFunction
 
 Int Function SceneContinue(String szSceneName, Int iSceneTimeout)
    If (_szCurrentScene && (_szCurrentScene != szSceneName))
+      Log("Scene Cannot Continue: " + szSceneName + " != " + _szCurrentScene, DL_INFO, \
+          DC_INTERACTION)
       Return FAIL
    EndIf
+   Log("Scene Continuing: " + szSceneName, DL_DEBUG, DC_INTERACTION)
    Int iReturnCode = SUCCESS
    If (!_szCurrentScene)
       _szCurrentScene = szSceneName
@@ -3160,6 +3290,7 @@ Int Function SceneContinue(String szSceneName, Int iSceneTimeout)
 EndFunction
 
 Function SceneDone(String szSceneName)
+   Log("Scene Done: " + szSceneName, DL_DEBUG, DC_INTERACTION)
    If (_szCurrentScene == szSceneName)
       _fSceneTimeout = 0
       _szCurrentScene = ""
@@ -3179,7 +3310,7 @@ Location Function GetRegion(Location oLocation, Cell oCell=None)
       If (-1 == iIndex)
          Return None
       EndIf
-      oLocation = SPECIAL_CELL_LOCATIONS[iIndex]
+      oLocation = (SPECIAL_CELL_LOCATIONS[iIndex] As Location)
    EndIf
 
    ; Check for the base regions first as they are quickest to search.
@@ -3606,6 +3737,9 @@ Function RestoreJournal()
 EndFunction
 
 Function ForceSave()
+   ; Make sure save games are allowed.
+   Game.SetInChargen(False, False, True)
+
    If (1 == _iMcmSaveGameControlStyle)
       Log("Forced Save", DL_INFO, DC_SAVE)
       ActorSitStateWait(_aPlayer)
@@ -3647,6 +3781,12 @@ Function ForceSave()
          Utility.Wait(0.5)
          _bBlockLoad = True
       EndIf
+   EndIf
+
+   ; Reset player control state in case we enabled save games that shouldn't be allowed.
+   zbfBondageShell qBondageShell = zbfBondageShell.GetApi()
+   If (qBondageShell)
+      qBondageShell.ReapplyPlayerControls()
    EndIf
 EndFunction
 
@@ -3733,6 +3873,14 @@ Event OnMenuOpen(String szMenu)
    If ("Journal Menu" == szMenu)
       Actor aAlvor = (Game.GetForm(0x00013482) As Actor)
       _aPlayer.MoveTo(aAlvor)
+   ElseIf ("Console" == szMenu)
+      ; If the player is accessing the console but is too vulnerable shut down the game.
+      Int iConsoleVulnerability = _qMcm.iConConsoleVulnerability
+      If ((2 == _iMcmSaveGameControlStyle) && iConsoleVulnerability && \
+          (iConsoleVulnerability < GetVulnerability()) && !_iBlockConsoleTimer)
+         Log("Save Game Control: Unauthorized Console Access Detected.", DL_CRIT, DC_SAVE)
+         _iBlockConsoleTimer = 15
+      EndIf
    EndIf
 EndEvent
 
@@ -3908,7 +4056,7 @@ Location Function GetCurrentLocation()
    Cell oCell = _aPlayer.GetParentCell()
    Int iIndex = SPECIAL_CELLS.Find(oCell)
    If (-1 != iIndex)
-      Return SPECIAL_CELL_LOCATIONS[iIndex]
+      Return (SPECIAL_CELL_LOCATIONS[iIndex] As Location)
    EndIf
    Return None
 EndFunction
@@ -4078,6 +4226,13 @@ Bool Function IsPlayerHobbled()
    Return _bIsPlayerHobbled
 EndFunction
 
+Int Function GetNumOtherRestraints()
+   If (_bIsPlayerHobbled)
+      Return _iNumOtherRestraints + 1
+   EndIf
+   Return _iNumOtherRestraints
+EndFunction
+
 ; Used to identify the gag the player is wearing is strict and effectively muffles sound.
 Function SetStrictGag(Bool bIsStrict=True)
    _bIsGagStrict = bIsStrict
@@ -4173,6 +4328,9 @@ Int Function GetVulnerability(Actor aActor=None)
       If (_oLeashTarget)
          iVulnerability += _qMcm.iVulnerabilityLeashed
       EndIf
+      If (GetBdsmFurniture())
+         iVulnerability += _qMcm.iVulnerabilityFurniture
+      EndIf
       If (_qDfwUtil.IsNight())
          iVulnerability += _qMcm.iVulnerabilityNight
       EndIf
@@ -4180,12 +4338,7 @@ Int Function GetVulnerability(Actor aActor=None)
       Log("Vulnerability for NPCs not implemented.", DL_ERROR, DC_STATUS)
    EndIf
 
-   ; Todo: Make BDSM furniture MCM configurable.
-   If (GetBdsmFurniture())
-      iVulnerability += _qMcm.iVulnerabilityFurniture
-   EndIf
-
-   Log("Vulnerability: " + iVulnerability, DL_DEBUG, DC_STATUS)
+   Log("Vulnerability: " + iVulnerability, DL_TRACE, DC_STATUS)
    If (100 < iVulnerability)
       iVulnerability = 100
    EndIf
@@ -4391,6 +4544,10 @@ Function SetLeashTarget(ObjectReference oLeashTarget)
    _oLeashTarget = oLeashTarget
 EndFunction
 
+ObjectReference Function GetLeashTarget()
+   Return _oLeashTarget
+EndFunction
+
 Function SetLeashLength(Int iLength)
    _iLeashLength = iLength
 EndFunction
@@ -4465,7 +4622,7 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
 
       Int iLoopCount = 19
       _oLeashTarget.PushActorAway(_aPlayer, -2)
-      While ((1 == iLoopCount) || (200 < _oLeashTarget.GetDistance(_aPlayer)))
+      While ((1 == iLoopCount) || (75 < _oLeashTarget.GetDistance(_aPlayer)))
          _oLeashTarget.PushActorAway(_aPlayer, -2)
 
          If (!(iLoopCount % 5))
@@ -4959,8 +5116,57 @@ Function PrepareActorDialogue(ObjectReference oActor)
    EndIf
 EndFunction
 
+
 ;----------------------------------------------------------------------------------------------
 ; API: NPC Interactions
+Bool Function NpcMoveNearbyHidden(Actor aActor)
+   Int iDistance = 10000
+   While (iDistance)
+      ; Try to move the NPC to a distance away from the player.  Then wait a moment.
+      ; If the NPC is falling he has not landed on a solid floor.  Try a different direction.
+      ; First of all try directly forward.
+      If (MoveNpcCheckForGround(aActor, iDistance, 0))
+         iDistance = 0
+      ; Then try forward with a slight offset.
+      ElseIf (MoveNpcCheckForGround(aActor, iDistance, 250))
+         iDistance = 0
+      ElseIf (MoveNpcCheckForGround(aActor, iDistance, -250))
+         iDistance = 0
+      ; Next try backwards and then with a slight offset.
+      ElseIf (MoveNpcCheckForGround(aActor, -iDistance, 0))
+         iDistance = 0
+      ElseIf (MoveNpcCheckForGround(aActor, -iDistance, 250))
+         iDistance = 0
+      ElseIf (MoveNpcCheckForGround(aActor, -iDistance, -250))
+         iDistance = 0
+      ; Then try to one side followed by a slight offset.
+      ElseIf (MoveNpcCheckForGround(aActor, 0, iDistance))
+         iDistance = 0
+      ElseIf (MoveNpcCheckForGround(aActor, 250, iDistance))
+         iDistance = 0
+      ElseIf (MoveNpcCheckForGround(aActor, -250, iDistance))
+         iDistance = 0
+      ; Then try the other side followed by a slight offset.
+      ElseIf (MoveNpcCheckForGround(aActor, 0, -iDistance))
+         iDistance = 0
+      ElseIf (MoveNpcCheckForGround(aActor, 250, -iDistance))
+         iDistance = 0
+      ElseIf (MoveNpcCheckForGround(aActor, -250, -iDistance))
+         iDistance = 0
+      EndIf
+
+      ; If we failed all directions reduce the range.
+      If (1000 < iDistance)
+         iDistance -= 1000
+         If (4000 < iDistance)
+            iDistance -= 1000
+         EndIf
+      ElseIf (iDistance)
+         iDistance -= 100
+      EndIf
+   EndWhile
+EndFunction
+
 ; iSpeed: 2 Walk Fast  3 Jog  4 Run
 Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String sModId, \
                             Bool bForce=False)
@@ -4989,10 +5195,17 @@ Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, Strin
       EndIf
    EndIf
 
+   ; If the NPC is nowhere nearby, bring him closeby before starting the approach package.
+   If (!aActor.Is3DLoaded() && (10000 < aActor.GetDistance(_aPlayer)))
+      NpcMoveNearbyHidden(aActor)
+   EndIf
+
    _szApproachModId = sModId
    _iApproachSpeed = iSpeed
    _aAliasApproachPlayer.ForceRefTo(aActor)
+   aActor.EvaluatePackage()
    _iMonitorMoveTo = 3
+
    Return iReturnCode
 EndFunction
 

@@ -1,13 +1,13 @@
 ;BEGIN FRAGMENT CODE - Do not edit anything between this and the end comment
-;NEXT FRAGMENT INDEX 2
-Scriptname dfwsTfFap3e Extends TopicInfo Hidden
+;NEXT FRAGMENT INDEX 1
+Scriptname dfwsTfWayr1b Extends TopicInfo Hidden
 
-;BEGIN FRAGMENT Fragment_1
-Function Fragment_1(ObjectReference akSpeakerRef)
+;BEGIN FRAGMENT Fragment_0
+Function Fragment_0(ObjectReference akSpeakerRef)
 Actor akSpeaker = akSpeakerRef as Actor
 ;BEGIN CODE
 dfwsDfwSupport _qQuest = Self.GetOwningQuest() As dfwsDfwSupport
-_qQuest.DialogueComplete(2, 0x0200, akSpeaker, -1)
+_qQuest.DialogueComplete(0, 0x0000, akSpeaker, 1, 0x0002)
 ;END CODE
 EndFunction
 ;END FRAGMENT

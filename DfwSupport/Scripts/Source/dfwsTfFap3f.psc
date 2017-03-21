@@ -7,7 +7,7 @@ Function Fragment_0(ObjectReference akSpeakerRef)
 Actor akSpeaker = akSpeakerRef as Actor
 ;BEGIN CODE
 dfwsDfwSupport _qQuest = Self.GetOwningQuest() As dfwsDfwSupport
-_qQuest.DialogueComplete(2, 0x0000, akSpeaker, -1)
+_qQuest.DialogueComplete(2, 0x0200, akSpeaker, -1)
 ;END CODE
 EndFunction
 ;END FRAGMENT

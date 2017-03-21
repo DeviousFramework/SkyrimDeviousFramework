@@ -96,11 +96,12 @@ Bool Property bBlockShoes  Auto
 Bool Property bBlockArmour Auto
 Bool Property bBlockArms   Auto
 Bool Property bBlockLeash  Auto
-Bool Property bSaveGameConfirm       Auto
-Bool Property bSettingsDetectUnequip Auto
-Bool Property bModLeashVisible       Auto
-Bool Property bModLeashInterrupt     Auto
-Bool Property bModBlockOnGameLoad    Auto
+Bool Property bSaveGameConfirm        Auto
+Bool Property bEasternHouseIsWindhelm Auto
+Bool Property bSettingsDetectUnequip  Auto
+Bool Property bModLeashVisible        Auto
+Bool Property bModLeashInterrupt      Auto
+Bool Property bModBlockOnGameLoad     Auto
 
 ; *** Float Slider Options ***
 Float _fDefSetPollTime
@@ -177,6 +178,7 @@ Int Property iModAttentionKey           Auto
 Int Property iModCallTimeout            Auto
 Int Property iModSaveGameStyle          Auto
 Int Property iModSaveKey                Auto
+Int Property iConConsoleVulnerability   Auto
 Int Property iLogLevel                  Auto
 Int Property iLogLevelScreenGeneral     Auto
 Int Property iLogLevelScreenDebug       Auto
@@ -235,14 +237,6 @@ Function UpdateScript()
    If (1 > CurrentVersion)
       _aPlayer = Game.GetPlayer()
       _qFramework = ((Self As Quest) As dfwDeviousFramework)
-
-      Pages = New String[6]
-      Pages[0] = "Framework Settings"
-      Pages[1] = "Vulnerability"
-      Pages[2] = "NPC Disposition"
-      Pages[3] = "Mod Features"
-      Pages[4] = "Status"
-      Pages[5] = "Debug"
    EndIf
 
    ; Historical configuration...
@@ -426,9 +420,6 @@ Function UpdateScript()
    EndIf
 
    If (11 > CurrentVersion)
-      ; Renamed the NPC Confidence page.
-      Pages[2] = "NPC Disposition"
-
       _iDefWillingGuards    =  10
       _iDefWillingMerchants =   3
       _iDefWillingBdsm      = -25
@@ -487,6 +478,24 @@ Function UpdateScript()
       iLogLevelScreenSave = _iDefLogLevelScreenSave
       fModSaveMinTime     = _fDefSaveMinTime
    EndIf
+
+   If (16 > CurrentVersion)
+      bEasternHouseIsWindhelm = False
+   EndIf
+
+   If (17 > CurrentVersion)
+      Pages = New String[8]
+      Pages[0] = "Framework Settings"
+      Pages[1] = "Vulnerability"
+      Pages[2] = "NPC Disposition"
+      Pages[3] = "Mod Features"
+      Pages[4] = "Game Control"
+      Pages[5] = "Mod Compatibility"
+      Pages[6] = "Status"
+      Pages[7] = "Debug"
+
+      iConConsoleVulnerability = 100
+   EndIf
 EndFunction
 
 ; Version of the MCM script.
@@ -503,7 +512,7 @@ Int Function GetVersion()
    _qDfwUtil = ((Self As Quest) As dfwUtil)
    _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
 
-   Return 15
+   Return 17
 EndFunction
 
 Event OnConfigInit()
@@ -733,7 +742,7 @@ Function PresentInformation(String[] aszInfo, String szHeader)
          szNext = "Exit"
       EndIf
 
-      ; Display the information to the user.
+      ; Show the information to the user.
       If (ShowMessage(szMessage, True, szBack, szNext))
          iPage -= 1
       Else
@@ -780,6 +789,10 @@ Event OnPageReset(String szRequestedPage)
       DisplayNpcDispositionPage(bSecure)
    ElseIf ("Mod Features" == szPage)
       DisplayModFeaturesPage(bSecure)
+   ElseIf ("Game Control" == szPage)
+      DisplayGameControlPage(bSecure)
+   ElseIf ("Mod Compatibility" == szPage)
+      DisplayModCompatibilityPage(bSecure)
    ElseIf ("Status" == szPage)
       DisplayStatusPage(bSecure)
    ElseIf ("Debug" == szPage)
@@ -799,16 +812,9 @@ Function DisplayFrameworkPage(Bool bSecure)
    AddTextOption("Devious Framework Version", _qFramework.GetModVersion(), a_flags=OPTION_FLAG_DISABLED)
 
    AddEmptyOption()
-
-   AddSliderOptionST("ST_FWK_SECURE",        "Security Level",        iSettingsSecurity, a_flags=iFlags)
-   AddToggleOptionST("ST_FWK_HARDCORE",      "...Hardcore (Caution)", _bSecureHardcore, a_flags=iFlags)
    AddSliderOptionST("ST_FWK_POLL_TIME",     "Poll Time",             fSettingsPollTime, "{1}")
    AddSliderOptionST("ST_FWK_POLL_NEAR",     "Nearby Poll Frequency", iSettingsPollNearby)
    AddSliderOptionST("ST_FWK_POLL_DISTANCE", "Nearby Poll Distance",  iSettingsNearbyDistance)
-
-   AddEmptyOption()
-
-   AddToggleOptionST("ST_FWK_DD_FIX", "Detect Devious Device Unequips", bSettingsDetectUnequip)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -826,14 +832,75 @@ Function DisplayVulnerabilityPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddSliderOptionST("ST_VUL_NUDE",       "Nude",           iVulnerabilityNude,       a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_COLLAR",     "Collar",         iVulnerabilityCollar,     a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_BINDER",     "Arm Binder",     iVulnerabilityBinder,     a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_GAGGED",     "Gag",            iVulnerabilityGagged,     a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_RESTRAINTS", "Restraints",     iVulnerabilityRestraints, a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_LEASHED",    "Leashed",        iVulnerabilityLeashed,    a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_FURNITURE",  "BDSM Furniture", iVulnerabilityFurniture,  a_flags=iFlags)
-   AddSliderOptionST("ST_VUL_NIGHT",      "Night Time",     iVulnerabilityNight,      a_flags=iFlags)
+   ; For each header find out if it is active and add a marker to indicate if it is so.
+   String szTitle = "Nude"
+   Int iNakedLevel = _qFramework.GetNakedLevel()
+   If (_qFramework.NS_NAKED == iNakedLevel)
+      ; Both slots are naked.
+      szTitle += " *"
+   ElseIf ((_qFramework.NS_WAIST_PARTIAL == iNakedLevel) || \
+           (_qFramework.NS_CHEST_PARTIAL == iNakedLevel))
+      ; One slot is naked and the other is reduced.
+      szTitle += " (50% + " + (iVulnerabilityNakedReduce / 2) + "%)"
+   ElseIf ((_qFramework.NS_WAIST_COVERED == iNakedLevel) || \
+           (_qFramework.NS_WAIST_COVERED == iNakedLevel))
+      ; One slot is naked.
+      szTitle += " (50%)"
+   ElseIf (_qFramework.NS_BOTH_PARTIAL == iNakedLevel)
+      ; Both slots are worn but reduced.
+      szTitle += "(" + iVulnerabilityNakedReduce + "%)"
+   EndIf
+   AddSliderOptionST("ST_VUL_NUDE",       szTitle, iVulnerabilityNude,       a_flags=iFlags)
+
+   ; For each header find out if it is active and add a marker to indicate if it is so.
+   szTitle = "Collar"
+   If (_qFramework.IsPlayerCollared())
+      szTitle += " *"
+   EndIf
+   AddSliderOptionST("ST_VUL_COLLAR",     szTitle, iVulnerabilityCollar,     a_flags=iFlags)
+
+   ; For each header find out if it is active and add a marker to indicate if it is so.
+   szTitle = "Arm Binder"
+   If (_qFramework.IsPlayerArmLocked())
+      szTitle += " *"
+   EndIf
+   AddSliderOptionST("ST_VUL_BINDER",     szTitle, iVulnerabilityBinder,     a_flags=iFlags)
+
+   ; For each header find out if it is active and add a marker to indicate if it is so.
+   szTitle = "Gag"
+   If (_qFramework.IsPlayerGagged())
+      szTitle += " *"
+   EndIf
+   AddSliderOptionST("ST_VUL_GAGGED",     szTitle, iVulnerabilityGagged,     a_flags=iFlags)
+
+   ; For each header find out if it is active and add a marker to indicate if it is so.
+   szTitle = "Other Restraints"
+   Int iOtherRestraints = _qFramework.GetNumOtherRestraints()
+   If (iOtherRestraints)
+      szTitle += " (" + (iOtherRestraints * iVulnerabilityRestraints) + ")"
+   EndIf
+   AddSliderOptionST("ST_VUL_RESTRAINTS", szTitle, iVulnerabilityRestraints, a_flags=iFlags)
+
+   ; For each header find out if it is active and add a marker to indicate if it is so.
+   szTitle = "Leashed"
+   If (_qFramework.GetLeashTarget())
+      szTitle += " *"
+   EndIf
+   AddSliderOptionST("ST_VUL_LEASHED",    szTitle, iVulnerabilityLeashed,    a_flags=iFlags)
+
+   ; For each header find out if it is active and add a marker to indicate if it is so.
+   szTitle = "BDSM Furniture"
+   If (_qFramework.GetBdsmFurniture())
+      szTitle += " *"
+   EndIf
+   AddSliderOptionST("ST_VUL_FURNITURE",  szTitle, iVulnerabilityFurniture,  a_flags=iFlags)
+
+   ; For each header find out if it is active and add a marker to indicate if it is so.
+   szTitle = "Night Time"
+   If (_qDfwUtil.IsNight())
+      szTitle += " *"
+   EndIf
+   AddSliderOptionST("ST_VUL_NIGHT",      szTitle, iVulnerabilityNight,      a_flags=iFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -862,11 +929,6 @@ Function DisplayModFeaturesPage(Bool bSecure)
       iFlags = OPTION_FLAG_DISABLED
    EndIf
 
-   AddHeaderOption("Redress Timeouts")
-   AddSliderOptionST("ST_MOD_RAPE_REDRESS",     "Post Rape Redress Timeout", iModRapeRedressTimeout,  a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_NAKED_REDRESS",    "Naked Redress Timeout",     iModNakedRedressTimeout, a_flags=iFlags)
-
-   AddEmptyOption()
    AddHeaderOption("Leash Configuration")
    AddTextOptionST("ST_MOD_LEASH_STYLE",        "Leash Style", LeashStyleToString(iModLeashStyle))
    AddToggleOptionST("ST_MOD_LEASH_VISIBLE",    "Leash Visible", bModLeashVisible)
@@ -876,14 +938,7 @@ Function DisplayModFeaturesPage(Bool bSecure)
    AddSliderOptionST("ST_MOD_LEASH_LENGTH",     "Minimum Leash Length", iModLeashMinLength,  a_flags=iFlags)
 
    AddEmptyOption()
-   AddHeaderOption("SexLab Aroused Base")
-   AddSliderOptionST("ST_MOD_SLA_THRESHOLD",    "Initial Threshold", iModSlaThreshold, a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_SLA_MIN",          "Minimum Adjusted Arousal", iModSlaAdjustedMin, a_flags=iFlags)
-   AddSliderOptionST("ST_MOD_SLA_MAX",          "Maximum Adjusted Arousal", iModSlaAdjustedMax, a_flags=iFlags)
-
-   AddEmptyOption()
    AddHeaderOption("Miscellaneous")
-   AddToggleOptionST("ST_MOD_LOAD_BLOCK",        "Block Controls on Game Load", bModBlockOnGameLoad, a_flags=iFlags)
    AddTextOptionST("ST_MOD_ENABLE_DIALOGUE",     "Greeting Dialogue Style",     DialogueStyleToString(iModDialogueTargetStyle))
    AddSliderOptionST("ST_MOD_DIALOGUE_RETRIES",  "Dialogue Target Retries",     iModDialogueTargetRetries)
 
@@ -891,8 +946,8 @@ Function DisplayModFeaturesPage(Bool bSecure)
    SetCursorPosition(1)
 
    AddHeaderOption("Call For Help")
-   AddKeyMapOptionST("ST_MOD_CALL_HELP",      "Help Key", iModHelpKey)
-   AddKeyMapOptionST("ST_MOD_CALL_ATTENTION", "Attention Key", iModAttentionKey)
+   AddKeyMapOptionST("ST_MOD_CALL_HELP",      "Help Key",              iModHelpKey)
+   AddKeyMapOptionST("ST_MOD_CALL_ATTENTION", "Attention Key",         iModAttentionKey)
    AddSliderOptionST("ST_MOD_CALL_TIMEOUT",   "Call for Help Timeout", iModCallTimeout, a_flags=iFlags)
 
    ; I'm not sure this is the right mod to block armour but no other mods have the concept of
@@ -911,21 +966,65 @@ Function DisplayModFeaturesPage(Bool bSecure)
    AddHeaderOption("Blocking Exceptions")
    AddMenuOptionST("ST_MOD_ADD_EXC_HOBBLE",  "Add Exception to Hobble Block", "Select", a_flags=iFlags)
    AddMenuOptionST("ST_MOD_REM_EXC_HOBBLE",  "Remove/View Hobble Exceptions", "Open")
+EndFunction
+
+Function DisplayGameControlPage(Bool bSecure)
+   Int iFlags = OPTION_FLAG_NONE
+   If (bSecure)
+      iFlags = OPTION_FLAG_DISABLED
+   EndIf
+
+   AddHeaderOption("MCM Security")
+   AddSliderOptionST("ST_CON_SECURE",         "Security Level",        iSettingsSecurity, a_flags=iFlags)
+   AddToggleOptionST("ST_CON_HARDCORE",       "...Hardcore (Caution)", _bSecureHardcore, a_flags=iFlags)
 
    AddEmptyOption()
    AddHeaderOption("Save Game Control")
-   AddTextOptionST("ST_MOD_SAVE_TYPE",       "Save Game Control (Caution)", SaveGameStyleToString(iModSaveGameStyle), a_flags=iFlags)
+   AddTextOptionST("ST_CON_SAVE_TYPE",        "Save Game Control (Caution)", SaveGameStyleToString(iModSaveGameStyle), a_flags=iFlags)
    Int iTempFlags = iFlags
    If (0 == iModSaveGameStyle)
       iTempFlags = OPTION_FLAG_DISABLED
    EndIf
-   AddToggleOptionST("ST_MOD_SAVE_CONFIRM",  "...Are you Sure?",  bSaveGameConfirm, a_flags=iTempFlags)
+   AddToggleOptionST("ST_CON_SAVE_CONFIRM",   "...Are you Sure?",  bSaveGameConfirm, a_flags=iTempFlags)
    iTempFlags = iFlags
    If (!bSaveGameConfirm || (2 != iModSaveGameStyle))
       iTempFlags = OPTION_FLAG_DISABLED
    EndIf
-   AddKeyMapOptionST("ST_MOD_SAVE_KEY",      "Quick Save Key",    iModSaveKey, a_flags=iTempFlags)
-   AddSliderOptionST("ST_MOD_SAVE_MIN_TIME", "Minimum Save Time", fModSaveMinTime, "{0}min", a_flags=iTempFlags)
+   AddKeyMapOptionST("ST_CON_SAVE_KEY",       "Quick Save Key",                iModSaveKey, a_flags=iTempFlags)
+   AddSliderOptionST("ST_CON_SAVE_MIN_TIME",  "Minimum Save Time",             fModSaveMinTime, "{0}min", a_flags=iTempFlags)
+   AddSliderOptionST("ST_CON_CONSOLE_ACCESS", "Max Vulnerability for Console", iConConsoleVulnerability, a_flags=iTempFlags)
+
+   ; Start on the second column.
+   SetCursorPosition(1)
+
+   AddHeaderOption("Redress Timeouts")
+   AddSliderOptionST("ST_CON_RAPE_REDRESS",   "Post Rape Redress Timeout", iModRapeRedressTimeout,  a_flags=iFlags)
+   AddSliderOptionST("ST_CON_NAKED_REDRESS",  "Naked Redress Timeout",     iModNakedRedressTimeout, a_flags=iFlags)
+
+   AddEmptyOption()
+   AddHeaderOption("Miscellaneous")
+   AddToggleOptionST("ST_CON_LOAD_BLOCK",     "Block Controls on Game Load", bModBlockOnGameLoad, a_flags=iFlags)
+EndFunction
+
+Function DisplayModCompatibilityPage(Bool bSecure)
+   Int iFlags = OPTION_FLAG_NONE
+   If (bSecure)
+      iFlags = OPTION_FLAG_DISABLED
+   EndIf
+
+   AddHeaderOption("Devices")
+   AddToggleOptionST("ST_COMP_DD_FIX", "Detect Device Unequips", bSettingsDetectUnequip)
+
+   AddEmptyOption()
+   AddHeaderOption("SexLab Aroused Base")
+   AddSliderOptionST("ST_COMP_SLA_THRESHOLD",    "Initial Threshold", iModSlaThreshold, a_flags=iFlags)
+   AddSliderOptionST("ST_COMP_SLA_MIN",          "Minimum Adjusted Arousal", iModSlaAdjustedMin, a_flags=iFlags)
+   AddSliderOptionST("ST_COMP_SLA_MAX",          "Maximum Adjusted Arousal", iModSlaAdjustedMax, a_flags=iFlags)
+
+   AddEmptyOption()
+   AddHeaderOption("Special Cells")
+   AddTextOptionST("ST_COMP_RELOAD_CELLS",    "Reload Special Cells",           "Reload Now")
+   AddToggleOptionST("ST_COMP_EASTERN_HOUSE", "Treat Easter House as Windhelm", bEasternHouseIsWindhelm)
 EndFunction
 
 Function DisplayStatusPage(Bool bSecure)
@@ -1005,7 +1104,7 @@ Function DisplayStatusPage(Bool bSecure)
       szAllowed = "Allowed"
    EndIf
    AddTextOption("Dressing Alone?", szAllowed, a_flags=OPTION_FLAG_DISABLED)
-   szAllowed = "Not Allowed"
+   szAllowed = "Not Assisted"
    If (_qFramework.IsAllowed(_qFramework.AP_DRESSING_ASSISTED))
       szAllowed = "Allowed"
    EndIf
@@ -1101,66 +1200,24 @@ Function DisplayDebugPage(Bool bSecure)
    ; Start on the second column.
    SetCursorPosition(1)
 
-   AddTextOptionST("ST_DBG_YANK_LEASH", "Yank Leash", "Do It Now")
+   AddTextOptionST("ST_DBG_YANK_LEASH", "Yank Leash",      "Do It Now")
+   AddMenuOptionST("ST_DBG_TELEPORT",   "Teleport Player", "Destination..")
 
    String szTarget = "Player"
    If (!_bInfoForPlayer)
       Actor aNearby = _qFramework.GetNearestActor(0)
       szTarget = aNearby.GetDisplayName()
    EndIf
-   AddMenuOptionST("ST_DBG_REM_FACTION",    "Remove From Faction", szTarget)
-   AddTextOptionST("ST_DBG_MOD_EVENTS",     "Fix Mod Events",      "Fix Now")
-   AddTextOptionST("ST_SAFEWORD_FURNITURE", "Safeword: Furniture", "Use Safeword", a_flags=iFlags)
-   AddTextOptionST("ST_SAFEWORD_LEASH",     "Safeword: Leash",     "Use Safeword", a_flags=iFlags)
+   AddMenuOptionST("ST_DBG_REM_FACTION",    "Remove From Faction",  szTarget)
+   AddTextOptionST("ST_DBG_MOD_EVENTS",     "Fix Mod Events",       "Fix Now")
+   AddTextOptionST("ST_SAFEWORD_FURNITURE", "Safeword: Furniture",  "Use Safeword", a_flags=iFlags)
+   AddTextOptionST("ST_SAFEWORD_LEASH",     "Safeword: Leash",      "Use Safeword", a_flags=iFlags)
 EndFunction
 
 
 ;***********************************************************************************************
 ;***                                  STATES: FRAMEWORK                                      ***
 ;***********************************************************************************************
-State ST_FWK_SECURE
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iSettingsSecurity)
-      SetSliderDialogDefaultValue(_iDefVulNight)
-      SetSliderDialogRange(1, 100)
-      SetSliderDialogInterval(1)
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      iSettingsSecurity = (fValue As Int)
-      SetSliderOptionValueST(iSettingsSecurity)
-   EndEvent
-
-   Event OnDefaultST()
-      iSettingsSecurity = _iDefVulNight
-      SetSliderOptionValueST(iSettingsSecurity)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("This is the maximum vulnerability the player can be at and still change the settings.\n" +\
-                  "Recommend: " + iVulnerabilityNight + " so you can change settings at night.\n" +\
-                  "Note: Hidden (or covered) restraints also lock the settings.  100 never locks the settings.")
-   EndEvent
-EndState
-
-State ST_FWK_HARDCORE
-   Event OnSelectST()
-      _bSecureHardcore = !_bSecureHardcore
-      SetToggleOptionValueST(_bSecureHardcore)
-   EndEvent
-
-   Event OnDefaultST()
-      _bSecureHardcore = False
-      SetToggleOptionValueST(_bSecureHardcore)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Locks all secure settings until the next mod upgrade.\n" +\
-                  "Note: This includes clothing slots.  Make sure they are right first.\n" +\
-                  "Caution: Once set it can't be turned off.")
-   EndEvent
-EndState
-
 State ST_FWK_POLL_TIME
    Event OnSliderOpenST()
       SetSliderDialogStartValue(fSettingsPollTime)
@@ -1236,24 +1293,6 @@ State ST_FWK_POLL_DISTANCE
    Event OnHighlightST()
       SetInfoText("Updates the range of the detect nearby actors feature.\n" +\
                   "Warning: Although untested, increasing this may slow down your game noticeably.")
-   EndEvent
-EndState
-
-State ST_FWK_DD_FIX
-   Event OnSelectST()
-      bSettingsDetectUnequip = !bSettingsDetectUnequip
-      SetToggleOptionValueST(bSettingsDetectUnequip)
-   EndEvent
-
-   Event OnDefaultST()
-      bSettingsDetectUnequip = _bDefSetDeviousFix
-      SetToggleOptionValueST(bSettingsDetectUnequip)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("There is a certain game mechanic (I won't go into what it is) that allows\n" +\
-                  "Devious Restraints to be errantly unequipped.\n" +\
-                  "If you are experiencing this problem setting this might help.")
    EndEvent
 EndState
 
@@ -1751,56 +1790,6 @@ EndState
 ;***********************************************************************************************
 ;***                                  STATES: MOD FEATURES                                   ***
 ;***********************************************************************************************
-State ST_MOD_RAPE_REDRESS
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iModRapeRedressTimeout)
-      SetSliderDialogDefaultValue(_iDefRapeRedressTimeout)
-      SetSliderDialogRange(0, 300)
-      SetSliderDialogInterval(5)
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      iModRapeRedressTimeout = (fValue As Int)
-      SetSliderOptionValueST(iModRapeRedressTimeout)
-   EndEvent
-
-   Event OnDefaultST()
-      iModRapeRedressTimeout = _iDefRapeRedressTimeout
-      SetSliderOptionValueST(iModRapeRedressTimeout)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("After the player has been raped it will take them some time to dress.\n" +\
-                  "Attempts to dress in this time will be blocked and the timer will be reset.\n" +\
-                  "Measured in game minutes.  0 turns off this feature.")
-   EndEvent
-EndState
-
-State ST_MOD_NAKED_REDRESS
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iModNakedRedressTimeout)
-      SetSliderDialogDefaultValue(_iDefNakedRedressTimeout)
-      SetSliderDialogRange(0, 300)
-      SetSliderDialogInterval(5)
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      iModNakedRedressTimeout = (fValue As Int)
-      SetSliderOptionValueST(iModNakedRedressTimeout)
-   EndEvent
-
-   Event OnDefaultST()
-      iModNakedRedressTimeout = _iDefNakedRedressTimeout
-      SetSliderOptionValueST(iModNakedRedressTimeout)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("After the player has been detected as naked it will take them some time to dress.\n" +\
-                  "Attempts to dress in this time will be blocked and the timer will be reset.\n" +\
-                  "Measured in game minutes.  0 turns off this feature.")
-   EndEvent
-EndState
-
 State ST_MOD_LEASH_STYLE
    Event OnSelectST()
       iModLeashStyle += 1
@@ -1929,97 +1918,6 @@ State ST_MOD_LEASH_LENGTH
       SetInfoText("The minimum length the leash can be.\n" +\
                   "The leash can be set shorter than this but will be treated as this length.\n" +\
                   "Setting this to zero turns off this feature and allows for any length.")
-   EndEvent
-EndState
-
-State ST_MOD_SLA_THRESHOLD
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iModSlaThreshold)
-      SetSliderDialogDefaultValue(_iDefSlaThreshold)
-      SetSliderDialogRange(0, 25)
-      SetSliderDialogInterval(1)
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      iModSlaThreshold = (fValue As Int)
-      SetSliderOptionValueST(iModSlaThreshold)
-   EndEvent
-
-   Event OnDefaultST()
-      iModSlaThreshold = _iDefSlaThreshold
-      SetSliderOptionValueST(iModSlaThreshold)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Tired of people wandering around Skyrim unaroused?  With this feature\n" +\
-                  "anyone you meet with an arousal below this threshold will be randomly increased.\n" +\
-                  "0 turns off this feature.  Most arousal will be 0 so this can be a very low number.")
-   EndEvent
-EndState
-
-State ST_MOD_SLA_MIN
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iModSlaAdjustedMin)
-      SetSliderDialogDefaultValue(_iDefSlaAdjustedMin)
-      SetSliderDialogRange(0, 90)
-      SetSliderDialogInterval(1)
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      iModSlaAdjustedMin = (fValue As Int)
-      SetSliderOptionValueST(iModSlaAdjustedMin)
-   EndEvent
-
-   Event OnDefaultST()
-      iModSlaAdjustedMin = _iDefSlaAdjustedMin
-      SetSliderOptionValueST(iModSlaAdjustedMin)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("When you meet someone with an initial arousal below the threshold their arousal\n" +\
-                  "will be randomly increased to a value between the minimum and maximum values.")
-   EndEvent
-EndState
-
-State ST_MOD_SLA_MAX
-   Event OnSliderOpenST()
-      SetSliderDialogStartValue(iModSlaAdjustedMax)
-      SetSliderDialogDefaultValue(_iDefSlaAdjustedMax)
-      SetSliderDialogRange(0, 90)
-      SetSliderDialogInterval(1)
-   EndEvent
-
-   Event OnSliderAcceptST(Float fValue)
-      iModSlaAdjustedMax = (fValue As Int)
-      SetSliderOptionValueST(iModSlaAdjustedMax)
-   EndEvent
-
-   Event OnDefaultST()
-      iModSlaAdjustedMax = _iDefSlaAdjustedMax
-      SetSliderOptionValueST(iModSlaAdjustedMax)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("When you meet someone with an initial arousal below the threshold their arousal\n" +\
-                  "will be randomly increased to a value between the minimum and maximum values.")
-   EndEvent
-EndState
-
-State ST_MOD_LOAD_BLOCK
-   Event OnSelectST()
-      bModBlockOnGameLoad = !bModBlockOnGameLoad
-      SetToggleOptionValueST(bModBlockOnGameLoad)
-   EndEvent
-
-   Event OnDefaultST()
-      bModBlockOnGameLoad = _bDefBlockOnGameLoad
-      SetToggleOptionValueST(bModBlockOnGameLoad)
-   EndEvent
-
-   Event OnHighlightST()
-      SetInfoText("Toggles whether control features should be re-blocked on loading a game.\n" +\
-                  "This applies to health/magika/stamina/fast travel/fighting/camera/sneaking/menus/activations/journal.\n" +\
-                  "Controls will only be blocked if a feature blocked them before the save.  Disable if you are having problems.")
    EndEvent
 EndState
 
@@ -2351,7 +2249,54 @@ State ST_MOD_REM_EXC_HOBBLE
    EndEvent
 EndState
 
-State ST_MOD_SAVE_TYPE
+
+;***********************************************************************************************
+;***                                  STATES: GAME CONTROL                                   ***
+;***********************************************************************************************
+State ST_CON_SECURE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iSettingsSecurity)
+      SetSliderDialogDefaultValue(_iDefVulNight)
+      SetSliderDialogRange(1, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iSettingsSecurity = (fValue As Int)
+      SetSliderOptionValueST(iSettingsSecurity)
+   EndEvent
+
+   Event OnDefaultST()
+      iSettingsSecurity = _iDefVulNight
+      SetSliderOptionValueST(iSettingsSecurity)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("This is the maximum vulnerability the player can be at and still change the settings.\n" +\
+                  "Recommend: " + iVulnerabilityNight + " so you can change settings at night.\n" +\
+                  "Note: Hidden (or covered) restraints also lock the settings.  100 never locks the settings.")
+   EndEvent
+EndState
+
+State ST_CON_HARDCORE
+   Event OnSelectST()
+      _bSecureHardcore = !_bSecureHardcore
+      SetToggleOptionValueST(_bSecureHardcore)
+   EndEvent
+
+   Event OnDefaultST()
+      _bSecureHardcore = False
+      SetToggleOptionValueST(_bSecureHardcore)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Locks all secure settings until the next mod upgrade.\n" +\
+                  "Note: This includes clothing slots.  Make sure they are right first.\n" +\
+                  "Caution: Once set it can't be turned off.")
+   EndEvent
+EndState
+
+State ST_CON_SAVE_TYPE
    Event OnSelectST()
       iModSaveGameStyle += 1
       If (2 < iModSaveGameStyle)
@@ -2361,20 +2306,22 @@ State ST_MOD_SAVE_TYPE
 
       ; Reset the confirmation check box whenever the save game stlye changes.
       bSaveGameConfirm = False
-      SetToggleOptionValueST(False, a_stateName="ST_MOD_SAVE_CONFIRM")
+      SetToggleOptionValueST(False, a_stateName="ST_CON_SAVE_CONFIRM")
       If (iModSaveGameStyle)
-         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_MOD_SAVE_CONFIRM")
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_CON_SAVE_CONFIRM")
       Else
-         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_CONFIRM")
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_CONFIRM")
       EndIf
 
       ; Only enable the save game key for the full control style.
       If (2 == iModSaveGameStyle)
-         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_MOD_SAVE_KEY")
-         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_MOD_SAVE_MIN_TIME")
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_CON_SAVE_KEY")
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_CON_SAVE_MIN_TIME")
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_CON_CONSOLE_ACCESS")
       Else
-         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_KEY")
-         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_MIN_TIME")
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_KEY")
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_MIN_TIME")
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_CONSOLE_ACCESS")
       EndIf
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2387,12 +2334,13 @@ State ST_MOD_SAVE_TYPE
 
       ; Reset the confirmation check box whenever the save game stlye changes.
       bSaveGameConfirm = False
-      SetToggleOptionValueST(False, a_stateName="ST_MOD_SAVE_CONFIRM")
-      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_CONFIRM")
+      SetToggleOptionValueST(False, a_stateName="ST_CON_SAVE_CONFIRM")
+      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_CONFIRM")
 
       ; Only enable the save game key for the full control style.
-      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_KEY")
-      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_MOD_SAVE_MIN_TIME")
+      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_KEY")
+      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_MIN_TIME")
+      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_CONSOLE_ACCESS")
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
       SendSettingChangedEvent("SaveControl")
@@ -2405,7 +2353,7 @@ State ST_MOD_SAVE_TYPE
    EndEvent
 EndState
 
-State ST_MOD_SAVE_CONFIRM
+State ST_CON_SAVE_CONFIRM
    Event OnSelectST()
       bSaveGameConfirm = !bSaveGameConfirm
       SetToggleOptionValueST(bSaveGameConfirm)
@@ -2428,7 +2376,7 @@ State ST_MOD_SAVE_CONFIRM
    EndEvent
 EndState
 
-State ST_MOD_SAVE_KEY
+State ST_CON_SAVE_KEY
    Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
       ; Handle key registration here.  Events should be sent to all scripts in the same quest.
       If (iModSaveKey && (iModSaveKey != iModHelpKey) && (iModSaveKey != iModAttentionKey))
@@ -2455,7 +2403,7 @@ State ST_MOD_SAVE_KEY
    EndEvent
 EndState
 
-State ST_MOD_SAVE_MIN_TIME
+State ST_CON_SAVE_MIN_TIME
    Event OnSliderOpenST()
       SetSliderDialogStartValue(fModSaveMinTime)
       SetSliderDialogDefaultValue(_fDefSaveMinTime)
@@ -2480,6 +2428,239 @@ State ST_MOD_SAVE_MIN_TIME
    EndEvent
 EndState
 
+State ST_CON_CONSOLE_ACCESS
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iConConsoleVulnerability)
+      SetSliderDialogDefaultValue(100)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iConConsoleVulnerability = (fValue As Int)
+      SetSliderOptionValueST(iConConsoleVulnerability)
+
+      ; The main script needs to (de)register for console access events.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("SaveControl")
+   EndEvent
+
+   Event OnDefaultST()
+      iConConsoleVulnerability = 100
+      SetSliderOptionValueST(iConConsoleVulnerability)
+
+      ; The main script needs to (de)register for console access events.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("SaveControl")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When \"Full Control\" is ensabled this is the maximum vulnerability the player can be at\n" +\
+                  "and still open the debug console.  If the player is vulnerable and the console is opened the\n" +\
+                  "control system will detect this and stop the game from being played further.\n" +\
+                  "Recommended: 100 or 0 - Off.")
+   EndEvent
+EndState
+
+
+State ST_CON_RAPE_REDRESS
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModRapeRedressTimeout)
+      SetSliderDialogDefaultValue(_iDefRapeRedressTimeout)
+      SetSliderDialogRange(0, 300)
+      SetSliderDialogInterval(5)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModRapeRedressTimeout = (fValue As Int)
+      SetSliderOptionValueST(iModRapeRedressTimeout)
+   EndEvent
+
+   Event OnDefaultST()
+      iModRapeRedressTimeout = _iDefRapeRedressTimeout
+      SetSliderOptionValueST(iModRapeRedressTimeout)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("After the player has been raped it will take them some time to dress.\n" +\
+                  "Attempts to dress in this time will be blocked and the timer will be reset.\n" +\
+                  "Measured in game minutes.  0 turns off this feature.")
+   EndEvent
+EndState
+
+State ST_CON_NAKED_REDRESS
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModNakedRedressTimeout)
+      SetSliderDialogDefaultValue(_iDefNakedRedressTimeout)
+      SetSliderDialogRange(0, 300)
+      SetSliderDialogInterval(5)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModNakedRedressTimeout = (fValue As Int)
+      SetSliderOptionValueST(iModNakedRedressTimeout)
+   EndEvent
+
+   Event OnDefaultST()
+      iModNakedRedressTimeout = _iDefNakedRedressTimeout
+      SetSliderOptionValueST(iModNakedRedressTimeout)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("After the player has been detected as naked it will take them some time to dress.\n" +\
+                  "Attempts to dress in this time will be blocked and the timer will be reset.\n" +\
+                  "Measured in game minutes.  0 turns off this feature.")
+   EndEvent
+EndState
+
+State ST_CON_LOAD_BLOCK
+   Event OnSelectST()
+      bModBlockOnGameLoad = !bModBlockOnGameLoad
+      SetToggleOptionValueST(bModBlockOnGameLoad)
+   EndEvent
+
+   Event OnDefaultST()
+      bModBlockOnGameLoad = _bDefBlockOnGameLoad
+      SetToggleOptionValueST(bModBlockOnGameLoad)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Toggles whether control features should be re-blocked on loading a game.\n" +\
+                  "This applies to health/magika/stamina/fast travel/fighting/camera/sneaking/menus/activations/journal.\n" +\
+                  "Controls will only be blocked if a feature blocked them before the save.  Disable if you are having problems.")
+   EndEvent
+EndState
+
+
+;***********************************************************************************************
+;***                                STATES: MOD COMPATIBILITY                                ***
+;***********************************************************************************************
+State ST_COMP_DD_FIX
+   Event OnSelectST()
+      bSettingsDetectUnequip = !bSettingsDetectUnequip
+      SetToggleOptionValueST(bSettingsDetectUnequip)
+   EndEvent
+
+   Event OnDefaultST()
+      bSettingsDetectUnequip = _bDefSetDeviousFix
+      SetToggleOptionValueST(bSettingsDetectUnequip)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("There is a certain game mechanic (I won't go into what it is) that allows\n" +\
+                  "Devious Restraints to be errantly unequipped.\n" +\
+                  "If you are experiencing this problem setting this might help.\n" +\
+                  "Note: This may also work on some locked Zaz restraints as well but they are less tested.")
+   EndEvent
+EndState
+
+State ST_COMP_SLA_THRESHOLD
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModSlaThreshold)
+      SetSliderDialogDefaultValue(_iDefSlaThreshold)
+      SetSliderDialogRange(0, 25)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModSlaThreshold = (fValue As Int)
+      SetSliderOptionValueST(iModSlaThreshold)
+   EndEvent
+
+   Event OnDefaultST()
+      iModSlaThreshold = _iDefSlaThreshold
+      SetSliderOptionValueST(iModSlaThreshold)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Tired of people wandering around Skyrim unaroused?  With this feature\n" +\
+                  "anyone you meet with an arousal below this threshold will be randomly increased.\n" +\
+                  "0 turns off this feature.  Most arousal will be 0 so this can be a very low number.")
+   EndEvent
+EndState
+
+State ST_COMP_SLA_MIN
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModSlaAdjustedMin)
+      SetSliderDialogDefaultValue(_iDefSlaAdjustedMin)
+      SetSliderDialogRange(0, 90)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModSlaAdjustedMin = (fValue As Int)
+      SetSliderOptionValueST(iModSlaAdjustedMin)
+   EndEvent
+
+   Event OnDefaultST()
+      iModSlaAdjustedMin = _iDefSlaAdjustedMin
+      SetSliderOptionValueST(iModSlaAdjustedMin)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When you meet someone with an initial arousal below the threshold their arousal\n" +\
+                  "will be randomly increased to a value between the minimum and maximum values.")
+   EndEvent
+EndState
+
+State ST_COMP_SLA_MAX
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iModSlaAdjustedMax)
+      SetSliderDialogDefaultValue(_iDefSlaAdjustedMax)
+      SetSliderDialogRange(0, 90)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iModSlaAdjustedMax = (fValue As Int)
+      SetSliderOptionValueST(iModSlaAdjustedMax)
+   EndEvent
+
+   Event OnDefaultST()
+      iModSlaAdjustedMax = _iDefSlaAdjustedMax
+      SetSliderOptionValueST(iModSlaAdjustedMax)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("When you meet someone with an initial arousal below the threshold their arousal\n" +\
+                  "will be randomly increased to a value between the minimum and maximum values.")
+   EndEvent
+EndState
+
+State ST_COMP_RELOAD_CELLS
+   Event OnSelectST()
+      SetTextOptionValueST("Done")
+      _qFramework.InitSpecialCells()
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Reload Now")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Reload any cells that are treated specially as being in a particular location/region.\n" +\
+                  "This needs to be called after installing/uninstalling a mod that contains special cells.\n" +\
+                  "Initially only drlove33's house locations are treated as special cells.\n")
+   EndEvent
+EndState
+
+State ST_COMP_EASTERN_HOUSE
+   Event OnSelectST()
+      bEasternHouseIsWindhelm = !bEasternHouseIsWindhelm
+      SetToggleOptionValueST(bEasternHouseIsWindhelm)
+      _qFramework.InitSpecialCells()
+   EndEvent
+
+   Event OnDefaultST()
+      bEasternHouseIsWindhelm = False
+      SetToggleOptionValueST(bEasternHouseIsWindhelm)
+      _qFramework.InitSpecialCells()
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The Eastern House from drlove33's Eastern Holding Cells mod is rather far from Windhelm.\n" +\
+                  "Set this option for Devious Framework to consider it part of Windhelm anyway.")
+   EndEvent
+EndState
+
 
 ;***********************************************************************************************
 ;***                                    STATES: STATUS                                       ***
@@ -2498,7 +2679,7 @@ State ST_STA_KEYWORD
    EndEvent
 
    Event OnMenuAcceptST(Int iChosenIndex)
-      ; Ignore the first option ("Remove None")
+      ; Ignore the first option ("Exit")
       If (!iChosenIndex)
          Return
       EndIf
@@ -3052,7 +3233,7 @@ State ST_DBG_INTERACTION
    Event OnHighlightST()
       SetInfoText("Set the level on the screen for messages about NPC approach and calling for help.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
-                  "Recommended: 3 - Information")
+                  "Recommended: 2 - Error")
    EndEvent
 EndState
 
@@ -3163,6 +3344,107 @@ State ST_DBG_YANK_LEASH
       SetInfoText("Sometimes with the \"Drag\" leash the player can get caught bobbing back and forth.\n" + \
                   "Most of the time this issue will correct itself.  In the odd case that it doesn't, performing\n" +\
                   "a manual yank of the leash will should fix this issue.")
+   EndEvent
+EndState
+
+State ST_DBG_TELEPORT
+   Event OnMenuOpenST()
+      String[] aszOptions = New String[15]
+      aszOptions[0]  = "Cancel"
+      aszOptions[1]  = "Dawnstar"
+      aszOptions[2]  = "Dragon Bridge"
+      aszOptions[3]  = "Falkreath"
+      aszOptions[4]  = "Ivarstead"
+      aszOptions[5]  = "Markarth"
+      aszOptions[6]  = "Morthal"
+      aszOptions[7]  = "Riften"
+      aszOptions[8]  = "Riverwood"
+      aszOptions[9]  = "Rorikstead"
+      aszOptions[10] = "Shors Stone"
+      aszOptions[11] = "Solitude"
+      aszOptions[12] = "Whiterun"
+      aszOptions[13] = "Windhelm"
+      aszOptions[14] = "Winterhold"
+      Actor aCurrMaster = _qFramework.GetMaster(_qFramework.MD_CLOSE)
+      If (aCurrMaster)
+         aszOptions = _qDfwUtil.AddStringToArray(aszOptions, aCurrMaster.GetDisplayName())
+      EndIf
+
+      SetMenuDialogStartIndex(0)
+      SetMenuDialogDefaultIndex(0)
+      SetMenuDialogOptions(aszOptions)
+   EndEvent
+
+   Event OnMenuAcceptST(Int iChosenIndex)
+      ; Ignore the first option ("Cancel")
+      If (!iChosenIndex)
+         Return
+      EndIf
+
+      ; Use an <X, Y> offset to prevent the player teleporting to the wrong side of the door.
+      Int iTargetId = 0
+      Float fXOffset = 0.0
+      Float fYOffset = 50.00
+      If (1 == iChosenIndex)
+         iTargetId = 0x00013D41   ; Dawnstar
+      ElseIf (2 == iChosenIndex)
+         iTargetId = 0x00013E40   ; Dragon Bridge
+      ElseIf (3 == iChosenIndex)
+         iTargetId = 0x0003A196   ; Falkreath
+      ElseIf (4 == iChosenIndex)
+         iTargetId = 0x00017066   ; Ivarstead
+      ElseIf (5 == iChosenIndex)
+         iTargetId = 0x000793A4   ; Markarth
+      ElseIf (6 == iChosenIndex)
+         iTargetId = 0x0001738C   ; Morthal
+      ElseIf (7 == iChosenIndex)
+         iTargetId = 0x00044BD7   ; Riften
+         fXOffset = 50.0
+      ElseIf (8 == iChosenIndex)
+         iTargetId = 0x00013419   ; Riverwood
+      ElseIf (9 == iChosenIndex)
+         iTargetId = 0x000174AF   ; Rorikstead
+      ElseIf (10 == iChosenIndex)
+         iTargetId = 0x0004132A   ; Shors Stone
+      ElseIf (11 == iChosenIndex)
+         iTargetId = 0x00016A8A   ; Solitude
+      ElseIf (12 == iChosenIndex)
+         iTargetId = 0x00016072   ; Whiterun
+      ElseIf (13 == iChosenIndex)
+         iTargetId = 0x000D18B5   ; Windhelm
+         fXOffset = -50.0
+         fYOffset = 0.00
+      ElseIf (14 == iChosenIndex)
+         iTargetId = 0x0001759E   ; Winterhold
+      ElseIf (15 == iChosenIndex)
+         Actor aCurrMaster = _qFramework.GetMaster(_qFramework.MD_CLOSE)
+         iTargetId = aCurrMaster.GetFormId()
+         fXOffset = 50.0
+      EndIf
+
+      String szStatus = "Done"
+      If (!_qFramework.GetMaster(_qFramework.MD_CLOSE))
+         ; If the player is not currently controlled assume permission and perform the transfer.
+         ObjectReference oTarget = (Game.GetFormFromFile(iTargetId, \
+                                                         "Skyrim.esm") As ObjectReference)
+         _aPlayer.MoveTo(oTarget, fXOffset, fYOffset)
+      Else
+         ; Otherwise send a mod event and assume the controlling mod will handle the transfer.
+         Int iModEvent = ModEvent.Create("DFW_DebugMovePlayer")
+         If (iModEvent)
+            ModEvent.PushInt(iModEvent, iTargetId)
+            ModEvent.PushFloat(iModEvent, fXOffset)
+            ModEvent.PushFloat(iModEvent, fYOffset)
+            ModEvent.Send(iModEvent)
+         Else
+            szStatus = "Failed"
+         EndIf
+      EndIf
+      SetTextOptionValueST(szStatus)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Tries to move the player to the specified location.")
    EndEvent
 EndState
 

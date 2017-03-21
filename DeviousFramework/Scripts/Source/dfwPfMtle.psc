@@ -6,7 +6,7 @@ Scriptname dfwPfMtle Extends Package Hidden
 Function Fragment_0(Actor akActor)
 ;BEGIN CODE
 dfwDeviousFramework _qFramework = (Quest.GetQuest("_dfwDeviousFramework") As dfwDeviousFramework)
-_qFramework.MoveToLocationComplete()
+_qFramework.MoveToLocationComplete(False)
 ;END CODE
 EndFunction
 ;END FRAGMENT

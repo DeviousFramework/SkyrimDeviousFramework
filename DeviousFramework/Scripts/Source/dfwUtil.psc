@@ -312,6 +312,11 @@ EndFunction
 ; Remove the first instance of the integer from the array.
 ; Either specity the index (iPos) or the element to search for.
 Int[] Function RemoveIntFromArray(Int[] aiArray, Int iItem, Int iPos=-1)
+   ; Accessing an emptry array can cause game crashes.  If the array is empty return here.
+   If (!aiArray || !aiArray.Length)
+      Return aiArray
+   EndIf
+
    ; Keep track of the length of the array.
    Int iLength = aiArray.Length
 
@@ -340,6 +345,11 @@ EndFunction
 ; Remove the first instance of the string from the array.
 ; Either specity the index (iPos) or the element to search for.
 String[] Function RemoveStringFromArray(String[] aszArray, String szItem, Int iPos=-1)
+   ; Accessing an emptry array can cause game crashes.  If the array is empty return here.
+   If (!aszArray || !aszArray.Length)
+      Return aszArray
+   EndIf
+
    ; Keep track of the length of the array.
    Int iLength = aszArray.Length
 
@@ -368,6 +378,11 @@ EndFunction
 ; Remove the first instance of the float from the array.
 ; Either specity the index (iPos) or the element to search for.
 Float[] Function RemoveFloatFromArray(Float[] afArray, Float fItem, Int iPos=-1)
+   ; Accessing an emptry array can cause game crashes.  If the array is empty return here.
+   If (!afArray || !afArray.Length)
+      Return afArray
+   EndIf
+
    ; Keep track of the length of the array.
    Int iLength = afArray.Length
 
@@ -396,6 +411,11 @@ EndFunction
 ; Remove the first instance of the actor from the array.
 ; Either specity the index (iPos) or the element to search for.
 Form[] Function RemoveFormFromArray(Form[] aoArray, Form oItem, Int iPos=-1)
+   ; Accessing an emptry array can cause game crashes.  If the array is empty return here.
+   If (!aoArray || !aoArray.Length)
+      Return aoArray
+   EndIf
+
    ; Keep track of the length of the array.
    Int iLength = aoArray.Length
 

@@ -88,6 +88,7 @@ Float Property fPollTime                Auto
 Float Property fLeashGameChance         Auto
 Float Property fFurnitureLockChance     Auto
 Float Property fFurnitureReleaseChance  Auto
+Float Property fFurnitureVisitorChance  Auto
 
 ; *** Integer Slider Options ***
 Int _iLeashGameStyle
@@ -113,6 +114,7 @@ Int _iLeashChanceSimple
 Int _iChanceIdleRestraints
 Int _iFurnitureMinLockTime
 Int Property iLeashGameStyle          Auto
+Int Property iLeashChanceToNotice     Auto
 Int Property iLeashProtectedDelay     Auto
 Int Property iIncreaseWhenVulnerable  Auto
 Int Property iMaxDistance             Auto
@@ -132,6 +134,8 @@ Int Property iMaxAngerForRelease      Auto
 Int Property iChanceFurnitureTransfer Auto
 Int Property iLeashChanceSimple       Auto
 Int Property iChanceIdleRestraints    Auto
+Int Property iChanceForAssistance     Auto
+Int Property iEscapeDetection         Auto
 Int Property iFurnitureMinLockTime    Auto
 
 ; *** Enumeration Options ***
@@ -308,6 +312,13 @@ Function UpdateScript()
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
       SendSettingChangedEvent("Leash")
    EndIf
+
+   If (13 > CurrentVersion)
+      iLeashChanceToNotice    = 95
+      iChanceForAssistance    = 25
+      iEscapeDetection        = 30
+      fFurnitureVisitorChance = 1.0
+   EndIf
 EndFunction
 
 ; Version of the MCM script.
@@ -315,8 +326,8 @@ EndFunction
 Int Function GetVersion()
    ; Reset the version number.
    ; This can be used to manage saves between releases.
-   ;If (7 < CurrentVersion)
-   ;   CurrentVersion = 7
+   ;If (12 < CurrentVersion)
+   ;   CurrentVersion = 12
    ;EndIf
 
    ; Update all quest variables upon loading each game.
@@ -326,7 +337,7 @@ Int Function GetVersion()
    _qDfwUtil    = (Quest.GetQuest("_dfwDeviousFramework") As dfwUtil)
    _qDfwMcm     = (Quest.GetQuest("_dfwDeviousFramework") As dfwMcm)
 
-   Return 12
+   Return 13
 EndFunction
 
 Event OnConfigInit()
@@ -368,6 +379,16 @@ String Function GagModeToString(Int iValue)
       Return "Regular"
    ElseIf (2 == iValue)
       Return "Auto Remove"
+   EndIf
+EndFunction
+
+String Function ChanceForAssistanceToString(Int iValue)
+   If (25 == iValue)
+      Return "Low"
+   ElseIf (50 == iValue)
+      Return "Mid"
+   ElseIf (75 == iValue)
+      Return "High"
    EndIf
 EndFunction
 
@@ -520,11 +541,12 @@ Function DisplayLeashGamePage(Bool bSecure)
    SetCursorPosition(1)
 
    AddTextOptionST("ST_LGM_STYLE",            "Leash Game Style:", LeashGameStyleToString(iLeashGameStyle), a_flags=iFlags)
-   ; The following option is only valid if the leash game style is Protected (2).
+   ; The following options are only valid if the leash game style is Protected (2).
    Int iDelayFlags = iFlags
    If (2 != iLeashGameStyle)
       iDelayFlags = OPTION_FLAG_DISABLED
    EndIf
+   AddSliderOptionST("ST_LGM_CHANCE_NOTICE",  "Chance To Notice",  iLeashChanceToNotice, "{0}%", a_flags=iDelayFlags)
    AddSliderOptionST("ST_LGM_PROT_DELAY",     "Protected Delay",   iLeashProtectedDelay, "{0}ms", a_flags=iDelayFlags)
 
    String szActive = "Not On"
@@ -545,7 +567,8 @@ Function DisplayLeashGamePage(Bool bSecure)
    AddToggleOptionST("ST_LGM_BLOCK_HELPLESS", "Block Deviously Helpless",     bBlockHelpless, a_flags=iFlags)
    AddToggleOptionST("ST_LGM_ALLOW_SEX",      "Allow Sex",                    bAllowSex, a_flags=iFlags)
    AddSliderOptionST("ST_LGM_CHANCE_IDLE",    "Chance of Idle Restraints",    iChanceIdleRestraints, a_flags=iFlags)
-
+   AddTextOptionST("ST_LGM_CHANCE_ASSIST",    "Chance for Assistance",        ChanceForAssistanceToString(iChanceForAssistance), a_flags=iFlags)
+   AddSliderOptionST("ST_LGM_NOTICE_ESCAPE",  "Chance to Notice Escape",      iEscapeDetection, a_flags=iFlags)
 EndFunction
 
 Function DisplayBdsmFurniturePage(Bool bSecure)
@@ -555,10 +578,11 @@ Function DisplayBdsmFurniturePage(Bool bSecure)
    EndIf
 
    AddHeaderOption("Chances")
-   AddSliderOptionST("ST_BDSMF_LOCK",     "Chance of Locking", fFurnitureLockChance,    "{1}", a_flags=iFlags)
-   AddSliderOptionST("ST_BDSMF_RELEASE",  "Chance of Release", fFurnitureReleaseChance, "{1}", a_flags=iFlags)
-   AddSliderOptionST("ST_BDSMF_TEASE",    "Teasing Chance",    iFurnitureTeaseChance,   a_flags=iFlags)
-   AddSliderOptionST("ST_BDSMF_ALT",      "Alternate Release", iFurnitureAltRelease,    a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_LOCK",     "Chance of Locking",  fFurnitureLockChance,    "{1}", a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_RELEASE",  "Chance of Release",  fFurnitureReleaseChance, "{1}", a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_TEASE",    "Teasing Chance",     iFurnitureTeaseChance,   a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_ALT",      "Alternate Release",  iFurnitureAltRelease,    a_flags=iFlags)
+   AddSliderOptionST("ST_BDSMF_VISITOR",  "Chance of Visitors", fFurnitureVisitorChance, "{1}", a_flags=iFlags)
 
    AddEmptyOption()
    AddHeaderOption("Options")
@@ -839,10 +863,12 @@ State ST_LGM_STYLE
       EndIf
       SetTextOptionValueST(LeashGameStyleToString(iLeashGameStyle))
 
-      ; Update the availablility of the Protected Delay as it is only available for Protected.
+      ; Enable/Disable other options only available for specific leash game styles.
       If (2 != iLeashGameStyle)
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_LGM_CHANCE_NOTICE")
          SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_LGM_PROT_DELAY")
       Else
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_LGM_CHANCE_NOTICE")
          SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_LGM_PROT_DELAY")
       EndIf
 
@@ -854,7 +880,8 @@ State ST_LGM_STYLE
       iLeashGameStyle = _iLeashGameStyle
       SetTextOptionValueST(LeashGameStyleToString(iLeashGameStyle))
 
-      ; Update the availablility of the Protected Delay as it is only available for Protected.
+      ; Enable/Disable other options only available for specific leash game styles.
+      SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_LGM_CHANCE_NOTICE")
       SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_LGM_PROT_DELAY")
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -865,6 +892,29 @@ State ST_LGM_STYLE
       SetInfoText("How the leash game starts.  \"Off\": Do not play.  \"Auto\": The slaver will simply lasso you.\n" +\
                   "\"Protected\": The slaver will approach you from behind.  Facing him or drawing weapons protects you.\n" +\
                   "\"Dialogue\": Not supported yet.")
+   EndEvent
+EndState
+
+State ST_LGM_CHANCE_NOTICE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iLeashChanceToNotice)
+      SetSliderDialogDefaultValue(95)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iLeashChanceToNotice = (fValue As Int)
+      SetSliderOptionValueST(iLeashChanceToNotice, "{0}%")
+   EndEvent
+
+   Event OnDefaultST()
+      iLeashChanceToNotice = 95
+      SetSliderOptionValueST(iLeashChanceToNotice, "{0}%")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The chance for you to notice when the slaver is aproaching you suspiciously.")
    EndEvent
 EndState
 
@@ -931,7 +981,7 @@ State ST_LGM_INC_VULNERABLE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iIncreaseWhenVulnerable)
       SetSliderDialogDefaultValue(_iIncreaseWhenVulnerable)
-      SetSliderDialogRange(1, 100)
+      SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
 
@@ -1256,6 +1306,62 @@ State ST_LGM_CHANCE_IDLE
    EndEvent
 EndState
 
+State ST_LGM_CHANCE_ASSIST
+   Event OnSelectST()
+      iChanceForAssistance += 25
+      If (75 < iChanceForAssistance)
+         iChanceForAssistance = 25
+      EndIf
+      SetTextOptionValueST(ChanceForAssistanceToString(iChanceForAssistance))
+
+      ; This is needed by the dialogue system.  Update the conditional in the main script.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnDefaultST()
+      iChanceForAssistance = 75
+      SetTextOptionValueST(ChanceForAssistanceToString(iChanceForAssistance))
+
+      ; This is needed by the dialogue system.  Update the conditional in the main script.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("This can be used to adjust how likely it is NPCs will help you escape when asking for help.")
+   EndEvent
+EndState
+
+State ST_LGM_NOTICE_ESCAPE
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(iEscapeDetection)
+      SetSliderDialogDefaultValue(10)
+      SetSliderDialogRange(0, 100)
+      SetSliderDialogInterval(1)
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      iEscapeDetection = (fValue As Int)
+      SetSliderOptionValueST(iEscapeDetection)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnDefaultST()
+      iEscapeDetection = 10
+      SetSliderOptionValueST(iEscapeDetection)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Leash")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The % chance the slaver will notice you are trying to get help escaping when talking to others.\n" +\
+                  "Note: The chances increase if you are close to the slaver and if he is looking at you.\n" +\
+                  "Recommended: 10 - 30.")
+   EndEvent
+EndState
+
 State ST_LGM_CHANCE_XFER
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iChanceFurnitureTransfer)
@@ -1486,6 +1592,41 @@ State ST_BDSMF_ALT
       SetInfoText("If the original locker of the furniture is not nearby another neraby NPC may unlock the furniture.\n" +\
                   "The chance of an alternate NPC releasing the player is expressed as a percent of the \"Chance of Release\".\n" +\
                   "If \"Chance of Release\" is 10% and this is 10, there will be a 1% chance when the original locker is not nearby.")
+   EndEvent
+EndState
+
+State ST_BDSMF_VISITOR
+   Event OnSliderOpenST()
+      SetSliderDialogStartValue(fFurnitureVisitorChance)
+      SetSliderDialogDefaultValue(1.0)
+      If (10 <= fFurnitureVisitorChance)
+         SetSliderDialogRange(0, 100)
+         SetSliderDialogInterval(1)
+      Else
+         SetSliderDialogRange(0, 10)
+         SetSliderDialogInterval(0.1)
+      EndIf
+   EndEvent
+
+   Event OnSliderAcceptST(Float fValue)
+      fFurnitureVisitorChance = fValue
+      SetSliderOptionValueST(fFurnitureVisitorChance, "{1}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Furniture")
+   EndEvent
+
+   Event OnDefaultST()
+      fFurnitureVisitorChance = 1.0
+      SetSliderOptionValueST(fFurnitureVisitorChance, "{1}")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Furniture")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("If locked in BDSM furniture this is the chance (per poll event) that\n" +\
+                  "someone will come by wanting to play with you.")
    EndEvent
 EndState
 
