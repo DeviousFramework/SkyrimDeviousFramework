@@ -354,7 +354,6 @@ Int _iMcmEscapeDetection
 ;----------------------------------------------------------------------------------------------
 ; Mod Compatability.
 ; Milk Mod Economy.  Some effort is needed to make sure scenes run smoothly.
-MilkQUEST _qMilkMod
 Spell _oMmeBeingMilkedSpell
 Bool _bMmeSuppressed
 
@@ -395,10 +394,6 @@ Function UpdateScript()
 
       ; Create arrays of the different restraints available for us to choose from.
       CreateRestraintsArrays()
-
-      ; Get the caged state global variable from the SD+ mod.
-      _gSdPlusStateCaged = \
-         (Game.GetFormFromFile(0x000D1E79, "sanguinesDebauchery.esp") as GlobalVariable)
 
       ; Registering for events on game load almost always fails.  Always add a delay.
       Log("Delaying before mod event registration.", DL_CRIT, S_MOD)
@@ -458,7 +453,6 @@ Function UpdateScript()
       _aoFavouriteLocation = aoTempLocation
       _aoFavouriteRegion   = aoTempRegion
       _aAliasFurnitureLocker = (GetAlias(5) As ReferenceAlias)
-      _oWeaponZbfCane = (Game.GetFormFromFile(0x00006004, "ZaZAnimationPack.esm") As Weapon)
 
       ; In this version it became a requirement that verbal annoyance is not < 0.
       If (0 > _iVerbalAnnoyance)
@@ -538,9 +532,28 @@ Function OnLoadGame()
    _qZbfShell        = zbfBondageShell.GetApi()
    _qZbfSlave        = zbfSlaveControl.GetApi()
    _qZbfSlaveActions = zbfSlaveActions.GetApi()
-   _qMilkMod         = (Quest.GetQuest("MME_MilkQUEST") As MilkQUEST)
 
-   If (_qMilkMod && !_oMmeBeingMilkedSpell)
+   ; We need the caged state variable from Sanguine Debauchery plus to stop the leash when the
+   ; player is caged.
+   _gSdPlusStateCaged = None
+   Int iModOrder = Game.GetModByName("sanguinesDebauchery.esp")
+   If ((-1 < iModOrder) && (255 > iModOrder))
+      _gSdPlusStateCaged = \
+         (Game.GetFormFromFile(0x000D1E79, "sanguinesDebauchery.esp") as GlobalVariable)
+   EndIf
+
+   ; We need the Zaz Animation Pack cane to reduce it's damange during whipping scenens.
+   _oWeaponZbfCane = None
+   iModOrder = Game.GetModByName("ZaZAnimationPack.esm")
+   If ((-1 < iModOrder) && (255 > iModOrder))
+      _oWeaponZbfCane = (Game.GetFormFromFile(0x00006004, "ZaZAnimationPack.esm") As Weapon)
+   EndIf
+
+   ; We need to disable Milk Mod Animations when sitting in furniture.  We do this by adding
+   ; the being milked spell to the player (which is a bit of a hack).
+   _oMmeBeingMilkedSpell = None
+   iModOrder = Game.GetModByName("MilkModNEW.esp")
+   If ((-1 < iModOrder) && (255 > iModOrder))
       _oMmeBeingMilkedSpell = (Game.GetFormFromFile(0x000369A8, "MilkModNEW.esp") As Spell)
    EndIf
 
@@ -605,6 +618,17 @@ Function UpdateLocalMcmSettings(String sCategory="")
 EndFunction
 
 Function InitSimpleSlaveryAuctions()
+   ; If Simple Slavery is not installed clear all locations.
+   _oWeaponZbfCane = None
+   Int iModOrder = Game.GetModByName("SimpleSlavery.esp")
+   If ((-1 >= iModOrder) || (255 <= iModOrder))
+      _oSimpleSlaveryInternalDoor = None
+      _aSimpleSlaveryAuctioneer   = None
+      _aoSimpleSlaveryRegion         = None
+      _aoSimpleSlaveryLocation       = None
+      _aoSimpleSlaveryEntranceObject = None
+   EndIf
+
    ; Setup auction house internal markers.
    _oSimpleSlaveryInternalDoor = (Game.GetFormFromFile(0x00025108, "SimpleSlavery.esp") As ObjectReference)
    _aSimpleSlaveryAuctioneer   = (Game.GetFormFromFile(0x0002530A, "SimpleSlavery.esp") As Actor)
@@ -1061,7 +1085,7 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
 
       bSceneContinuing = True
       ; Disable Milk Mod Economy, preventing it from starting animations on the player.
-      If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+      If (_oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
          _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
          _bMmeSuppressed = True
          ; Add a delay to make sure the spell has taken effect.
@@ -1078,7 +1102,7 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
          ; The NPC was just teasing the player and really keeps her locked up.
          bSceneContinuing = True
          ; Disable Milk Mod Economy, preventing it from starting animations on the player.
-         If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+         If (_oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
             _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
             _bMmeSuppressed = True
             ; Add a delay to make sure the spell has taken effect.
@@ -1117,7 +1141,9 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
 
       ; If we have suppressed Milk Mod Economy re-enable it.
       If (_bMmeSuppressed)
-         _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         If (_oMmeBeingMilkedSpell)
+            _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         EndIf
          _bMmeSuppressed = False
       EndIf
    ElseIf (S_MOD + "_F_Assault" == szMessage)
@@ -1138,7 +1164,7 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
          ; Otherwise finish the assualt by making sure she is locked back into the furniture.
          bSceneContinuing = True
          ; Disable Milk Mod Economy, preventing it from starting animations on the player.
-         If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+         If (_oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
             _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
             _bMmeSuppressed = True
             ; Add a delay to make sure the spell has taken effect.
@@ -1180,7 +1206,7 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
          UnequipBdsmItem(_aoArmRestraints, _qZadLibs.zad_DeviousArmbinder, aMaster)
          bSceneContinuing = True
          ; Disable Milk Mod Economy, preventing it from starting animations on the player.
-         If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+         If (_oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
             _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
             _bMmeSuppressed = True
             ; Add a delay to make sure the spell has taken effect.
@@ -1226,14 +1252,16 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
 
       ; If we have suppressed Milk Mod Economy re-enable it.
       If (_bMmeSuppressed)
-         _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         If (_oMmeBeingMilkedSpell)
+            _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         EndIf
          _bMmeSuppressed = False
       EndIf
    ElseIf (S_MOD + "_BdsmToLeash" == szMessage)
       Log(szName + " locks your device and slips a rope around your neck.", DL_CRIT, S_MOD)
       bSceneContinuing = True
       ; Disable Milk Mod Economy, preventing it from starting animations on the player.
-      If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+      If (_oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
          _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
          _bMmeSuppressed = True
          ; Add a delay to make sure the spell has taken effect.
@@ -1281,7 +1309,9 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
       EndIf
       ; If we have suppressed Milk Mod Economy re-enable it.
       If (_bMmeSuppressed)
-         _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         If (_oMmeBeingMilkedSpell)
+            _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
+         EndIf
          _bMmeSuppressed = False
       EndIf
       _qFramework.SceneDone(S_MOD)
@@ -1717,11 +1747,14 @@ Event MovementDone(Int iType, Form oActor, Bool bSucceeded, String szModId)
       If (2 == iType)
          ; We have arrived at the auction's location.
          Location oCurrLocation = _qFramework.GetCurrentLocation()
-         Int iIndex = _aoSimpleSlaveryLocation.Find(oCurrLocation)
-         If (-1 != iIndex)
+         Int iIndex = -1
+         If (_aoSimpleSlaveryLocation)
+            iIndex = _aoSimpleSlaveryLocation.Find(oCurrLocation)
+         EndIf
+         If ((-1 != iIndex) && _aoSimpleSlaveryEntranceObject)
             ; We have arrived at the auction's location.  Move to the entrance door.
             _qFramework.MoveToObject(aActor, _aoSimpleSlaveryEntranceObject[iIndex], szModId)
-         Else
+         ElseIf (_aoSimpleSlaveryRegion)
             iIndex = _aoSimpleSlaveryRegion.Find(oCurrLocation)
             If (-1 != iIndex)
                ; We have arrived in the region.  Now move to the location.
@@ -1729,6 +1762,8 @@ Event MovementDone(Int iType, Form oActor, Bool bSucceeded, String szModId)
             Else
                Log("Error: Cannot Find SS Entrance.", DL_ERROR, S_MOD)
             EndIf
+         Else
+            Log("Error: Cannot Find SS Entrance.", DL_ERROR, S_MOD)
          EndIf
       ElseIf (3 == iType)
          If (_oSimpleSlaveryInternalDoor && _aSimpleSlaveryAuctioneer)
@@ -3072,7 +3107,8 @@ Function PlayLeashGame()
                      EndIf
 
                      ; If the leash holder is not in the furniture's location move there first.
-                     If (oFurnitureLocation && (oFurnitureLocation != _aLeashHolder.GetCurrentLocation()))
+                     If (oFurnitureLocation && \
+                         (oFurnitureLocation != _aLeashHolder.GetCurrentLocation()))
                         _qFramework.MoveToLocation(_aLeashHolder, oFurnitureLocation, \
                                                    S_MOD + "_Furniture")
                      Else
@@ -3081,7 +3117,8 @@ Function PlayLeashGame()
                      EndIf
                      Return
                   EndIf
-               ElseIf ((_qMcm.iChanceFurnitureTransfer + _qMcm.iLeashChanceSimple) >= iRandom)
+               ElseIf (_aoSimpleSlaveryRegion && _aoSimpleSlaveryLocation && \
+                       ((_qMcm.iChanceFurnitureTransfer + _qMcm.iLeashChanceSimple) >= iRandom))
                   _iLongTermAgenda = 4
                   _iLongTermAgendaDetails = 2
                   _qFramework.ForceSave()

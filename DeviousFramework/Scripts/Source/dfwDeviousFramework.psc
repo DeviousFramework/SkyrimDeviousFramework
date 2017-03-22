@@ -552,7 +552,6 @@ Weapon _oSpergFist2
 Armor _oStraponByAeon
 
 ; Milk Mod Economy.  Some effort is needed to make sure scenes run smoothly.
-MilkQUEST _qMilkMod
 Spell _oMmeBeingMilkedSpell
 Bool _bMmeSuppressed
 ;----------
@@ -661,14 +660,17 @@ Function UpdateScript()
       _oKeywordSexLabNoStrip = Keyword.GetKeyword("SexLabNoStrip")
 
       ; Getting factions from the .ESP file prevents us from being dependent on the mod.
-      _oFactionHydraSlaver     = \
-         (Game.GetFormFromFile(0x0000B670, "hydra_slavegirls.esp") As Faction)
-      _oFactionHydraSlaverMisc = \
-         (Game.GetFormFromFile(0x000122B6, "hydra_slavegirls.esp") As Faction)
-      _oFactionHydraCaravanSlaver = \
-         (Game.GetFormFromFile(0x00072F71, "hydra_slavegirls.esp") As Faction)
-      _oFactionDfwDialogueTarget = \
-         (Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") As Faction)
+      Int iModOrder = Game.GetModByName("hydra_slavegirls.esp")
+      If ((-1 < iModOrder) && (255 > iModOrder))
+         _oFactionHydraSlaver     = \
+            (Game.GetFormFromFile(0x0000B670, "hydra_slavegirls.esp") As Faction)
+         _oFactionHydraSlaverMisc = \
+            (Game.GetFormFromFile(0x000122B6, "hydra_slavegirls.esp") As Faction)
+         _oFactionHydraCaravanSlaver = \
+            (Game.GetFormFromFile(0x00072F71, "hydra_slavegirls.esp") As Faction)
+         _oFactionDfwDialogueTarget = \
+            (Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") As Faction)
+      EndIf
 
       ; Registering for events on game load almost always fails.  Always add a delay.
       Log("Delaying before mod event registration.", DL_CRIT, DC_GENERAL)
@@ -878,49 +880,48 @@ Function InitSpecialCells()
    SPECIAL_CELLS[1] = Game.GetFormFromFile(0x00009B7A, "Skyrim.esm")
    SPECIAL_CELL_LOCATIONS[1] = SUBURBS_FALKREATH[2]
 
-   ; Above cells should be safe (from Skyrim.esm).
-   ; Next check for cells from mods that might not be installed.
-   Debug.Trace("[" + S_MOD + "] =========================" + \
-               "[Recheck Cells: Ignore all Warnings start]==========================")
-
    ; Check for any locations from drlove33's Slave Den mod.
-   Cell oModCell =  (Game.GetFormFromFile(0x000012E9, "_SHC2.esp") As Cell) ; _SimpleFarm
-   If (oModCell)
-      SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
-      SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
-                                                        SUBURBS_WHITERUN[2])
-   EndIf
-   oModCell =  (Game.GetFormFromFile(0x0000160A, "_SHC2.esp") As Cell) ; _guardroom
-   If (oModCell)
-      SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
-      SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
-                                                        SUBURBS_WHITERUN[2])
-   EndIf
-   oModCell =  (Game.GetFormFromFile(0x000013E7, "_SHC2.esp") As Cell) ; _Shc2
-   If (oModCell)
-      SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
-      SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
-                                                        SUBURBS_WHITERUN[2])
+   Int iModOrder = Game.GetModByName("_SHC2.esp")
+   If ((-1 < iModOrder) && (255 > iModOrder))
+      Cell oModCell =  (Game.GetFormFromFile(0x000012E9, "_SHC2.esp") As Cell) ; _SimpleFarm
+      If (oModCell)
+         SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+         SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                           SUBURBS_WHITERUN[2])
+      EndIf
+      oModCell =  (Game.GetFormFromFile(0x0000160A, "_SHC2.esp") As Cell) ; _guardroom
+      If (oModCell)
+         SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+         SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                           SUBURBS_WHITERUN[2])
+      EndIf
+      oModCell =  (Game.GetFormFromFile(0x000013E7, "_SHC2.esp") As Cell) ; _Shc2
+      If (oModCell)
+         SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+         SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                           SUBURBS_WHITERUN[2])
+      EndIf
    EndIf
 
    ; Check for any locations from drlove33's Eastern Holding Cells mod.
    If (_qMcm.bEasternHouseIsWindhelm)
-      oModCell =  (Game.GetFormFromFile(0x0000AB60, "shc3.esm.esp") As Cell) ; _holdingcells
-      If (oModCell)
-         SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
-         SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
-                                                           SUBURBS_WINDHELM[7])
-      EndIf
-      oModCell =  (Game.GetFormFromFile(0x0000AA76, "shc3.esm.esp") As Cell) ; _Easternhc
-      If (oModCell)
-         SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
-         SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
-                                                           SUBURBS_WINDHELM[7])
+      iModOrder = Game.GetModByName("shc3.esm.esp")
+      If ((-1 < iModOrder) && (255 > iModOrder))
+         Cell oModCell =  \
+            (Game.GetFormFromFile(0x0000AB60, "shc3.esm.esp") As Cell) ; _holdingcells
+         If (oModCell)
+            SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+            SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                              SUBURBS_WINDHELM[7])
+         EndIf
+         oModCell =  (Game.GetFormFromFile(0x0000AA76, "shc3.esm.esp") As Cell) ; _Easternhc
+         If (oModCell)
+            SPECIAL_CELLS = _qDfwUtil.AddFormToArray(SPECIAL_CELLS, oModCell)
+            SPECIAL_CELL_LOCATIONS = _qDfwUtil.AddFormToArray(SPECIAL_CELL_LOCATIONS, \
+                                                              SUBURBS_WINDHELM[7])
+         EndIf
       EndIf
    EndIf
-
-   Debug.Trace("[" + S_MOD + "] ==========================" + \
-               "[Recheck Cells: Ignore all Warnings end]===========================")
 EndFunction
 
 Function OnPlayerLoadGame()
@@ -951,16 +952,15 @@ Function OnPlayerLoadGame()
 
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
-   _qMcm = ((Self As Quest) As dfwMcm)
-   _qDfwUtil = ((Self As Quest) As dfwUtil)
-   _qZadLibs = (Quest.GetQuest("zadQuest") As Zadlibs)
-   _qSexLab = (Quest.GetQuest("SexLabQuestFramework") As SexLabFramework)
+   _qMcm               = ((Self As Quest) As dfwMcm)
+   _qDfwUtil           = ((Self As Quest) As dfwUtil)
+   _qZadLibs           = (Quest.GetQuest("zadQuest") As Zadlibs)
+   _qSexLab            = (Quest.GetQuest("SexLabQuestFramework") As SexLabFramework)
    _qSexLabArousedMain = (Quest.GetQuest("sla_Main") As slaMainScr)
-   _qSexLabAroused = (Quest.GetQuest("sla_Framework") As slaFrameworkScr)
-   _qZbfSlave = zbfSlaveControl.GetApi()
-   _qZbfSlaveActions = zbfSlaveActions.GetApi()
-   _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
-   _qMilkMod         = (Quest.GetQuest("MME_MilkQUEST") As MilkQUEST)
+   _qSexLabAroused     = (Quest.GetQuest("sla_Framework") As slaFrameworkScr)
+   _qZbfSlave          = zbfSlaveControl.GetApi()
+   _qZbfSlaveActions   = zbfSlaveActions.GetApi()
+   _qZbfPlayerSlot     = zbfBondageShell.GetApi().FindPlayer()
 
    ; Update the distance for polling nearby actors.  This seems to reset on game load.
    UpdatePollingDistance(_qMcm.iSettingsNearbyDistance)
@@ -1106,16 +1106,28 @@ Function OnPlayerLoadGame()
 
    ; Get objects from other mods.  Check each game load in case the mod has been added/removed.
    ; Skyrim Perk Enhancements and Rebalanced Gameplay (SPERG) unarmed "fists"
-   Debug.Trace("[" + S_MOD + "] =========================" + \
-               "[Optional Mods: Ignore all Warnings start]==========================")
-   _oSpergFist1    = (Game.GetFormFromFile(0x00024689, "SPERG.esm") As Weapon)
-   _oSpergFist2    = (Game.GetFormFromFile(0x00035A8E, "SPERG.esm") As Weapon)
-   _oStraponByAeon = (Game.GetFormFromFile(0x00000D65, "StrapOnbyaeonv1.1.esp") As Armor)
-   If (_qMilkMod && !_oMmeBeingMilkedSpell)
+   _oSpergFist1 = None
+   _oSpergFist2 = None
+   Int iModOrder = Game.GetModByName("SPERG.esm")
+   If ((-1 < iModOrder) && (255 > iModOrder))
+      _oSpergFist1 = (Game.GetFormFromFile(0x00024689, "SPERG.esm") As Weapon)
+      _oSpergFist2 = (Game.GetFormFromFile(0x00035A8E, "SPERG.esm") As Weapon)
+   EndIf
+
+   ; Strap On by aeon is considered clothing.
+   _oStraponByAeon = None
+   iModOrder = Game.GetModByName("StrapOnbyaeonv1.1.esp")
+   If ((-1 < iModOrder) && (255 > iModOrder))
+      _oStraponByAeon = (Game.GetFormFromFile(0x00000D65, "StrapOnbyaeonv1.1.esp") As Armor)
+   EndIf
+
+   ; We need to disable Milk Mod Animations when sitting in furniture.  We do this by adding
+   ; the being milked spell to the player (which is a bit of a hack).
+   _oMmeBeingMilkedSpell = None
+   iModOrder = Game.GetModByName("MilkModNEW.esp")
+   If ((-1 < iModOrder) && (255 > iModOrder))
       _oMmeBeingMilkedSpell = (Game.GetFormFromFile(0x000369A8, "MilkModNEW.esp") As Spell)
    EndIf
-   Debug.Trace("[" + S_MOD + "] ==========================" + \
-               "[Optional Mods: Ignore all Warnings end]===========================")
 
    ; Make sure the utility script gets updated as well.
    _qDfwUtil.OnPlayerLoadGame()
@@ -2185,7 +2197,7 @@ Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender
             Log(aPartner.GetDisplayName() + " locks you back up in your device.", DL_CRIT, \
                 DC_GENERAL)
             ; Disable Milk Mod Economy, preventing it from starting animations on the player.
-            If (_qMilkMod && _oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
+            If (_oMmeBeingMilkedSpell && !_aPlayer.HasSpell(_oMmeBeingMilkedSpell))
                _aPlayer.AddSpell(_oMmeBeingMilkedSpell, False)
                _bMmeSuppressed = True
                ; Add a delay to make sure the spell has taken effect.
@@ -2217,7 +2229,7 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
 
    If (S_MOD == szMessage)
       ; If we have suppressed Milk Mod Economy re-enable it.
-      If (_bMmeSuppressed)
+      If (_bMmeSuppressed && _oMmeBeingMilkedSpell)
          _aPlayer.RemoveSpell(_oMmeBeingMilkedSpell)
          _bMmeSuppressed = False
       EndIf
