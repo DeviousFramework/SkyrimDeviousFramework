@@ -11,6 +11,13 @@ Scriptname dfwMcm extends SKI_ConfigBase
 ; Note: All Properties are exported and should reamin backward compatible.
 ;       Nothing else from this script is public and should not be relied on.
 ;
+; WARNING:
+; Don't make any function calls to or access any properties of the main Devious Framework script
+; (_qFramework) except while the user is accessing the menu.  Because the main script accesses
+; this MCM script often and at random times, deadlock can occur if this MCM script is also
+; accessing the main script at the same time.
+; In particular avoid calling functions of the main script during initialization.
+;
 ; © Copyright 2016 legume-Vancouver of GitHub
 ; This file is part of the Devious Framework Skyrim mod.
 ;
@@ -68,6 +75,9 @@ Int CS_MAX       = 0x80000000
 ;***********************************************************************************************
 ; A local variable to store a reference to the player for faster access.
 Actor _aPlayer
+
+; A flag to prevent initialization from happening twice.
+Bool _bInitBegun
 
 ; Keeps track of the last page the user viewed.
 String _szLastPage
@@ -206,6 +216,7 @@ Int[] Property aiSettingsSlotsWaist Auto
 Int[] Property aiBlockExceptionsHobble Auto
 
 ; A reference to the main framework quest script.
+; Deadlock Warning: Don't use this except during menu access.  See file header for details.
 dfwDeviousFramework _qFramework
 
 ; A reference to the Devious Framework Util quest script.
@@ -329,7 +340,9 @@ Function UpdateScript()
    EndIf
 
    If (3 > CurrentVersion)
-      _iDefModLeashStyle = _qFramework.LS_AUTO
+      ; 0 = LS_AUTO
+      ; Don't access LS_AUTO here to avoid deadlocks.
+      _iDefModLeashStyle = 0
       iModLeashStyle = _iDefModLeashStyle
       _bDefModLeashVisible = True
       bModLeashVisible = _bDefModLeashVisible
@@ -357,9 +370,9 @@ Function UpdateScript()
    ; Updated the default nearby distance from 40 to 65.
    If (5 > CurrentVersion)
       _iDefSetNearbyDistance   = 65
+      ; If the distance setting equals the previous default update it now.
       If (40 == iSettingsNearbyDistance)
          iSettingsNearbyDistance = _iDefSetNearbyDistance
-         _qFramework.UpdatePollingDistance(iSettingsNearbyDistance)
       EndIf
 
       ; Added SexLab Aroused (SLA) arousal adjustments in version 5.
@@ -415,7 +428,9 @@ Function UpdateScript()
    EndIf
 
    If (10 > CurrentVersion)
-      _iDefDialogueTargetStyle = _qFramework.DS_MANUAL
+      ; 2 = DS_MANUAL
+      ; Don't access DS_MANUAL here to avoid deadlocks.
+      _iDefDialogueTargetStyle = 2
       iModDialogueTargetStyle = _iDefDialogueTargetStyle
    EndIf
 
@@ -433,9 +448,6 @@ Function UpdateScript()
 
       _iDefDialogueTargetRetries = 0
       iModDialogueTargetRetries  = _iDefDialogueTargetRetries
-
-      ; Make sure to synchronize data in the main script as well.
-      SendSettingChangedEvent()
    EndIf
 
    If (12 > CurrentVersion)
@@ -496,6 +508,11 @@ Function UpdateScript()
 
       iConConsoleVulnerability = 100
    EndIf
+
+   ; Any time the script is updated have the main script sync it's parameters.
+   ; Give the main script some time to initialize first.
+   Utility.Wait(3.0)
+   SendSettingChangedEvent()
 EndFunction
 
 ; Version of the MCM script.
@@ -518,17 +535,17 @@ EndFunction
 Event OnConfigInit()
    Debug.Trace("[DFW-MCM] Script Initialized.")
 
-   UpdateScript()
-
-   ; Make sure the Devious Framework polling interval is running.
-   ; The first polling interval should configure the script.
-   ; Do this here so the main script can rely on our data having been initialized first.
-   Debug.Trace("[DFW-MCM] Starting Framework: " + fSettingsPollTime)
-   _qFramework.UpdatePollingInterval(fSettingsPollTime)
+   If (!_bInitBegun)
+      _bInitBegun = True
+      UpdateScript()
+   EndIf
 EndEvent
 
 Event OnVersionUpdate(Int iNewVersion)
-   UpdateScript()
+   If (!_bInitBegun)
+      _bInitBegun = True
+      UpdateScript()
+   EndIf
 EndEvent
 
 
@@ -1044,8 +1061,16 @@ Function DisplayStatusPage(Bool bSecure)
       szCellName += " (I)"
    EndIf
    AddLabel("Current Cell: " + szCellName)
+
+   ; Report the name of the player's current DFW Location.
    Location oCurrLocation = _qFramework.GetCurrentLocation()
-   AddLabel("Current Location: " + oCurrLocation.GetName())
+   String szLocationName = "None"
+   If (oCurrLocation)
+      szLocationName = oCurrLocation.GetName()
+   EndIf
+   AddLabel("Current Location: " + szLocationName)
+
+   ; Report the name of the player's current region and nearest region.
    Location oCurrRegion = _qFramework.GetCurrentRegion()
    String szRegion = "Wilderness"
    If (oCurrRegion)
@@ -1986,7 +2011,6 @@ State ST_MOD_CALL_HELP
          UnregisterForKey(iModHelpKey)
       EndIf
       iModHelpKey = iKeyCode
-      Debug.Notification("[DFW-MCM] Registering for Key: " + Input.GetMappedControl(iModHelpKey)  + "(" + iModHelpKey + ")")
       RegisterForKey(iModHelpKey)
       SetKeyMapOptionValueST(iModHelpKey)
    EndEvent
@@ -2012,7 +2036,6 @@ State ST_MOD_CALL_ATTENTION
          UnregisterForKey(iModAttentionKey)
       EndIf
       iModAttentionKey = iKeyCode
-      Debug.Notification("[DFW-MCM] Registering for Key: " + Input.GetMappedControl(iModAttentionKey)  + "(" + iModAttentionKey + ")")
       RegisterForKey(iModAttentionKey)
       SetKeyMapOptionValueST(iModAttentionKey)
    EndEvent
@@ -2384,7 +2407,6 @@ State ST_CON_SAVE_KEY
       EndIf
 
       iModSaveKey = iKeyCode
-      Debug.Notification("[DFW-MCM] Registering for Key: " + Input.GetMappedControl(iModSaveKey)  + "(" + iModSaveKey + ")")
       RegisterForKey(iModSaveKey)
       SetKeyMapOptionValueST(iModSaveKey)
    EndEvent

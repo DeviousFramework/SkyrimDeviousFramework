@@ -15,6 +15,13 @@ Scriptname dfwsMcm extends SKI_ConfigBase
 ; And, of course, it contains a few features that I find fun.
 ; There should be a mechanism to disable each feature of the mod individually.
 ;
+; WARNING:
+; Don't make any function calls to or access any properties of the main DFW Support script
+; (_qDfwSupport) except while the user is accessing the menu.  Because the main script accesses
+; this MCM script often and at random times, deadlock can occur if this MCM script is also
+; accessing the main script at the same time.
+; In particular avoid calling functions of the main script during initialization.
+;
 ; © Copyright 2016 legume-Vancouver of GitHub
 ; This file is part of the Devious Framework Skyrim support mod.
 ;
@@ -45,6 +52,9 @@ String S_REM_NONE = "Remove None"
 ;***********************************************************************************************
 ; A local variable to store a reference to the player for faster access.
 Actor _aPlayer
+
+; A flag to prevent initialization from happening twice.
+Bool _bInitBegun
 
 ; Keeps track of the last page the user viewed.
 String _szLastPage
@@ -143,6 +153,7 @@ Int Property iFurnitureMinLockTime    Auto
 ; *** Lists and Advanced Options ***
 
 ; A reference to the main DFW Support quest script.
+; Deadlock Warning: Don't use this except during menu access.  See file header for details.
 dfwsDfwSupport _qDfwSupport
 
 ; A reference to the main framework quest script.
@@ -277,9 +288,6 @@ Function UpdateScript()
       iLeashGameStyle       = _iLeashGameStyle
       iLeashProtectedDelay  = _iLeashProtectedDelay
       iMaxDistance          = _iMaxDistance
-
-      ; Make sure to synchronize data in the main script as well.
-      SendSettingChangedEvent()
    EndIf
 
    If (9 > CurrentVersion)
@@ -305,20 +313,19 @@ Function UpdateScript()
    If (12 > CurrentVersion)
       _iLeashResist = 3
       iLeashResist  = _iLeashResist
-
-      ; Give the main script some time to initialize before reporting the script has new values.
-      Utility.Wait(5)
-
-      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
-      SendSettingChangedEvent("Leash")
    EndIf
 
    If (13 > CurrentVersion)
       iLeashChanceToNotice    = 95
-      iChanceForAssistance    = 25
-      iEscapeDetection        = 30
+      iChanceForAssistance    = 75
+      iEscapeDetection        = 10
       fFurnitureVisitorChance = 1.0
    EndIf
+
+   ; Any time the script is updated have the main script sync it's parameters.
+   ; Give the main script some time to initialize first.
+   Utility.Wait(3.0)
+   SendSettingChangedEvent()
 EndFunction
 
 ; Version of the MCM script.
@@ -343,17 +350,17 @@ EndFunction
 Event OnConfigInit()
    Debug.Trace("[DFWS-MCM] Script Initialized.")
 
-   UpdateScript()
-
-   ; Make sure the DFW Support polling interval is running.
-   ; The first polling interval should configure the script.
-   ; Do this here so the main script can rely on our data having been initialized first.
-   Debug.Trace("[DFWS-MCM] Starting Support Mod: " + fPollTime)
-   _qDfwSupport.UpdatePollingInterval(fPollTime)
+   If (!_bInitBegun)
+      _bInitBegun = True
+      UpdateScript()
+   EndIf
 EndEvent
 
 Event OnVersionUpdate(Int iNewVersion)
-   UpdateScript()
+   If (!_bInitBegun)
+      _bInitBegun = True
+      UpdateScript()
+   EndIf
 EndEvent
 
 

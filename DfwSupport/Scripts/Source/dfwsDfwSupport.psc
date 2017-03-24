@@ -61,6 +61,9 @@ Actor _aPlayer
 ; Note: This is versioning control for the script.  It is unrelated to the mod version.
 Float _fCurrVer = 0.00
 
+; A flag to prevent initialization from happening twice.
+Bool _bGameLoadInProgress
+
 ; A reference to the MCM quest script.
 dfwsMcm _qMcm
 
@@ -365,10 +368,13 @@ Bool _bMmeSuppressed
 ;***********************************************************************************************
 ; A new game has started, this script was added to an existing game, or the script was reset.
 Event OnInit()
+   ; Default the logging level to trace until we can contact the MCM script.
+   _iMcmLogLevel = 5
+
    ; We shouldn't do anything here.  We rely on the MCM script to update our polling interval
    ; when it's ready.  Register for a polling interval anyway, in case the MCM script fails.
    Debug.Trace("[" + S_MOD + "] Script Initialized.")
-   RegisterForSingleUpdate(180)
+   RegisterForSingleUpdate(90)
 EndEvent
 
 ; This is called once by the MCM script to initialize the mod and then on each update poll.
@@ -394,36 +400,6 @@ Function UpdateScript()
 
       ; Create arrays of the different restraints available for us to choose from.
       CreateRestraintsArrays()
-
-      ; Registering for events on game load almost always fails.  Always add a delay.
-      Log("Delaying before mod event registration.", DL_CRIT, S_MOD)
-      Utility.Wait(20)
-
-      ; If we are to detected when another mod enslaves the player register for those events.
-      ; Register for events indicating other mods have enslaved the player.
-      RegisterForModEvent("zbfSC_EnslaveActor", "ActorEnslaved")
-      RegisterForModEvent("zbfSC_FreeSlave", "ActorFreed")
-      RegisterForModEvent("zbfSC_ReleaseSlave", "ActorFreed")
-
-      ; Register for the ZAZ event indicating an animation is done.
-      RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
-
-      ; Register for a DFW event notifying us our Master has been overthrown.
-      RegisterForModEvent("DFW_NewMaster", "DfwNewMaster")
-
-      ; Register for SD+ events related to enslaving/freeing the player.
-      RegisterForModEvent("SDEnslavedStart", "EventSdPlusStart")
-      RegisterForModEvent("SDEnslavedStop", "EventSdPlusStop")
-
-      ; Register for post sex events to adjust actor dispositions accordingly.
-      RegisterForModEvent("AnimationEnd", "PostSexCallback")
-
-      ; Register for game load events from the DFW mod.
-      RegisterForModEvent("DFW_GameLoaded", "OnLoadGame")
-
-      ; Register for the event indicating the DFW MCM values have changed.
-      ; Note: This can indicate a DFW safeword has been triggered.
-      RegisterForModEvent("DFW_MCM_Changed", "UpdateDfwMcm")
    EndIf
 
    If (1.01 > _fCurrVer)
@@ -458,17 +434,6 @@ Function UpdateScript()
       If (0 > _iVerbalAnnoyance)
          _iVerbalAnnoyance = 0
       EndIf
-
-      ; Registering for events on game load almost always fails.  Always add a delay.
-      Log("Delaying before mod event registration.", DL_CRIT, S_MOD)
-      Utility.Wait(20)
-
-      RegisterForModEvent("DFW_CallForHelp",      "HandleCallOut")
-      RegisterForModEvent("DFW_CallForAttention", "HandleCallOut")
-      RegisterForModEvent("DFW_MovementDone",     "MovementDone")
-      RegisterForModEvent("AnimationStart",       "PreSexCallback")
-      RegisterForModEvent("DFWS_MCM_Changed",     "UpdateLocalMcmSettings")
-      Log("Registering Callbacks Done", DL_CRIT, S_MOD)
    EndIf
 
    If (1.03 > _fCurrVer)
@@ -509,8 +474,49 @@ Function UpdateScript()
       Log("Delaying before mod event registration.", DL_CRIT, S_MOD)
       Utility.Wait(20)
 
+      ; Perform all registrations in one place to avoid multiple delays.
+      If (1.00 > _fCurrVer)
+         ; If we are upgrading from a very old version or starting a new game make sure to
+         ; include any mod events we should have registered for in those versions.
+         ; Register for events indicating other mods have enslaved the player.
+         RegisterForModEvent("zbfSC_EnslaveActor", "ActorEnslaved")
+         RegisterForModEvent("zbfSC_FreeSlave", "ActorFreed")
+         RegisterForModEvent("zbfSC_ReleaseSlave", "ActorFreed")
+
+         ; Register for the ZAZ event indicating an animation is done.
+         RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
+
+         ; Register for a DFW event notifying us our Master has been overthrown.
+         RegisterForModEvent("DFW_NewMaster", "DfwNewMaster")
+
+         ; Register for SD+ events related to enslaving/freeing the player.
+         RegisterForModEvent("SDEnslavedStart", "EventSdPlusStart")
+         RegisterForModEvent("SDEnslavedStop", "EventSdPlusStop")
+
+         ; Register for post sex events to adjust actor dispositions accordingly.
+         RegisterForModEvent("AnimationEnd", "PostSexCallback")
+
+         ; Register for game load events from the DFW mod.
+         RegisterForModEvent("DFW_GameLoaded", "OnLoadGame")
+
+         ; Register for the event indicating the DFW MCM values have changed.
+         ; Note: This can indicate a DFW safeword has been triggered.
+         RegisterForModEvent("DFW_MCM_Changed", "UpdateDfwMcm")
+      EndIf
+
+      ; Perform all registrations in one place to avoid multiple delays.
+      If (1.01 > _fCurrVer)
+         RegisterForModEvent("DFW_CallForHelp",      "HandleCallOut")
+         RegisterForModEvent("DFW_CallForAttention", "HandleCallOut")
+         RegisterForModEvent("DFW_MovementDone",     "MovementDone")
+         RegisterForModEvent("AnimationStart",       "PreSexCallback")
+         RegisterForModEvent("DFWS_MCM_Changed",     "UpdateLocalMcmSettings")
+      EndIf
+
       ; Register for game load events from the DFW mod.
       RegisterForModEvent("DFW_DebugMovePlayer", "DebugMovePlayer")
+
+      Log("Registering Mod Events Done", DL_CRIT, S_MOD)
    EndIf
 
    ; Finally update the version number.
@@ -518,6 +524,13 @@ Function UpdateScript()
 EndFunction
 
 Function OnLoadGame()
+   ; Use a flag to prevent initialization from happening twice.
+   If (_bGameLoadInProgress)
+      Return
+   EndIf
+   _bGameLoadInProgress = True
+
+   Float fCurrTime = Utility.GetCurrentRealTime()
    Log("Game Loaded.", DL_INFO, S_MOD)
 
    ; Update all quest variables upon loading each game.
@@ -559,6 +572,9 @@ Function OnLoadGame()
 
    ; The game has been loaded.  Perform necessary actions here.
    UpdateScript()
+
+   _bGameLoadInProgress = False
+   Log("Game Loaded Done: " + (Utility.GetCurrentRealTime() - fCurrTime), DL_TRACE, S_MOD)
 EndFunction
 
 Function ReRegisterModEvents()
@@ -580,9 +596,22 @@ Function ReRegisterModEvents()
    RegisterForModEvent("zbfSC_EnslaveActor",   "ActorEnslaved")
    RegisterForModEvent("zbfSC_FreeSlave",      "ActorFreed")
    RegisterForModEvent("zbfSC_ReleaseSlave",   "ActorFreed")
+
+   ; Also reset the load game flag here in case it has gotten stuck.
+   ; It should be safe since this function shouldn't be called during a load game.
+   _bGameLoadInProgress = False
 EndFunction
 
 Function UpdateLocalMcmSettings(String sCategory="")
+   ; If this is called before we have configured our MCM quest do so now.
+   If (!_qMcm)
+      _qMcm = ((Self As Quest) As dfwsMcm)
+      If (!_qMcm)
+         Log("Error: Failed to find MCM quest in UpdateLocalMcmSettings()", DL_ERROR, S_MOD)
+         Return
+      EndIf
+   EndIf
+
    If (!sCategory || ("Compatability" == sCategory))
       _iMcmGagMode = _qMcm.iGagMode
    EndIf
@@ -610,7 +639,12 @@ Function UpdateLocalMcmSettings(String sCategory="")
    EndIf
 
    If (!sCategory || ("Mod" == sCategory))
-      _fMcmPollTime                = _qMcm.fPollTime
+      Float fTempPollTime = _qMcm.fPollTime
+      ; If the polling interval has changed (or not been initialized) start the poll now.
+      If (fTempPollTime != _fMcmPollTime)
+         UpdatePollingInterval(fTempPollTime)
+      EndIf
+      _fMcmPollTime                = fTempPollTime
       _iMcmBlockTravel             = _qMcm.iBlockTravel
       _iMcmLogLevel                = _qMcm.iLogLevel
       _iMcmLogLevelScreen          = _qMcm.iLogLevelScreen
@@ -2859,6 +2893,7 @@ Function StartConversation(Actor aActor, Int iGoal=-1, Int iRefusalCount=-1, \
    ; conversations the package is interrupted when the player clicks on (activates)
    ; the actor.  Activating the actor via the Activate() function seems to be
    ; different so we need to interrupt the package manually.
+   ; This doesn't appear to be necessary anymore.  I don't know why.
 ;   aActor.MoveTo(aActor)
 
    ; Activating the actor causes dialog problems.

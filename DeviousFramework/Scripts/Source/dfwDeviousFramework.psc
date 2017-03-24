@@ -245,6 +245,9 @@ Actor _aPlayer
 ; Note: This is versioning control for the script.  It is unrelated to the mod version.
 Float _fCurrVer = 0.00
 
+; A flag to prevent initialization from happening twice.
+Bool _bGameLoadInProgress
+
 ;----------------------------------------------------------------------------------------------
 ; Conditional variables available to dialogues.
 ; Use PrepareActorDialogue() to set the variables before using them.
@@ -533,6 +536,7 @@ Int _iMutexNext
 ; for faster access.
 Int _iMcmLogLevel = 5 ; DL_TRACE
 Int[] _aiMcmScreenLogLevel
+Float _fMcmPollTime
 Int _iMcmDispWillingGuards
 Int _iMcmDispWillingMerchants
 Int _iMcmDispWillingBdsm
@@ -565,7 +569,7 @@ Event OnInit()
    ; We shouldn't do anything here.  We rely on the MCM script to update our polling interval
    ; when it's ready.  Register for a polling interval anyway, in case the MCM script fails.
    Debug.Trace("[" + S_MOD + "] Script Initialized.")
-   RegisterForSingleUpdate(180)
+   RegisterForSingleUpdate(90)
 EndEvent
 
 ; This is called from the player monitor script when a game is loaded.
@@ -671,16 +675,6 @@ Function UpdateScript()
          _oFactionDfwDialogueTarget = \
             (Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") As Faction)
       EndIf
-
-      ; Registering for events on game load almost always fails.  Always add a delay.
-      Log("Delaying before mod event registration.", DL_CRIT, DC_GENERAL)
-      Utility.Wait(20)
-
-      ; Register for post sex events to detect rapes.
-      RegisterForModEvent("AnimationEnd", "PostSexCallback")
-
-      ; Register for notification when MCM settings change.
-      RegisterForModEvent("DFW_MCM_Changed", "UpdateLocalMcmSettings")
    EndIf
 
    If (1.01 > _fCurrVer)
@@ -713,8 +707,19 @@ Function UpdateScript()
       Log("Delaying before mod event registration.", DL_CRIT, DC_GENERAL)
       Utility.Wait(20)
 
+      ; Perform all registrations in one place to avoid multiple delays.
+      If (1.00 > _fCurrVer)
+         ; Register for post sex events to detect rapes.
+         RegisterForModEvent("AnimationEnd", "PostSexCallback")
+
+         ; Register for notification when MCM settings change.
+         RegisterForModEvent("DFW_MCM_Changed", "UpdateLocalMcmSettings")
+      EndIf
+
       ; Register for post sex events to detect rapes.
       RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
+
+      Log("Registering Mod Events Done", DL_CRIT, DC_GENERAL)
    EndIf
 
    If (1.06 > _fCurrVer)
@@ -925,8 +930,14 @@ Function InitSpecialCells()
 EndFunction
 
 Function OnPlayerLoadGame()
+   ; Use a flag to prevent initialization from happening twice.
+   If (_bGameLoadInProgress)
+      Return
+   EndIf
+   _bGameLoadInProgress = True
+
    Float fCurrTime = Utility.GetCurrentRealTime()
-   Log("Game Loaded: " + fCurrTime, DL_INFO, DC_GENERAL)
+   Log("Game Loaded.", DL_INFO, DC_GENERAL)
 
    If (_bBlockLoad && !_iBlockLoadTimer)
       Utility.Wait(15)
@@ -1138,7 +1149,8 @@ Function OnPlayerLoadGame()
    ; on load game event.
    ModEvent.Send(ModEvent.Create("DFW_GameLoaded"))
 
-   Log("Game Loaded Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
+   _bGameLoadInProgress = False
+   Log("Game Loaded Done: " + (Utility.GetCurrentRealTime() - fCurrTime), DL_TRACE, DC_GENERAL)
 EndFunction
 
 Function ReRegisterModEvents()
@@ -1146,9 +1158,23 @@ Function ReRegisterModEvents()
    RegisterForModEvent("AnimationEnd",    "PostSexCallback")
    RegisterForModEvent("DFW_MCM_Changed", "UpdateLocalMcmSettings")
    RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
+
+   ; Also reset the load game flag here in case it has gotten stuck.
+   ; It should be safe since this function shouldn't be called during a load game.
+   _bGameLoadInProgress = False
 EndFunction
 
 Function UpdateLocalMcmSettings(String sCategory="")
+   ; If this is called before we have configured our MCM quest do so now.
+   If (!_qMcm)
+      _qMcm = ((Self As Quest) As dfwMcm)
+      If (!_qMcm)
+         Log("Error: Failed to find MCM quest in UpdateLocalMcmSettings()", DL_ERROR, \
+             DC_GENERAL)
+         Return
+      EndIf
+   EndIf
+
    If (!sCategory || ("Logging" == sCategory))
       _iMcmLogLevel = _qMcm.iLogLevel
 
@@ -1217,9 +1243,16 @@ Function UpdateLocalMcmSettings(String sCategory="")
       _bYankingLeash = False
    EndIf
 
-   ; This should really use the standard mod event process but for now update it as is.
+   ; Process any settings that don't fit into a category.
    If (!sCategory)
       UpdatePollingDistance(_qMcm.iSettingsNearbyDistance)
+
+      Float fTempPollTime = _qMcm.fSettingsPollTime
+      ; If the polling interval has changed (or not been initialized) start the poll now.
+      If (fTempPollTime != _fMcmPollTime)
+         UpdatePollingInterval(fTempPollTime)
+      EndIf
+      _fMcmPollTime = fTempPollTime
    EndIf
 EndFunction
 
@@ -1260,7 +1293,7 @@ Event OnUpdate()
    ; We are registering for each update individually after the previous processing has
    ; completed to avoid long updates causing multiple future updates to occur at the same time,
    ; thus, piling up.  This is a technique recommended by the community.
-   RegisterForSingleUpdate(_qMcm.fSettingsPollTime)
+   RegisterForSingleUpdate(_fMcmPollTime)
 EndEvent
 
 ; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function in
@@ -2274,8 +2307,8 @@ Event OnKeyUp(Int iKeyCode, Float fHoldTime)
          _bCallingForHelp      = False
       EndIf
       ; Convert the call out timeout and response from seconds into number of polls.
-      _iCallOutTimeout = ((_iCallOutTimeout / _qMcm.fSettingsPollTime) As Int) + 1
-      _iCallOutResponse = ((_iCallOutResponse / _qMcm.fSettingsPollTime) As Int) + 1
+      _iCallOutTimeout = ((_iCallOutTimeout / _fMcmPollTime) As Int) + 1
+      _iCallOutResponse = ((_iCallOutResponse / _fMcmPollTime) As Int) + 1
 
       ; If the player is gagged the range is less and chance of Master interaction more.
       If (_bIsPlayerGagged)
