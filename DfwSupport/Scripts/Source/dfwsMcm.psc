@@ -87,6 +87,8 @@ Bool Property bBlockHelpless    Auto
 Bool Property bAllowSex         Auto
 Bool Property bFurnitureHide    Auto
 Bool Property bAutoAddFurniture Auto
+Bool Property bShutdownMod      Auto
+Bool Property bShutdownSecure   Auto
 Bool Property bHotkeyPackage    Auto
 
 ; *** Float Slider Options ***
@@ -320,6 +322,8 @@ Function UpdateScript()
       iChanceForAssistance    = 75
       iEscapeDetection        = 10
       fFurnitureVisitorChance = 1.0
+      bShutdownMod            = False
+      bShutdownSecure         = False
    EndIf
 
    ; Any time the script is updated have the main script sync it's parameters.
@@ -619,6 +623,14 @@ Function DisplayDebugPage(Bool bSecure)
    ; Start on the second column.
    SetCursorPosition(1)
 
+   Int iShutdownFlags = OPTION_FLAG_NONE
+   If (bShutdownSecure)
+      iShutdownFlags = iFlags
+   EndIf
+   AddToggleOptionST("ST_DBG_SHUTDOWN",     "Shutdown Mod",            bShutdownMod, a_flags=iShutdownFlags)
+   AddToggleOptionST("ST_DBG_SHUTDOWN_SEC", "...Make Shutdown Secure", bShutdownSecure, a_flags=iShutdownFlags)
+
+   AddEmptyOption()
    AddTextOptionST("ST_DBG_MOD_EVENTS",      "Fix Mod Events",              "Fix Now")
    AddToggleOptionST("ST_DBG_CYCLE_PACKAGE", "Hotkey Cycle Slaver Package", bHotkeyPackage)
 EndFunction
@@ -1836,6 +1848,53 @@ State ST_DBG_SCREEN
       SetInfoText("Set the level of messages that go to the screen.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "This should be Critical to reduce clutter on your screen but still get event messages.")
+   EndEvent
+EndState
+
+State ST_DBG_SHUTDOWN
+   Event OnSelectST()
+      bShutdownMod = !bShutdownMod
+      SetToggleOptionValueST(bShutdownMod)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
+   EndEvent
+
+   Event OnDefaultST()
+      bShutdownMod = False
+      SetToggleOptionValueST(bShutdownMod)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Mod")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Shut down the mod in preparation for uninstallation or a clean save before upgrading.\n" +\
+                  "This does not stop any features/scenes already in progress.\n" +\
+                  "Make sure to complete any scenes before using this feature.")
+   EndEvent
+EndState
+
+State ST_DBG_SHUTDOWN_SEC
+   Event OnSelectST()
+      bShutdownSecure = !bShutdownSecure
+      SetToggleOptionValueST(bShutdownSecure)
+
+      ; If the settings are now secure disable access to them.
+      If (bShutdownSecure && IsSecure())
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_DBG_SHUTDOWN_SEC")
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_DBG_SHUTDOWN")
+      EndIf
+   EndEvent
+
+   Event OnDefaultST()
+      bShutdownSecure = False
+      SetToggleOptionValueST(bShutdownSecure)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Make the shutdown option inaccessible when vulnerable.\n" +\
+                  "This makes uninstalling the mod to escape predicaments more difficult.")
    EndEvent
 EndState
 

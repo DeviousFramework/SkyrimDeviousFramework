@@ -543,6 +543,7 @@ Int _iMcmDispWillingBdsm
 Int _iMcmDialogueRetries
 Int _iMcmLeashMinLength
 Int _iMcmSaveGameControlStyle
+Bool _bMcmShutdownMod
 ;----------
 
 ;----------------------------------------------------------------------------------------------
@@ -1155,8 +1156,8 @@ EndFunction
 
 Function ReRegisterModEvents()
    ; Re-register for all mod events.  Should be called from the MCM menu to fix issues.
-   RegisterForModEvent("AnimationEnd",    "PostSexCallback")
-   RegisterForModEvent("DFW_MCM_Changed", "UpdateLocalMcmSettings")
+   RegisterForModEvent("AnimationEnd",       "PostSexCallback")
+   RegisterForModEvent("DFW_MCM_Changed",    "UpdateLocalMcmSettings")
    RegisterForModEvent("ZapSlaveActionDone", "OnSlaveActionDone")
 
    ; Also reset the load game flag here in case it has gotten stuck.
@@ -1254,6 +1255,14 @@ Function UpdateLocalMcmSettings(String sCategory="")
       EndIf
       _fMcmPollTime = fTempPollTime
    EndIf
+
+   If ("Debug" == sCategory)
+      ; If we are re-enabling the mod make sure to start the poll.
+      If (_bMcmShutdownMod && !_qMcm.bShutdownMod)
+         UpdatePollingInterval(_fMcmPollTime)
+      EndIf
+      _bMcmShutdownMod = _qMcm.bShutdownMod
+   EndIf
 EndFunction
 
 
@@ -1284,6 +1293,10 @@ Event OnUpdate()
          _iBlockConsoleTimer = 15
          Game.QuitToMainMenu()
       EndIf
+   ElseIf (_bMcmShutdownMod)
+      ; If we are shutting down the mod don't process any requests/events.
+      Self.Stop()
+      Return
    Else
       PerformOnUpdate()
       Log("Update Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
@@ -2068,6 +2081,11 @@ EndFunction
 
 ; This is called from the _dfwNearbyDetectorEffect magic effect when it starts.
 Function NearbyActorSeen(Actor aActor)
+   ; Ignore any new nearby actors if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return
+   EndIf
+
    ; If this actor is already in the nearby actor list ignore him.
    Int iIndex = _aoNearby.Find(aActor)
    If (0 <= iIndex)
@@ -2272,6 +2290,12 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
 EndEvent
 
 Event OnKeyUp(Int iKeyCode, Float fHoldTime)
+   ; Ignore any user keypresses if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Log("Key Ignored.  Mod in shutdown mode.", DL_CRIT, DC_GENERAL)
+      Return
+   EndIf
+
    If ((_qMcm.iModHelpKey == iKeyCode) || (_qMcm.iModAttentionKey == iKeyCode))
       ; If a menu is open (e.g. the console or inventory) ignore KeyPress events.
       If (Utility.IsInMenuMode())
@@ -3249,7 +3273,6 @@ EndFunction
 ;             Int GetActorSignificance(Actor aActor)
 ;             Int GetActorWillingnessToHelp(Actor aActor)
 ;                 PrepareActorDialogue(Actor aActor)
-;                 TemporarilyPauseDialogueTargets(Int iSeconds)
 ;          --- NPC Interactions ---
 ;            Bool NpcMoveNearbyHidden(aActor)
 ;             Int ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String sModId,
@@ -3303,6 +3326,11 @@ EndFunction
 ; szSceneName can be anything.
 ; iSceneTimeout is in seconds.  The amount of time before giving up waiting for the scene done.
 Int Function SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs=0)
+   ; Don't start any scenes if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return FAIL
+   EndIf
+
    While (_szCurrentScene && (0 < iWaitMs))
       Utility.Wait(0.1)
       iWaitMs -= 100
@@ -3782,6 +3810,11 @@ Function RestoreJournal()
 EndFunction
 
 Function ForceSave()
+   ; Don't perform any game saves if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return
+   EndIf
+
    ; Make sure save games are allowed.
    Game.SetInChargen(False, False, True)
 
@@ -3836,6 +3869,11 @@ Function ForceSave()
 EndFunction
 
 Function QuickSave()
+   ; Don't perform any game saves if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return
+   EndIf
+
    Float fCurrTime = Game.GetRealHoursPassed()
    If (fCurrTime < (_fLastSave + (_qMcm.fModSaveMinTime / 60.0)))
       Log("Cannot Save: Too Soon.", DL_INFO, DC_SAVE)
@@ -3862,6 +3900,11 @@ Function QuickSave()
 EndFunction
 
 Function AutoSave()
+   ; Don't perform any game saves if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return
+   EndIf
+
    ; Autosave should only be done with the Full Control save game style.
    If (2 != _iMcmSaveGameControlStyle)
       Return
@@ -4333,6 +4376,11 @@ EndFunction
 
 ; Never returns more than 100.
 Int Function GetVulnerability(Actor aActor=None)
+   ; Don't process any vulnerability requests if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return 0
+   EndIf
+
    Log("Get Vulnerability: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
    If (!aActor)
       aActor = _aPlayer
@@ -5215,6 +5263,11 @@ EndFunction
 ; iSpeed: 2 Walk Fast  3 Jog  4 Run
 Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String sModId, \
                             Bool bForce=False)
+   ; Don't start any movement packages if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return FAIL
+   EndIf
+
    Int iReturnCode = SUCCESS
 
    ; Check if there already is an NPC approaching the player.
@@ -5255,6 +5308,11 @@ Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, Strin
 EndFunction
 
 Int Function MoveToLocation(Actor aActor, Location oTarget, String sModId, Bool bForce=False)
+   ; Don't start any movement packages if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return FAIL
+   EndIf
+
    Int iReturnCode = SUCCESS
 
    ; Check if there already is an NPC performing the movement.
@@ -5297,6 +5355,11 @@ EndFunction
 
 Int Function MoveToObject(Actor aActor, ObjectReference oTarget, String sModId, \
                           Bool bForce=False)
+   ; Don't start any movement packages if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return FAIL
+   EndIf
+
    Int iReturnCode = SUCCESS
 
    ; Check if there already is an NPC performing the movement.

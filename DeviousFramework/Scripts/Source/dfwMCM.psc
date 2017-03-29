@@ -87,6 +87,8 @@ Bool _bSecureHardcore
 Bool _bInfoForPlayer
 
 ; *** Toggle Options ***
+Bool _bDefModLeashVisible
+Bool _bDefLeashInterrupt
 Bool _bDefBlockNipple
 Bool _bDefBlockVagina
 Bool _bDefBlockHobble
@@ -95,10 +97,10 @@ Bool _bDefBlockArmour
 Bool _bDefBlockArms
 Bool _bDefBlockLeash
 Bool _bDefSaveGameConfirm
-Bool _bDefSetDeviousFix
-Bool _bDefModLeashVisible
-Bool _bDefLeashInterrupt
 Bool _bDefBlockOnGameLoad
+Bool _bDefSetDeviousFix
+Bool Property bModLeashVisible        Auto
+Bool Property bModLeashInterrupt      Auto
 Bool Property bBlockNipple Auto
 Bool Property bBlockVagina Auto
 Bool Property bBlockHobble Auto
@@ -107,11 +109,11 @@ Bool Property bBlockArmour Auto
 Bool Property bBlockArms   Auto
 Bool Property bBlockLeash  Auto
 Bool Property bSaveGameConfirm        Auto
-Bool Property bEasternHouseIsWindhelm Auto
-Bool Property bSettingsDetectUnequip  Auto
-Bool Property bModLeashVisible        Auto
-Bool Property bModLeashInterrupt      Auto
 Bool Property bModBlockOnGameLoad     Auto
+Bool Property bSettingsDetectUnequip  Auto
+Bool Property bEasternHouseIsWindhelm Auto
+Bool Property bShutdownMod            Auto
+Bool Property bShutdownSecure         Auto
 
 ; *** Float Slider Options ***
 Float _fDefSetPollTime
@@ -507,6 +509,8 @@ Function UpdateScript()
       Pages[7] = "Debug"
 
       iConConsoleVulnerability = 100
+      bShutdownMod             = False
+      bShutdownSecure          = False
    EndIf
 
    ; Any time the script is updated have the main script sync it's parameters.
@@ -1225,6 +1229,14 @@ Function DisplayDebugPage(Bool bSecure)
    ; Start on the second column.
    SetCursorPosition(1)
 
+   Int iShutdownFlags = OPTION_FLAG_NONE
+   If (bShutdownSecure)
+      iShutdownFlags = iFlags
+   EndIf
+   AddToggleOptionST("ST_DBG_SHUTDOWN",     "Shutdown Mod",            bShutdownMod, a_flags=iShutdownFlags)
+   AddToggleOptionST("ST_DBG_SHUTDOWN_SEC", "...Make Shutdown Secure", bShutdownSecure, a_flags=iShutdownFlags)
+
+   AddEmptyOption()
    AddTextOptionST("ST_DBG_YANK_LEASH", "Yank Leash",      "Do It Now")
    AddMenuOptionST("ST_DBG_TELEPORT",   "Teleport Player", "Destination..")
 
@@ -3349,6 +3361,53 @@ State ST_DBG_SAVE
       SetInfoText("Set the level on the screen for messages related to the DFW save game control feature.\n" +\
                   "(0 = Off)  (1 = Critical)  (2 = Error)  (3 = Information)  (4 = Debug)  (5 = Trace)\n" +\
                   "Recommended: 3 - Information")
+   EndEvent
+EndState
+
+State ST_DBG_SHUTDOWN
+   Event OnSelectST()
+      bShutdownMod = !bShutdownMod
+      SetToggleOptionValueST(bShutdownMod)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Debug")
+   EndEvent
+
+   Event OnDefaultST()
+      bShutdownMod = False
+      SetToggleOptionValueST(bShutdownMod)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Debug")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Shut down the mod in preparation for uninstallation or a clean save before upgrading.\n" +\
+                  "This does not stop any features/scenes already in progress.\n" +\
+                  "Make sure to complete any scenes before using this feature.")
+   EndEvent
+EndState
+
+State ST_DBG_SHUTDOWN_SEC
+   Event OnSelectST()
+      bShutdownSecure = !bShutdownSecure
+      SetToggleOptionValueST(bShutdownSecure)
+
+      ; If the settings are now secure disable access to them.
+      If (bShutdownSecure && IsSecure())
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_DBG_SHUTDOWN_SEC")
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_DBG_SHUTDOWN")
+      EndIf
+   EndEvent
+
+   Event OnDefaultST()
+      bShutdownSecure = False
+      SetToggleOptionValueST(bShutdownSecure)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Make the shutdown option inaccessible when vulnerable.\n" +\
+                  "This makes uninstalling the mod to escape predicaments more difficult.")
    EndEvent
 EndState
 

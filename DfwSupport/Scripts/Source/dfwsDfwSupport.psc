@@ -335,6 +335,7 @@ Bool _bFastTravelBlocked
 ; for faster access.
 Bool _bMcmCatchSdPlus
 Bool _bMcmIncludeOwners
+Bool _bMcmShutdownMod
 Float _fMcmFurnitureReleaseChance
 Float _fMcmFurnitureVisitorChance
 Float _fMcmLeashGameChance
@@ -649,6 +650,14 @@ Function UpdateLocalMcmSettings(String sCategory="")
       _iMcmLogLevel                = _qMcm.iLogLevel
       _iMcmLogLevelScreen          = _qMcm.iLogLevelScreen
    EndIf
+
+   If ("Mod" == sCategory)
+      ; If we are re-enabling the mod make sure to start the poll.
+      If (_bMcmShutdownMod && !_qMcm.bShutdownMod)
+         UpdatePollingInterval(_fMcmPollTime)
+      EndIf
+      _bMcmShutdownMod = _qMcm.bShutdownMod
+   EndIf
 EndFunction
 
 Function InitSimpleSlaveryAuctions()
@@ -727,6 +736,10 @@ Event OnUpdate()
    ; If the script has not been initialized do that instead of performing the update.
    If (!_fCurrVer)
       OnLoadGame()
+   ElseIf (_bMcmShutdownMod)
+      ; If we are shutting down the mod don't process any requests/events.
+      Self.Stop()
+      Return
    Else
       PerformOnUpdate()
 
@@ -1604,6 +1617,11 @@ Event DebugMovePlayer(Int iTarget, Float fXOffset, Float fYOffset)
 EndEvent
 
 Event HandleCallOut(Int iCallType, Int iRange, Form oRecommendedActor)
+   ; Don't handle call outs if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return
+   EndIf
+
    Actor aActor = (oRecommendedActor As Actor)
    String szName = aActor.GetDisplayName()
    Bool bHandleCallOut
@@ -2214,6 +2232,11 @@ Function StopLeashGame(Bool bClearMaster=True, Bool bReturnItems=False, Bool bUn
 EndFunction
 
 Function UpdatePollingInterval(Float fNewInterval)
+   ; Don't start the mod's polling interval if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return
+   EndIf
+
    RegisterForSingleUpdate(fNewInterval)
 EndFunction
 
@@ -2954,6 +2977,11 @@ Function StartConversation(Actor aActor, Int iGoal=-1, Int iRefusalCount=-1, \
 EndFunction
 
 Function CheckStartLeashGame(Int iVulnerability)
+   ; Don't start the leash game if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      Return
+   EndIf
+
    ; Only play the leash game if the player does not have a current close Master and she is not
    ; otherwise unavailable.
    If (!_qFramework.GetMaster(_qFramework.MD_CLOSE) && \
