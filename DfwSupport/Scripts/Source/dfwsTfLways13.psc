@@ -7,6 +7,7 @@ Function Fragment_1(ObjectReference akSpeakerRef)
 Actor akSpeaker = akSpeakerRef as Actor
 ;BEGIN CODE
 dfwsDfwSupport _qQuest = Self.GetOwningQuest() As dfwsDfwSupport
+_qQuest.IncreaseTrainingLevel(-0.5, akSpeaker)
 _qQuest.IncAnger(akSpeaker, 1)
 _qQuest.Cooperation(10, -1, akSpeaker)
 ;END CODE

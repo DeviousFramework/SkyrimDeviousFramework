@@ -40,6 +40,7 @@ Scriptname dfwDeviousFramework extends Quest Conditional
 ;***                                      CONSTANTS                                          ***
 ;***********************************************************************************************
 String S_MOD = "DFW"
+String S_NONE = "None"
 
 ; Standard status constants.
 Int FAIL    = -1
@@ -157,6 +158,7 @@ Int Property AF_SLAVE_TRADER = 0x00000800 Auto
 Int Property AF_BDSM_AWARE   = 0x00000F00 Auto
 
 ; Regions of Skyrim.
+Location[] REGIONS_INDEXED
 Location    REGION_DAWNSTAR
 Location[] SUBURBS_DAWNSTAR
 Location    REGION_DRAGON_BRIDGE
@@ -233,6 +235,12 @@ LocationAlias _aAliasLocationTarget
 ReferenceAlias _aAliasMoveToLocation
 ReferenceAlias _aAliasObjectTarget
 ReferenceAlias _aAliasMoveToObject
+ReferenceAlias[] _aaAliasHoverTarget
+ReferenceAlias[] _aaAliasHover
+ReferenceAlias _aAliasGiveSpaceTarget
+ReferenceAlias _aAliasGiveSpace1
+ReferenceAlias _aAliasGiveSpace2
+ReferenceAlias _aAliasGiveSpace3
 
 
 ;***********************************************************************************************
@@ -249,10 +257,11 @@ Float _fCurrVer = 0.00
 Bool _bGameLoadInProgress
 
 ;----------------------------------------------------------------------------------------------
-; Conditional variables available to dialogues.
+; Conditional variables available to Dialogues.
 ; Use PrepareActorDialogue() to set the variables before using them.
 Bool  _bCallingForAttention     Conditional
 Bool  _bCallingForHelp          Conditional
+Bool  _bInScene                 Conditional
 Bool  _bIsActorDominant         Conditional
 Bool  _bIsActorLeashHolder      Conditional
 Bool  _bIsActorOwner            Conditional
@@ -288,9 +297,38 @@ Float _fMasterDistance          Conditional
 Int _iDialogRetries             Conditional
 ;----------
 
+;----------------------------------------------------------------------------------------------
+; Conditional variables available to Packages.
 ; A conditional to tell the approach package(s) how fast to move.
 ; 2 Walk Fast  3 Jog  4 Run
 Int _iApproachSpeed Conditional
+
+; Range 0 - 100.
+; Currently only two values, <50 and >50, are supported.
+Int _iMoveToObjectDistance Conditional
+;----------
+
+; Basic game objects.
+MiscObject _oGold
+MiscObject _oLockpick
+
+; Game objects from other mods.
+Armor _oZazRestraintHider
+Armor _oZbfRestraintHider
+; Devious Device Keys.
+Key _oDeviousKeyChastity
+Key _oDeviousKeyPiercings
+Key _oDeviousKeyRestraints
+; Devious Devices - For the Masses (fake) restraint keys.
+Key _oFtmChastityKey
+Key _oFtmRestraintKey
+Key _oFtmPiercingTool
+; Deviously Cursed Loot special keys.
+Key _oDclKeyBody
+Key _oDclKeyHand
+Key _oDclKeyHead
+Key _oDclKeyHighSecurity
+Key _oDclKeyLeg
 
 ;*** Vulnerability Flags ***
 Int _iNakedStatus
@@ -308,6 +346,7 @@ Location _oCurrLocation
 Location _oCurrRegion
 Location _oLastNearestRegion
 Bool _bIsPlayerInterior
+Int[] _aiLastDoorLocation
 
 ; Variables for controlling saved games.
 Bool _bBlockLoad
@@ -317,13 +356,33 @@ Float _fLastSave
 ; 0: Unknown  1: Auto  2: Quick  3: Force
 Int _iLastSaveType
 
+;*** Pose Management ***
+; An array of all known poses.
+String[] _aszKnownPoses
+; Information about each pose.
+; 0x0001: A default idle.
+; 0x0002: An idle but not a default.
+; 0x0004: A toggle pose.  It must be turned on and off.
+; 0x0008: This pose prevents movement.
+; 0x0010: This pose prevents activation.
+; 0x0020: This pose prevents inventory.
+; 0x0040: This pose prevents fighting.
+; 0x0080: The pose is considred kneeling.
+; 0x0100: The pose is considred crawling.
+; 0x0200: The pose is considred exposed.
+; 0x8000: A complex pose which can't be handled via the standard funcitons.
+Int[] _aiKnownPoseFlags
+; An index into the array of known poses.
+Int _iCurrPose
+
 ; BDSM furniture related flags.  What furniture the player is sitting on and if it is locked.
 ; Note that if the furniture is locked the player should be locked back up after sex.
 ObjectReference _oBdsmFurniture = None
 Bool _bIsFurnitureLocked
 
 ; Flags to tell the poll function to update status information.
-Bool _bFlagSet              = True
+; 0: No flags to check.  1-2: Time to check flags.  >2: A timer before performing checks.
+Int _iFlagSet               = 5
 Bool _bFlagItemEqupped      = True
 Bool _bFlagItemUnequpped    = True
 Bool _bFlagClothesEqupped   = True
@@ -358,6 +417,10 @@ Keyword _oKeywordClothes
 Keyword _oKeywordArmourLight
 Keyword _oKeywordArmourHeavy
 
+; Basic Native Game Keywords.
+Keyword _oKeywordVendorNoSale
+Keyword _oKeywordVendorItemKey
+
 ; SexLab No Strip keyword to prevent unequipping certain items.
 Keyword _oKeywordSexLabNoStrip
 
@@ -371,6 +434,7 @@ Keyword _oKeywordZadArmBinder
 Keyword _oKeywordZadArmCuffs
 Keyword _oKeywordZadBelt
 Keyword _oKeywordZadBlindfold
+Keyword _oKeywordZadBondageMittens
 Keyword _oKeywordZadBoots
 Keyword _oKeywordZadBra
 Keyword _oKeywordZadClamps
@@ -402,6 +466,7 @@ Keyword _oKeywordZbfEffectNoMove
 Keyword _oKeywordZbfEffectNoSprint
 Keyword _oKeywordZbfEffectSlowMove
 Keyword _oKeywordZbfFurniture
+Keyword _oKeywordZbfFurnitureMulti
 
 ; A reference to the MCM quest script.
 dfwMcm _qMcm
@@ -422,10 +487,21 @@ zbfSlaveControl _qZbfSlave
 zbfSlaveActions _qZbfSlaveActions
 zbfSlot _qZbfPlayerSlot
 
+; The names to use for QuickSave/AutoSave game files.
+String _szQuickSaveName
+String _szAutoSaveName
+
 ; A list of nearby actors and their accompanying characteristic flags.
 Int _iNearbyMutex
 Form[] _aoNearby
 Int[] _aiNearbyFlags
+
+
+; A list of actors we have added to the Zaz Animation Pack slotted actors.
+; The Zaz Animation Pack has few slots so we want to remove any actors we have added.
+Int _iZazSlottedMutex
+Int _iZazSlottedCount
+Form[] _aoZazSlottedActors
 
 ; Some information about recently seen actors
 Int _iKnownMutex
@@ -463,11 +539,22 @@ Int _iNumItemsUnequipped
 ; Keep track of whether a scene is running and how long to wait for a call to scene done.
 Float _fSceneTimeout
 String _szCurrentScene
+; The callout timeout should not decrease in shorter scenes and scenes that directly handle the
+; callout; however, for extended scenes and scenes that are unrelated to the callout the timeout
+; needs to decrement as normal.  This flag keeps track of which type of scene is active.
+Bool _bSceneExtendsCallout
 
 ; For moving aliases, keep track of the mods/features performing the movement.
 String _szApproachModId
 String _szMoveToLocationModId
 String _szMoveToObjectModId
+String[] _aszHoverAtModId
+String _szGiveSpaceModId
+
+; Keep track of how long the times movement packages should be in effect.
+; zxc-TODO: Change the name of this variable.  It is an Array.
+Int[] _iHoverAtTimeout
+Int _iGiveSpaceTimeout
 
 ; Keep track of how long before the next cleanup is scheduled for the nearby actors list.
 Float _fNearbyCleanupTime
@@ -495,6 +582,13 @@ Float _iBleedoutTime
 ObjectReference _oLeashTarget
 Int _iLeashLength
 Bool _bYankingLeash
+
+; Keep track of the collector's chests for quicker access.
+ObjectReference _oCollectorsChest
+ObjectReference _oCollectorsSpecialChest
+ObjectReference _oCollectorsNewItemChest
+; The temporary chest is used to separate quest items from not quest items.
+ObjectReference _oPlayerItemTemporaryChest
 
 ; Counts for how many mods have blocked stat regeneration.
 Int _iBlockHealthRegen
@@ -524,10 +618,15 @@ Faction _oFactionHydraSlaver
 Faction _oFactionHydraCaravanSlaver
 Faction _oFactionHydraSlaverMisc
 
+; A mutex to restrict access to the player's MoveTo() function.
+Int _iMovePlayerMutex
+
 ; A set of variables to manage mutexes.
 Int[] _aiMutex
 String[] _aszMutexName
 Int _iMutexNext
+
+Float _fDebugNextClockTick
 
 ;----------------------------------------------------------------------------------------------
 ; Local copy of frequently used MCM settings.
@@ -542,6 +641,8 @@ Int _iMcmDispWillingMerchants
 Int _iMcmDispWillingBdsm
 Int _iMcmDialogueRetries
 Int _iMcmLeashMinLength
+Int _iMcmNearbyDistance
+Int _iMcmCollectorSpecialCost
 Int _iMcmSaveGameControlStyle
 Bool _bMcmShutdownMod
 ;----------
@@ -559,6 +660,22 @@ Armor _oStraponByAeon
 ; Milk Mod Economy.  Some effort is needed to make sure scenes run smoothly.
 Spell _oMmeBeingMilkedSpell
 Bool _bMmeSuppressed
+
+; Indicates if the Papyrus Util (Modder's Scripting Utility Functions) mod is installed.
+Bool _bModPapyrusUtil
+
+; Indicates if the Sanguine Debauchery Plus (SD+) mod is installed.
+Bool _bModSdPlus
+
+; Crawl idles from SD+
+Idle _oSdCrawlMoveBackward
+Idle _oSdCrawlMoveForward
+Idle _oSdCrawlTurnLeft
+Idle _oSdCrawlTurnRight
+Idle _oSdCrawlStrafeBackLeft
+Idle _oSdCrawlStrafeBackRight
+Idle _oSdCrawlStrafeStartLeft
+Idle _oSdCrawlStrafeStartRight
 ;----------
 
 
@@ -567,27 +684,31 @@ Bool _bMmeSuppressed
 ;***********************************************************************************************
 ; A new game has started, this script was added to an existing game, or the script was reset.
 Event OnInit()
-   ; We shouldn't do anything here.  We rely on the MCM script to update our polling interval
-   ; when it's ready.  Register for a polling interval anyway, in case the MCM script fails.
+   ; Delay before starting the mod.  This should give the MCM script time to initialize.
    Debug.Trace("[" + S_MOD + "] Script Initialized.")
-   RegisterForSingleUpdate(90)
+   RegisterForSingleUpdate(15)
 EndEvent
 
 ; This is called from the player monitor script when a game is loaded.
 ; This function is primarily to ensure new variables are initialized for new script versions.
 Function UpdateScript()
+   DebugTrace("TraceEvent UpdateScript")
+
    ; Reset the version number.
-   ; To make sure the Utility script is loaded.
-   ;If (1.01 < _fCurrVer)
-   ;   _fCurrVer = 1.01
-   ;EndIf
+   If (1.11 < _fCurrVer)
+      _fCurrVer = 1.11
+   EndIf
 
    ; If the script is at the current version we are done.
-   Float fScriptVer = 1.08
+   Float fScriptVer = 1.12
    If (fScriptVer == _fCurrVer)
+      DebugTrace("TraceEvent UpdateScript: Done (Latest Version)")
       Return
    EndIf
    Log("Updating Script " + _fCurrVer + " => " + fScriptVer, DL_INFO, DC_GENERAL)
+
+   ; On any script upgrade make sure to refresh any settings from the MCM script.
+   UpdateLocalMcmSettings()
 
    ; When releasing the greeting dialogues (Version 2 of the mod) the script versions
    ; were all advanced to version 1.00.
@@ -596,9 +717,6 @@ Function UpdateScript()
       _aPlayer = Game.GetPlayer()
       _iLeashLength = 700
       _iDialogueTargetStyle = DS_MANUAL
-
-      ; Update variables that are based on MCM settings.
-      UpdateLocalMcmSettings()
 
       ; Create an initial mutex for protecting the mutex list.
       _aiMutex      = New Int[1]
@@ -612,24 +730,24 @@ Function UpdateScript()
       _iKnownMutex = iMutexCreate("DFW Known")
 
       ; ZAD Devious Keywords.
-      _oKeywordZadArmBinder = Keyword.GetKeyword("zad_DeviousArmbinder")
-      _oKeywordZadArmCuffs  = Keyword.GetKeyword("zad_DeviousArmCuffs")
-      _oKeywordZadBelt      = Keyword.GetKeyword("zad_DeviousBelt")
-      _oKeywordZadBlindfold = Keyword.GetKeyword("zad_DeviousBlindfold")
-      _oKeywordZadBoots     = Keyword.GetKeyword("zad_DeviousBoots")
-      _oKeywordZadBra       = Keyword.GetKeyword("zad_DeviousBra")
-      _oKeywordZadClamps    = Keyword.GetKeyword("zad_DeviousClamps")
-      _oKeywordZadCollar    = Keyword.GetKeyword("zad_DeviousCollar")
-      _oKeywordZadCorset    = Keyword.GetKeyword("zad_DeviousCorset")
-      _oKeywordZadGag       = Keyword.GetKeyword("zad_DeviousGag")
-      _oKeywordZadGloves    = Keyword.GetKeyword("zad_DeviousGloves")
-      _oKeywordZadHarness   = Keyword.GetKeyword("zad_DeviousHarness")
-      _oKeywordZadHood      = Keyword.GetKeyword("zad_DeviousHood")
-      _oKeywordZadLegCuffs  = Keyword.GetKeyword("zad_DeviousLegCuffs")
-      _oKeywordZadNipple    = Keyword.GetKeyword("zad_DeviousPiercingsNipple")
-      _oKeywordZadVagina    = Keyword.GetKeyword("zad_DeviousPiercingsVaginal")
-      _oKeywordZadFullSuit  = Keyword.GetKeyword("zad_DeviousSuit")
-      _oKeywordZadYoke      = Keyword.GetKeyword("zad_DeviousYoke")
+      _oKeywordZadArmBinder      = Keyword.GetKeyword("zad_DeviousArmbinder")
+      _oKeywordZadArmCuffs       = Keyword.GetKeyword("zad_DeviousArmCuffs")
+      _oKeywordZadBelt           = Keyword.GetKeyword("zad_DeviousBelt")
+      _oKeywordZadBlindfold      = Keyword.GetKeyword("zad_DeviousBlindfold")
+      _oKeywordZadBoots          = Keyword.GetKeyword("zad_DeviousBoots")
+      _oKeywordZadBra            = Keyword.GetKeyword("zad_DeviousBra")
+      _oKeywordZadClamps         = Keyword.GetKeyword("zad_DeviousClamps")
+      _oKeywordZadCollar         = Keyword.GetKeyword("zad_DeviousCollar")
+      _oKeywordZadCorset         = Keyword.GetKeyword("zad_DeviousCorset")
+      _oKeywordZadGag            = Keyword.GetKeyword("zad_DeviousGag")
+      _oKeywordZadGloves         = Keyword.GetKeyword("zad_DeviousGloves")
+      _oKeywordZadHarness        = Keyword.GetKeyword("zad_DeviousHarness")
+      _oKeywordZadHood           = Keyword.GetKeyword("zad_DeviousHood")
+      _oKeywordZadLegCuffs       = Keyword.GetKeyword("zad_DeviousLegCuffs")
+      _oKeywordZadNipple         = Keyword.GetKeyword("zad_DeviousPiercingsNipple")
+      _oKeywordZadVagina         = Keyword.GetKeyword("zad_DeviousPiercingsVaginal")
+      _oKeywordZadFullSuit       = Keyword.GetKeyword("zad_DeviousSuit")
+      _oKeywordZadYoke           = Keyword.GetKeyword("zad_DeviousYoke")
 
       ; ZBF Worn Keywords.
       _oKeywordZbfWornAnkles    = Keyword.GetKeyword("zbfWornAnkles")
@@ -673,14 +791,14 @@ Function UpdateScript()
             (Game.GetFormFromFile(0x000122B6, "hydra_slavegirls.esp") As Faction)
          _oFactionHydraCaravanSlaver = \
             (Game.GetFormFromFile(0x00072F71, "hydra_slavegirls.esp") As Faction)
-         _oFactionDfwDialogueTarget = \
-            (Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") As Faction)
       EndIf
+
+      ; Get out own faction for managing dialogue target information.
+      _oFactionDfwDialogueTarget = \
+         (Game.GetFormFromFile(0x000083D6, "DeviousFramework.esm") As Faction)
    EndIf
 
    If (1.01 > _fCurrVer)
-      ; A new logging class was added.  Make sure the array is initialized.
-      UpdateLocalMcmSettings("Logging")
       _aAliasApproachPlayer = (GetAlias(1) As ReferenceAlias)
       _aAliasLocationTarget = (GetAlias(2) As LocationAlias)
       _aAliasMoveToLocation = (GetAlias(3) As ReferenceAlias)
@@ -723,11 +841,6 @@ Function UpdateScript()
       Log("Registering Mod Events Done", DL_CRIT, DC_GENERAL)
    EndIf
 
-   If (1.06 > _fCurrVer)
-      ; A new logging class was added.  Make sure the array is initialized.
-      UpdateLocalMcmSettings("Logging")
-   EndIf
-
    If (1.07 > _fCurrVer)
       _aiMoveToDirection = New Int[3]
       _aiMoveToDirection[0] = 4
@@ -762,15 +875,157 @@ Function UpdateScript()
       EndIf
    EndIf
 
-   If (1.08 > _fCurrVer)
+   If (1.09 > _fCurrVer)
+      _szQuickSaveName = "DfwQuickSave"
+      _szAutoSaveName = "DfwAutoSave"
+   EndIf
+
+   If (1.10 > _fCurrVer)
+      _aiLastDoorLocation = New Int[3]
+      _aiLastDoorLocation[0] = 0
+      _aiLastDoorLocation[1] = 0
+      _aiLastDoorLocation[2] = 0
+   EndIf
+
+   If (1.12 > _fCurrVer)
       InitRegions()
+
+      _oGold     = (Game.GetFormFromFile(0x0000000F, "Skyrim.esm") As MiscObject)
+      _oLockpick = (Game.GetFormFromFile(0x0000000A, "Skyrim.esm") As MiscObject)
+
+      _oZazRestraintHider = \
+         (Game.GetFormFromFile(0x00040F0C, "Devious Devices - Integration.esm") As Armor)
+      _oZbfRestraintHider = (Game.GetFormFromFile(0x00022749, "ZaZAnimationPack.esm") As Armor)
+
+      _oDeviousKeyChastity = \
+         (Game.GetFormFromFile(0x00008A4F, "Devious Devices - Integration.esm") As Key)
+      _oDeviousKeyPiercings = \
+         (Game.GetFormFromFile(0x000409A4, "Devious Devices - Integration.esm") As Key)
+      _oDeviousKeyRestraints = \
+         (Game.GetFormFromFile(0x0001775F, "Devious Devices - Integration.esm") As Key)
+
+      _oFtmChastityKey  = (Game.GetFormFromFile(0x0800538B, "FtM_3.esp") As Key)
+      _oFtmRestraintKey = (Game.GetFormFromFile(0x0000538C, "FtM_3.esp") As Key)
+      _oFtmPiercingTool = (Game.GetFormFromFile(0x0000538D, "FtM_3.esp") As Key)
+
+      _oDclKeyBody = (Game.GetFormFromFile(0x0004BB4D, "Deviously Cursed Loot.esp") As Key)
+      _oDclKeyHand = (Game.GetFormFromFile(0x0004BB4B, "Deviously Cursed Loot.esp") As Key)
+      _oDclKeyHead = (Game.GetFormFromFile(0x0004BB4C, "Deviously Cursed Loot.esp") As Key)
+      _oDclKeyHighSecurity = \
+         (Game.GetFormFromFile(0x00017CA4, "Deviously Cursed Loot.esp") As Key)
+      _oDclKeyLeg = (Game.GetFormFromFile(0x0004BB4E, "Deviously Cursed Loot.esp") As Key)
+
+      _oKeywordVendorNoSale  = Keyword.GetKeyword("VendorNoSale")
+      _oKeywordVendorItemKey = Keyword.GetKeyword("VendorItemKey")
+
+      ; Initialize this MCM variable.  There are some situations where it isn't updated.
+      _iMcmCollectorSpecialCost = 10000
+
+      ; Extract all of the chests from aliases into local variables for easy access.
+      ; Note: Persistent items can be taken from the mod using GetFormFromFile().
+      ;       The Collector's Merchant chest is a persistent object and does not need an alias;
+      ;       however, the other two chest do not have any other references and cannot be
+      ;       accessed using GetFormFromFile().  Aliases are needed to access them here.
+      ReferenceAlias aAlias = (GetAlias(8) As ReferenceAlias)
+      If (!aAlias.GetReference())
+         ; Make sure the alias is filled.  It will not be except for new games.
+         aAlias.ForceRefIfEmpty(Game.GetFormFromFile(0x000105F0, "DeviousFramework.esm") \
+                                As ObjectReference)
+      EndIf
+      _oCollectorsChest = (aAlias.GetReference() As ObjectReference)
+      aAlias = (GetAlias(9) As ReferenceAlias)
+      If (!aAlias.GetReference())
+         ; Make sure the alias is filled.  It will not be except for new games.
+         aAlias.ForceRefIfEmpty(Game.GetFormFromFile(0x000120EA, "DeviousFramework.esm") \
+                                As ObjectReference)
+      EndIf
+      _oCollectorsSpecialChest = (aAlias.GetReference() As ObjectReference)
+      aAlias = (GetAlias(10) As ReferenceAlias)
+      If (!aAlias.GetReference())
+         ; Make sure the alias is filled.  It will not be except for new games.
+         aAlias.ForceRefIfEmpty(Game.GetFormFromFile(0x00012BAF, "DeviousFramework.esm") \
+                                As ObjectReference)
+      EndIf
+      _oCollectorsNewItemChest = (aAlias.GetReference() As ObjectReference)
+      aAlias = (GetAlias(11) As ReferenceAlias)
+      If (!aAlias.GetReference())
+         ; Make sure the alias is filled.  It will not be except for new games.
+         aAlias.ForceRefIfEmpty(Game.GetFormFromFile(0x00014148, "DeviousFramework.esm") \
+                                As ObjectReference)
+      EndIf
+      _oPlayerItemTemporaryChest = (aAlias.GetReference() As ObjectReference)
+
+      _iZazSlottedMutex = iMutexCreate("DFW Zaz Slotted")
+      _iZazSlottedCount = 0
+
+      _iMovePlayerMutex = iMutexCreate("DFW MovePlayer")
+
+      _oKeywordZadBondageMittens = Keyword.GetKeyword("zad_DeviousBondageMittens")
+      _oKeywordZbfFurnitureMulti = Keyword.GetKeyword("zbfFurnitureMultiRestraint")
+
+      _aAliasGiveSpaceTarget = (GetAlias(12) As ReferenceAlias)
+      _aAliasGiveSpace1      = (GetAlias(13) As ReferenceAlias)
+      _aAliasGiveSpace2      = (GetAlias(14) As ReferenceAlias)
+      _aAliasGiveSpace3      = (GetAlias(15) As ReferenceAlias)
+
+      _aaAliasHoverTarget = New ReferenceAlias[3]
+      _aaAliasHover       = New ReferenceAlias[3]
+      _aszHoverAtModId    = New String[3]
+
+      _iHoverAtTimeout    = New Int[3]
+      _aaAliasHoverTarget[0] = (GetAlias(6) As ReferenceAlias)
+      _aaAliasHoverTarget[1] = (GetAlias(16) As ReferenceAlias)
+      _aaAliasHoverTarget[2] = (GetAlias(18) As ReferenceAlias)
+      _aaAliasHover[0]       = (GetAlias(7) As ReferenceAlias)
+      _aaAliasHover[1]       = (GetAlias(17) As ReferenceAlias)
+      _aaAliasHover[2]       = (GetAlias(19) As ReferenceAlias)
+
+      InitKnownPoses()
+; zxc
+_qMcm.iModTogglePoseKey = 34
+_qMcm.iModCyclePoseKey = 48
+_qMcm.iModTogglePose = 3
    EndIf
 
    ; Finally update the version number.
    _fCurrVer = fScriptVer
+   DebugTrace("TraceEvent UpdateScript: Done")
+EndFunction
+
+Function InitKnownPoses()
+   _aszKnownPoses    = New String[4]
+   _aiKnownPoseFlags = New Int[4]
+
+   ; "Default Idle"
+   _aszKnownPoses[0] = ""
+   ; 0x0001: A default idle.
+   _aiKnownPoseFlags[0] = 0x0001
+
+   ; "Kneeling"
+   _aszKnownPoses[1] = "ZazAPC018"
+   ; 0x0004: A toggle pose.  It must be turned on and off.
+   ; 0x0078: This pose prevents movement, activation, inventory, and fighting.
+   ; 0x0080: The pose is considred kneeling.
+   _aiKnownPoseFlags[1] = 0x0004 + 0x0078 + 0x0080
+
+   ; "Kneeling Spread"
+   _aszKnownPoses[2] = "ZazAPC019"
+   ; 0x0004: A toggle pose.  It must be turned on and off.
+   ; 0x0078: This pose prevents movement, activation, inventory, and fighting.
+   ; 0x0280: The pose is considred kneeling and exposed.
+   _aiKnownPoseFlags[2] = 0x0004 + 0x0078 + 0x0280
+
+   ; "Crawling"
+   _aszKnownPoses[3] = "SD_Crawl"
+   ; 0x8000: A complex pose which can't be handled via the standard funcitons.
+   ; 0x0002: An idle but not a default.
+   ; 0x0070: This pose prevents activation, inventory, and fighting.
+   ; 0x0100: The pose is considred crawling.
+   _aiKnownPoseFlags[3] = 0x8000 + 0x0002 + 0x0070 + 0x0100
 EndFunction
 
 Function InitRegions()
+   DebugTrace("TraceEvent InitRegions")
     REGION_DAWNSTAR = (Game.GetFormFromFile(0x00018A50, "Skyrim.esm") As Location)
    SUBURBS_DAWNSTAR = New Location[1]
    SUBURBS_DAWNSTAR[0] = (Game.GetFormFromFile(0x00019429, "Skyrim.esm") As Location) ; DawnstarSanctuaryLocation
@@ -870,16 +1125,40 @@ Function InitRegions()
    SUBURBS_WINTERHOLD[0] = (Game.GetFormFromFile(0x00018E45, "Skyrim.esm") As Location) ; WhistlingMineLocation
 
    InitSpecialCells()
+
+   REGIONS_INDEXED = New Location[19]
+   REGIONS_INDEXED[0]  = REGION_DAWNSTAR
+   REGIONS_INDEXED[1]  = REGION_DRAGON_BRIDGE
+   REGIONS_INDEXED[2]  = REGION_FALKREATH
+   REGIONS_INDEXED[3]  = REGION_HIGH_HROTHGAR
+   REGIONS_INDEXED[4]  = REGION_IVARSTEAD
+   REGIONS_INDEXED[5]  = REGION_KARTHWASTEN
+   REGIONS_INDEXED[6]  = REGION_MARKARTH
+   REGIONS_INDEXED[7]  = REGION_MORTHAL
+   REGIONS_INDEXED[8]  = REGION_OLD_HROLDAN
+   REGIONS_INDEXED[9]  = REGION_RIFTEN
+   REGIONS_INDEXED[10] = REGION_RIVERWOOD
+   REGIONS_INDEXED[11] = REGION_RORIKSTEAD
+   REGIONS_INDEXED[12] = REGION_SHORS_STONE
+   REGIONS_INDEXED[13] = REGION_SKY_HAVEN
+   REGIONS_INDEXED[14] = REGION_SOLITUDE
+   REGIONS_INDEXED[15] = REGION_THALMOR_EMBASSY
+   REGIONS_INDEXED[16] = REGION_WHITERUN
+   REGIONS_INDEXED[17] = REGION_WINDHELM
+   REGIONS_INDEXED[18] = REGION_WINTERHOLD
+
+   DebugTrace("TraceEvent InitRegions: Done")
 EndFunction
 
 Function InitSpecialCells()
+   DebugTrace("TraceEvent InitSpecialCells")
    SPECIAL_CELLS = New Form[2]
    SPECIAL_CELL_LOCATIONS = New Form[2]
 
    ; This cell is at the back of the houses of Dragon's Bridge.  It holds a Pilory from the
    ; Slavegirls by hydragorgon mod.
    SPECIAL_CELLS[0] = Game.GetFormFromFile(0x00009307, "Skyrim.esm")
-   SPECIAL_CELL_LOCATIONS[0] = REGION_DRAGON_BRIDGE 
+   SPECIAL_CELL_LOCATIONS[0] = REGION_DRAGON_BRIDGE
 
    ; This cell is a hut beside the lumber mill at the Half Moon Mill.  It holds a Pilory from
    ; the Slavegirls by hydragorgon mod.
@@ -928,14 +1207,24 @@ Function InitSpecialCells()
          EndIf
       EndIf
    EndIf
+   DebugTrace("TraceEvent InitSpecialCells: Done")
 EndFunction
 
 Function OnPlayerLoadGame()
+   DebugTrace("TraceEvent OnPlayerLoadGame")
    ; Use a flag to prevent initialization from happening twice.
    If (_bGameLoadInProgress)
+      DebugTrace("TraceEvent OnPlayerLoadGame: Done (In Progress)")
       Return
    EndIf
    _bGameLoadInProgress = True
+
+; zxc
+_iHoverAtTimeout = New Int[3]
+_iHoverAtTimeout[0] = 10
+_iHoverAtTimeout[1] = 10
+_iHoverAtTimeout[2] = 10
+UpdateLocalMcmSettings()
 
    Float fCurrTime = Utility.GetCurrentRealTime()
    Log("Game Loaded.", DL_INFO, DC_GENERAL)
@@ -961,6 +1250,8 @@ Function OnPlayerLoadGame()
    _fNearbyCleanupTime = fCurrTime + 3
    _fSceneTimeout = 0
    _szCurrentScene = ""
+   _bInScene = False
+   _bSceneExtendsCallout = False
 
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
@@ -973,9 +1264,6 @@ Function OnPlayerLoadGame()
    _qZbfSlave          = zbfSlaveControl.GetApi()
    _qZbfSlaveActions   = zbfSlaveActions.GetApi()
    _qZbfPlayerSlot     = zbfBondageShell.GetApi().FindPlayer()
-
-   ; Update the distance for polling nearby actors.  This seems to reset on game load.
-   UpdatePollingDistance(_qMcm.iSettingsNearbyDistance)
 
    ; On each load game make sure to re-apply any blocked effects.
    If (_qMcm.bModBlockOnGameLoad)
@@ -1126,6 +1414,45 @@ Function OnPlayerLoadGame()
       _oSpergFist2 = (Game.GetFormFromFile(0x00035A8E, "SPERG.esm") As Weapon)
    EndIf
 
+   ; Check if the Papyrus Util mod is installed.
+   Int iModVersion = PapyrusUtil.GetVersion()
+   _bModPapyrusUtil = (0 != iModVersion)
+   If (!_bModPapyrusUtil)
+      Log("Papyrus Util not installed.  Ignore the above message.", DL_TRACE, DC_GENERAL)
+   EndIf
+
+   ; Check if the Sanguine Debuachery+ mod is installed.
+   iModOrder = Game.GetModByName("sanguinesDebauchery.esp")
+   _bModSdPlus = ((-1 < iModOrder) && (255 > iModOrder))
+
+   ; Extract SD+ crawl idles from the mod.
+   _oSdCrawlMoveBackward     = None
+   _oSdCrawlMoveForward      = None
+   _oSdCrawlTurnLeft         = None
+   _oSdCrawlTurnRight        = None
+   _oSdCrawlStrafeBackLeft   = None
+   _oSdCrawlStrafeBackRight  = None
+   _oSdCrawlStrafeStartLeft  = None
+   _oSdCrawlStrafeStartRight = None
+   If (_bModSdPlus)
+      _oSdCrawlMoveBackward = \
+         (Game.GetFormFromFile(0x00161B11, "sanguinesDebauchery.esp") as Idle)
+      _oSdCrawlMoveForward = \
+         (Game.GetFormFromFile(0x00161B14, "sanguinesDebauchery.esp") as Idle)
+      _oSdCrawlTurnLeft = \
+         (Game.GetFormFromFile(0x00161B17, "sanguinesDebauchery.esp") as Idle)
+      _oSdCrawlTurnRight = \
+         (Game.GetFormFromFile(0x00161B18, "sanguinesDebauchery.esp") as Idle)
+      _oSdCrawlStrafeBackLeft = \
+         (Game.GetFormFromFile(0x00161B12, "sanguinesDebauchery.esp") as Idle)
+      _oSdCrawlStrafeBackRight = \
+         (Game.GetFormFromFile(0x00161B13, "sanguinesDebauchery.esp") as Idle)
+      _oSdCrawlStrafeStartLeft = \
+         (Game.GetFormFromFile(0x00161B16, "sanguinesDebauchery.esp") as Idle)
+      _oSdCrawlStrafeStartRight = \
+         (Game.GetFormFromFile(0x00161B15, "sanguinesDebauchery.esp") as Idle)
+   EndIf
+
    ; Strap On by aeon is considered clothing.
    _oStraponByAeon = None
    iModOrder = Game.GetModByName("StrapOnbyaeonv1.1.esp")
@@ -1146,15 +1473,21 @@ Function OnPlayerLoadGame()
 
    UpdateScript()
 
+   ; Update the distance for polling nearby actors.  This seems to reset on game load.
+   ; Perform this here, after the MCM settings have been loaded (in UpdateScript()).
+   UpdatePollingDistance(_iMcmNearbyDistance)
+
    ; Send out a mod event so other scripts don't have to create a player alias just to get the
    ; on load game event.
    ModEvent.Send(ModEvent.Create("DFW_GameLoaded"))
 
    _bGameLoadInProgress = False
    Log("Game Loaded Done: " + (Utility.GetCurrentRealTime() - fCurrTime), DL_TRACE, DC_GENERAL)
+   DebugTrace("TraceEvent OnPlayerLoadGame: Done")
 EndFunction
 
 Function ReRegisterModEvents()
+   DebugTrace("TraceEvent ReRegisterModEvents")
    ; Re-register for all mod events.  Should be called from the MCM menu to fix issues.
    RegisterForModEvent("AnimationEnd",       "PostSexCallback")
    RegisterForModEvent("DFW_MCM_Changed",    "UpdateLocalMcmSettings")
@@ -1163,15 +1496,54 @@ Function ReRegisterModEvents()
    ; Also reset the load game flag here in case it has gotten stuck.
    ; It should be safe since this function shouldn't be called during a load game.
    _bGameLoadInProgress = False
+   DebugTrace("TraceEvent ReRegisterModEvents: Done")
+EndFunction
+
+Function ClearHovering()
+   Int iIndex
+   While (iIndex < 3)
+      HoverAtClear(_aszHoverAtModId[iIndex])
+
+      iIndex += 1
+   EndWhile
+EndFunction
+
+Function ClearAllMovement()
+   ; Clear Approach data.
+   _szApproachModId = ""
+   _aAliasApproachPlayer.Clear()
+
+   ; Clear MoveToLocation data.
+   _szMoveToLocationModId = ""
+   _aAliasMoveToLocation.Clear()
+   _aAliasLocationTarget.Clear()
+
+   ; Clear MoveToObject data.
+   _szMoveToObjectModId = ""
+   _aAliasObjectTarget.Clear()
+   _aAliasMoveToObject.Clear()
+
+   ; Clear Hovering data.
+   ClearHovering()
+
+   ; Figure out if movement needs to still be monitored.
+   _iMonitorMoveTo = 3
+   If (!_aAliasApproachPlayer.GetReference() && !_aAliasMoveToLocation.GetReference() && \
+       !_aAliasMoveToObject.GetReference())
+      _iMonitorMoveTo = 0
+   EndIf
 EndFunction
 
 Function UpdateLocalMcmSettings(String sCategory="")
+   DebugTrace("TraceEvent UpdateLocalMcmSettings")
+
    ; If this is called before we have configured our MCM quest do so now.
    If (!_qMcm)
       _qMcm = ((Self As Quest) As dfwMcm)
       If (!_qMcm)
          Log("Error: Failed to find MCM quest in UpdateLocalMcmSettings()", DL_ERROR, \
              DC_GENERAL)
+         DebugTrace("TraceEvent UpdateLocalMcmSettings: Done (Failed to Get Quest)")
          Return
       EndIf
    EndIf
@@ -1198,6 +1570,35 @@ Function UpdateLocalMcmSettings(String sCategory="")
       _iDialogueTargetStyle = _qMcm.iModDialogueTargetStyle
       _iMcmDialogueRetries  = _qMcm.iModDialogueTargetRetries
       _iMcmLeashMinLength   = _qMcm.iModLeashMinLength
+      _iMcmNearbyDistance   = _qMcm.iSettingsNearbyDistance
+   EndIf
+
+   If ("ModCrawlActivate" == sCategory)
+      ; Go through all crawl poses in the pose list and (un)set the activate flag.
+      Int iIndex = _aiKnownPoseFlags.Length - 1
+      Bool bOn = _qMcm.bModCrawlBlockActivate
+      While (0 <= iIndex)
+         ; 0x0100: The pose is considred crawling.
+         If (Math.LogicalAnd(_aiKnownPoseFlags[iIndex], 0x0100))
+            If (bOn)
+               ; 0x0010: This pose prevents activation.
+               _aiKnownPoseFlags[iIndex] = Math.LogicalOr(_aiKnownPoseFlags[iIndex], 0x0010)
+            Else
+               ; 0x0010: This pose prevents activation.
+               _aiKnownPoseFlags[iIndex] = Math.LogicalAnd(_aiKnownPoseFlags[iIndex], \
+                                                           Math.LogicalNot(0x0010))
+            EndIf
+         EndIf
+
+         iIndex -= 1
+      EndWhile
+   EndIf
+
+   If (!sCategory || ("Collector" == sCategory))
+      ; Don't allow the local cost to change while items are in the chest.
+      If (!_oCollectorsSpecialChest || (0 == _oCollectorsSpecialChest.GetNumItems()))
+         _iMcmCollectorSpecialCost = _qMcm.iModCollectorSpecialCost
+      EndIf
    EndIf
 
    If (!sCategory || ("SaveControl" == sCategory))
@@ -1205,16 +1606,30 @@ Function UpdateLocalMcmSettings(String sCategory="")
       If (!_qMcm.iModSaveGameStyle || !_qMcm.bSaveGameConfirm)
          _iMcmSaveGameControlStyle = 0
       Else
-         _iMcmSaveGameControlStyle = _qMcm.iModSaveGameStyle
-         If (2 == _iMcmSaveGameControlStyle)
-            _bBlockLoad = True
-            Int iConsoleVulnerability = _qMcm.iConConsoleVulnerability
-            If (iConsoleVulnerability && (100 != iConsoleVulnerability))
-               ; Register for detection of the console being opened to detect invalid access.
-               RegisterForMenu("Console")
-            Else
-               ; Deregister for detection of the console being opened.
-               UnregisterForMenu("Console") 
+         ; Keep track of the name we should use for QuickSave/AutoSave game files.
+         If (_qMcm.bConNativeSaves)
+            _szQuickSaveName = "QuickSave"
+            _szAutoSaveName = "AutoSave1"
+         Else
+            _szQuickSaveName = "DfwQuickSave"
+            _szAutoSaveName = "DfwAutoSave"
+         EndIf
+
+         ; Only update the save game control style if it has changed to pevent changing control
+         ; status variables that are in use on game load.
+         Int iNewStyle = _qMcm.iModSaveGameStyle
+         If (iNewStyle != _iMcmSaveGameControlStyle)
+            _iMcmSaveGameControlStyle = _qMcm.iModSaveGameStyle
+            If (2 == _iMcmSaveGameControlStyle)
+               _bBlockLoad = True
+               Int iConsoleVulnerability = _qMcm.iConConsoleVulnerability
+               If (iConsoleVulnerability && (100 != iConsoleVulnerability))
+                  ; Register for detection of the console being opened to detect invalid access.
+                  RegisterForMenu("Console")
+               Else
+                  ; Deregister for detection of the console being opened.
+                  UnregisterForMenu("Console")
+               EndIf
             EndIf
          EndIf
       EndIf
@@ -1246,14 +1661,13 @@ Function UpdateLocalMcmSettings(String sCategory="")
 
    ; Process any settings that don't fit into a category.
    If (!sCategory)
-      UpdatePollingDistance(_qMcm.iSettingsNearbyDistance)
+      UpdatePollingDistance(_iMcmNearbyDistance)
 
-      Float fTempPollTime = _qMcm.fSettingsPollTime
+      Float fNewPollTime = _qMcm.fSettingsPollTime
       ; If the polling interval has changed (or not been initialized) start the poll now.
-      If (fTempPollTime != _fMcmPollTime)
-         UpdatePollingInterval(fTempPollTime)
+      If (fNewPollTime != _fMcmPollTime)
+         UpdatePollingInterval(fNewPollTime)
       EndIf
-      _fMcmPollTime = fTempPollTime
    EndIf
 
    If ("Debug" == sCategory)
@@ -1263,6 +1677,12 @@ Function UpdateLocalMcmSettings(String sCategory="")
       EndIf
       _bMcmShutdownMod = _qMcm.bShutdownMod
    EndIf
+
+   If ("ModMulti" == sCategory)
+      SetMultiAnimation()
+   EndIf
+
+   DebugTrace("TraceEvent UpdateLocalMcmSettings: Done")
 EndFunction
 
 
@@ -1272,6 +1692,33 @@ EndFunction
 ; The OnUpdate() code is in a wrapper, PerformOnUpdate().  This is to allow us to return from
 ; the function without having to add code to re-register for the update at each return point.
 Event OnUpdate()
+   DebugTrace("TraceEvent OnUpdate")
+
+   ; Print off a clock every five minutes.  Mostly for debugging purposes.
+   Float fCurrGameTime = Utility.GetCurrentGameTime()
+   If (_fDebugNextClockTick < fCurrGameTime)
+      If (_fDebugNextClockTick)
+         String sCurrGameTime = Utility.GameTimeToString(fCurrGameTime)
+         Debug.Notification("[" + S_MOD + "] " + StringUtil.Substring(sCurrGameTime, 11))
+      EndIf
+      _fDebugNextClockTick = fCurrGameTime + 0.003472222
+      Float fRemainder = _fDebugNextClockTick
+      While (0.003472222 < fRemainder)
+         If (34.72222 < fRemainder)
+            fRemainder -= 34.72222
+         ElseIf (3.472222 < fRemainder)
+            fRemainder -= 3.472222
+         ElseIf (0.3472222 < fRemainder)
+            fRemainder -= 0.3472222
+         ElseIf (0.03472222 < fRemainder)
+            fRemainder -= 0.03472222
+         ElseIf (0.003472222 < fRemainder)
+            fRemainder -= 0.003472222
+         EndIf
+      EndWhile
+      _fDebugNextClockTick -= fRemainder
+   EndIf
+
    If (!_fCurrVer)
       ; If the script has not been initialized do that instead of processing the update.
       OnPlayerLoadGame()
@@ -1296,6 +1743,7 @@ Event OnUpdate()
    ElseIf (_bMcmShutdownMod)
       ; If we are shutting down the mod don't process any requests/events.
       Self.Stop()
+      DebugTrace("TraceEvent OnUpdate: Done (Mod Shutting Down)")
       Return
    Else
       PerformOnUpdate()
@@ -1307,6 +1755,7 @@ Event OnUpdate()
    ; completed to avoid long updates causing multiple future updates to occur at the same time,
    ; thus, piling up.  This is a technique recommended by the community.
    RegisterForSingleUpdate(_fMcmPollTime)
+   DebugTrace("TraceEvent OnUpdate: Done")
 EndEvent
 
 ; DEBUG: Every so often get the player's weapon level to test the GetWeaponLevel() function in
@@ -1314,6 +1763,7 @@ EndEvent
 ;Int _iWeaponScanCount = 10
 
 Function PerformOnUpdate()
+   DebugTrace("TraceEvent PerformOnUpdate")
    Float fCurrTime = Utility.GetCurrentRealTime()
    Log("Update Event: " + fCurrTime, DL_TRACE, DC_GENERAL)
 
@@ -1346,6 +1796,8 @@ Function PerformOnUpdate()
          Log("Scene Timeout: " + _szCurrentScene, DL_INFO, DC_INTERACTION)
          _fSceneTimeout = 0
          _szCurrentScene = ""
+         _bInScene = False
+         _bSceneExtendsCallout = False
       EndIf
    EndIf
 
@@ -1353,30 +1805,39 @@ Function PerformOnUpdate()
    _iNumItemsUnequipped = 0
 
    ; If we are monitoring a move package make sure the NPC is moving toward his location.
+DebugTrace("PerformOnUpdate-CP: Movement Monitor")
    If (1 < _iMonitorMoveTo)
+      ; Only monitor movement every 3 polls to reduce Papyrus load.
       _iMonitorMoveTo -= 1
    ElseIf (1 == _iMonitorMoveTo)
       Actor aMovingNpc = (_aAliasApproachPlayer.GetReference() As Actor)
-      If (aMovingNpc && !aMovingNpc.IsInCombat() && !aMovingNpc.IsInDialogueWithPlayer())
-         ; Figure out which direction the NPC is moving in.
-         Int iDirection = GetDirection(aMovingNpc, _aiMoveToCurrPos[0], _aiMoveToCurrPos[1])
-
-         ; Check if the NPC is moving or not.
-         If (4 != iDirection)
-            ; The NPC is moving.  Reset the NPC's not moving count.
-            ; 0: Approach  1: MoveToLocation  2: MoveToObject
-            _aiMoveToStallCount[0] = 0
-            _aiMoveToDirection[0] = iDirection
+DebugTrace("Monitor Movement - Approach")
+      If (aMovingNpc && !aMovingNpc.IsInCombat() && !aMovingNpc.IsInDialogueWithPlayer() && \
+          !_qSexLab.IsActorActive(aMovingNpc))
+         If (!aMovingNpc.Is3DLoaded() || (150000 < aMovingNpc.GetDistance(_aPlayer)))
+            ; If the actor is not near the player have him "fade in" to the player's area.
+            NpcMoveNearbyHidden(aMovingNpc)
          Else
-            ; The NPC is not moving.  Increase the number of times this has happened.
-            _aiMoveToStallCount[0] = _aiMoveToStallCount[0] + 1
+            ; Figure out which direction the NPC is moving in.
+            Int iDirection = GetDirection(aMovingNpc, _aiMoveToCurrPos[0], _aiMoveToCurrPos[1])
 
-            ; If this is the third poll the NPC has not moved try to fix the situation.
-            If (!(_aiMoveToStallCount[0] % 3))
-               If (500 >= aMovingNpc.GetDistance(_aPlayer))
-                  PlayerApproachComplete()
-               Else
-                  _qDfwUtil.TeleportToward(aMovingNpc, _aPlayer, 50)
+            ; Check if the NPC is moving or not.
+            If (4 != iDirection)
+               ; The NPC is moving.  Reset the NPC's not moving count.
+               ; 0: Approach  1: MoveToLocation  2: MoveToObject
+               _aiMoveToStallCount[0] = 0
+               _aiMoveToDirection[0] = iDirection
+            Else
+               ; The NPC is not moving.  Increase the number of times this has happened.
+               _aiMoveToStallCount[0] = _aiMoveToStallCount[0] + 1
+
+               ; If this is the third poll the NPC has not moved try to fix the situation.
+               If (!(_aiMoveToStallCount[0] % 3))
+                  If (500 >= aMovingNpc.GetDistance(_aPlayer))
+                     PlayerApproachComplete()
+                  Else
+                     _qDfwUtil.TeleportToward(aMovingNpc, _aPlayer, 50)
+                  EndIf
                EndIf
             EndIf
          EndIf
@@ -1389,70 +1850,87 @@ Function PerformOnUpdate()
       EndIf
 
       aMovingNpc = (_aAliasMoveToLocation.GetReference() As Actor)
-      If (aMovingNpc && !aMovingNpc.IsInCombat() && !aMovingNpc.IsInDialogueWithPlayer())
-         ; Figure out which direction the NPC is moving in.
-         Int iDirection = GetDirection(aMovingNpc, _aiMoveToCurrPos[3], _aiMoveToCurrPos[4])
+DebugTrace("Monitor Movement - Location")
+      If (aMovingNpc && !aMovingNpc.IsInCombat() && !aMovingNpc.IsInDialogueWithPlayer() && \
+          !_qSexLab.IsActorActive(aMovingNpc))
+         If (!aMovingNpc.Is3DLoaded())
+            ; If the actor does not have 3D loaded we know he will fail to arrive.
+            MoveToLocationComplete()
+         Else
+            ; Figure out which direction the NPC is moving in.
+            Int iDirection = GetDirection(aMovingNpc, _aiMoveToCurrPos[3], _aiMoveToCurrPos[4])
 
-         ; Check if the NPC is moving or not.
-         If (4 != iDirection)
-            ; The NPC is moving.  Reset the NPC's not moving count.
-            ; 0: Approach  1: MoveToLocation  2: MoveToObject
-            _aiMoveToStallCount[1] = 0
+            ; Check if the NPC is moving or not.
+            If (4 != iDirection)
+               ; The NPC is moving.  Reset the NPC's not moving count.
+               ; 0: Approach  1: MoveToLocation  2: MoveToObject
+               _aiMoveToStallCount[1] = 0
 
-            ; Handle any pathing failures in various parts of the world.
-            If (_oKynesgrovePathingFixOriginalLocation && (-30000 > aMovingNpc.Y))
-               ; We have passed the problem area.  Restore the target to the original location.
-               _aAliasLocationTarget.ForceLocationTo(_oKynesgrovePathingFixOriginalLocation)
-               _oKynesgrovePathingFixOriginalLocation = None
+               ; Handle any pathing failures in various parts of the world.
+               If (_oKynesgrovePathingFixOriginalLocation && (-30000 > aMovingNpc.Y))
+                  ; We have passed the problem area.  Restore target to the original location.
+                  _aAliasLocationTarget.ForceLocationTo(_oKynesgrovePathingFixOriginalLocation)
+                  _oKynesgrovePathingFixOriginalLocation = None
 
-               ; Reset the actor's package to pick up the original move to target.
-               _aAliasMoveToLocation.Clear()
-               aMovingNpc.EvaluatePackage()
-               _aAliasMoveToLocation.ForceRefTo(aMovingNpc)
-               aMovingNpc.EvaluatePackage()
-            ElseIf ((145500 < aMovingNpc.X) && (146500 > aMovingNpc.X) && \
-                    ( -3500 < aMovingNpc.Y) && ( -2500 > aMovingNpc.Y) && (2 >= iDirection))
-               ; There is a certain location south of Kynesgrove where the NavMesh is bad.
-               ; Detect if the NPC is in this locaiton and try to get them past it.
-               ; For this pathing fix, path to Ansilvund for a while and then restore the
-               ; original location.
-               Location oAnsilvund = \
-                  (Game.GetFormFromFile(0x0001BDFD, "Skyrim.esm") As Location)
-               If (oAnsilvund && !_oKynesgrovePathingFixOriginalLocation)
-                  _oKynesgrovePathingFixOriginalLocation = _aAliasLocationTarget.GetLocation()
-                  _aAliasLocationTarget.ForceLocationTo(oAnsilvund)
-
-                  ; Reset the actor's package to pick up the new move to target.
+                  ; Reset the actor's package to pick up the original move to target.
                   _aAliasMoveToLocation.Clear()
                   aMovingNpc.EvaluatePackage()
                   _aAliasMoveToLocation.ForceRefTo(aMovingNpc)
                   aMovingNpc.EvaluatePackage()
-               EndIf
-            EndIf
-            _aiMoveToDirection[1] = iDirection
-         Else
-            ; The NPC is not moving.  Increase the number of times this has happened.
-            _aiMoveToStallCount[1] = _aiMoveToStallCount[1] + 1
+               ElseIf ((145500 < aMovingNpc.X) && (146500 > aMovingNpc.X) && \
+                       ( -3500 < aMovingNpc.Y) && ( -2500 > aMovingNpc.Y) && (2 >= iDirection))
+                  ; There is a certain location south of Kynesgrove where the NavMesh is bad.
+                  ; Detect if the NPC is in this locaiton and try to get them past it.
+                  ; For this pathing fix, path to Ansilvund for a while and then restore the
+                  ; original location.
+                  Location oAnsilvund = \
+                     (Game.GetFormFromFile(0x0001BDFD, "Skyrim.esm") As Location)
+                  If (oAnsilvund && !_oKynesgrovePathingFixOriginalLocation)
+                     _oKynesgrovePathingFixOriginalLocation = \
+                        _aAliasLocationTarget.GetLocation()
+                     _aAliasLocationTarget.ForceLocationTo(oAnsilvund)
 
-            ; If this is the third poll the NPC has not moved try to fix the situation.
-            If (!(_aiMoveToStallCount[1] % 3))
-               If (_aAliasLocationTarget.GetLocation() == aMovingNpc.GetCurrentLocation())
-                  MoveToLocationComplete(True)
-               Else
-                  _qDfwUtil.TeleportToward(aMovingNpc, _aPlayer, 50)
+                     ; Reset the actor's package to pick up the new move to target.
+                     _aAliasMoveToLocation.Clear()
+                     aMovingNpc.EvaluatePackage()
+                     _aAliasMoveToLocation.ForceRefTo(aMovingNpc)
+                     aMovingNpc.EvaluatePackage()
+                  EndIf
+               EndIf
+               _aiMoveToDirection[1] = iDirection
+            Else
+               ; The NPC is not moving.  Increase the number of times this has happened.
+               _aiMoveToStallCount[1] = _aiMoveToStallCount[1] + 1
+
+               ; If this is the third poll the NPC has not moved try to fix the situation.
+               If (!(_aiMoveToStallCount[1] % 3))
+                  If (_aAliasLocationTarget.GetLocation() == aMovingNpc.GetCurrentLocation())
+                     MoveToLocationComplete(True)
+                  Else
+                     _qDfwUtil.TeleportToward(aMovingNpc, _aPlayer, 50)
+                  EndIf
                EndIf
             EndIf
+
+            ; Mark the NPC's new position.
+            ; 0-2: Approach [X,Y,Z]  3-5: MoveToLocation [X,Y,Z]  6-8: MoveToObject [X,Y,Z]
+            _aiMoveToCurrPos[3] = (aMovingNpc.X As Int)
+            _aiMoveToCurrPos[4] = (aMovingNpc.Y As Int)
+            _aiMoveToCurrPos[5] = (aMovingNpc.Z As Int)
          EndIf
-
-         ; Mark the NPC's new position.
-         ; 0-2: Approach [X,Y,Z]  3-5: MoveToLocation [X,Y,Z]  6-8: MoveToObject [X,Y,Z]
-         _aiMoveToCurrPos[3] = (aMovingNpc.X As Int)
-         _aiMoveToCurrPos[4] = (aMovingNpc.Y As Int)
-         _aiMoveToCurrPos[5] = (aMovingNpc.Z As Int)
       EndIf
 
       aMovingNpc = (_aAliasMoveToObject.GetReference() As Actor)
-      If (aMovingNpc && !aMovingNpc.IsInCombat() && !aMovingNpc.IsInDialogueWithPlayer())
+DebugTrace("Monitor Movement - MoveTo")
+      If (aMovingNpc && !aMovingNpc.IsInCombat() && !aMovingNpc.IsInDialogueWithPlayer() && \
+          !_qSexLab.IsActorActive(aMovingNpc))
+
+         ; If the actor is not near the player but the object is have him "fade in".
+         ObjectReference oTargetObject = _aAliasObjectTarget.GetReference()
+         If (!aMovingNpc.Is3DLoaded() && oTargetObject.Is3DLoaded())
+            NpcMoveNearbyHidden(aMovingNpc)
+         EndIf
+
          ; Figure out which direction the NPC is moving in.
          Int iDirection = GetDirection(aMovingNpc, _aiMoveToCurrPos[6], _aiMoveToCurrPos[7])
 
@@ -1468,7 +1946,6 @@ Function PerformOnUpdate()
 
             ; If this is the third poll the NPC has not moved try to fix the situation.
             If (!(_aiMoveToStallCount[2] % 3))
-               ObjectReference oTargetObject = _aAliasObjectTarget.GetReference()
                If (500 >= aMovingNpc.GetDistance(oTargetObject))
                   MoveToObjectComplete()
                Else
@@ -1483,11 +1960,58 @@ Function PerformOnUpdate()
          _aiMoveToCurrPos[7] = (aMovingNpc.Y As Int)
          _aiMoveToCurrPos[8] = (aMovingNpc.Z As Int)
       EndIf
+DebugTrace("Monitor Movement - Done")
       _iMonitorMoveTo = 3
    EndIf
 
+   ; Also check if the hover at packages have timed out.
+   Int iIndex
+DebugTrace("Monitor Movement - Hover")
+   While (iIndex < 3)
+      If (0 < _iHoverAtTimeout[iIndex])
+         _iHoverAtTimeout[iIndex] = _iHoverAtTimeout[iIndex] - 1
+         If (0 == _iHoverAtTimeout[iIndex])
+            ; The package has timed out.  Send an event to report the package is done.
+            Int iModEvent = ModEvent.Create("DFW_MovementDone")
+            If (iModEvent)
+               ModEvent.PushInt(iModEvent, 4)
+               ModEvent.PushForm(iModEvent, (_aaAliasHover[iIndex].GetReference() As Actor))
+               ModEvent.PushBool(iModEvent, True)
+               ModEvent.PushString(iModEvent, _aszHoverAtModId[iIndex])
+               If (!ModEvent.Send(iModEvent))
+                  Log("Failed to send Event DFW_MovementDone(4, True, " + \
+                      _aszHoverAtModId[iIndex] + ")", DL_ERROR, DC_INTERACTION)
+               EndIf
+            EndIf
+            HoverAtClear(_aszHoverAtModId[iIndex])
+         EndIf
+      EndIf
+      ; For hover at packages reset the actor's package to force them to continually move closer
+      ; to their target.
+      Actor aHoveringActor = (_aaAliasHover[iIndex].GetReference() As Actor)
+      If (aHoveringActor)
+         _aaAliasHover[iIndex].Clear()
+         _aaAliasHover[iIndex].ForceRefTo(aHoveringActor)
+         aHoveringActor.EvaluatePackage()
+      EndIf
+
+      iIndex += 1
+   EndWhile
+
+DebugTrace("Monitor Movement - Give Space")
+   If (0 < _iGiveSpaceTimeout)
+      _iGiveSpaceTimeout -= 1
+      If (0 == _iGiveSpaceTimeout)
+         GiveSpaceClear(_szGiveSpaceModId)
+      EndIf
+   EndIf
+DebugTrace("Monitor Movement - Done.")
+
    ; Reduce the timeout for allowing the player to call out.
-   If (0 < _iCallOutTimeout)
+   ; Don't include scene time or sex time in the call out timeout.
+   If ((0 < _iCallOutTimeout) && (_bSceneExtendsCallout || !_szCurrentScene) && \
+       !_qSexLab.IsActorActive(_aPlayer))
+
       _iCallOutTimeout -= 1
       If (0 < _iCallOutResponse)
          _iCallOutResponse -= 1
@@ -1507,19 +2031,39 @@ Function PerformOnUpdate()
       EndIf
    EndIf
 
+   If (0 < _iZazSlottedCount)
+      ; If we have some actors slotted with the Zaz Animation Pack check if we can remove them.
+      If (MutexLock(_iZazSlottedMutex))
+         _iZazSlottedCount -= 1
+         If (0 == _iZazSlottedCount)
+            ; If we have timed out, unslot all actors we previously slotted.
+            While (_aoZazSlottedActors.Length)
+               zbfBondageShell.GetApi().UnSlotActor((_aoZazSlottedActors[0] As Actor))
+               _aoZazSlottedActors = _qDfwUtil.RemoveFormFromArray(_aoZazSlottedActors, None, 0)
+            EndWhile
+         EndIf
+
+         MutexRelease(_iZazSlottedMutex)
+      EndIf
+   EndIf
+
    ; If the player is leashed to a target make sure they are not too far away.
+DebugTrace("PerformOnUpdate-CP: Checking Leash")
    If (_oLeashTarget)
       ; Play the leash effect to draw leash particles between the player and the leash holder.
       ; Good:   AuraWhisperProjectile
       ; Usable: AuraWhisperProjectile AlterPosProjectile
       ; Not:    AbsorbBeam01
-      If (_qMcm.bModLeashVisible)
+      If (_qMcm.bModLeashVisible && _oLeashTarget.Is3DLoaded())
          _oDfwLeashSpell.Cast(_oLeashTarget, _aPlayer)
       EndIf
 
+      ; Convert the leash target to an actor.  This will be set to None if it is an object.
+      Actor _aLeashTarget = (_oLeashTarget As Actor)
+
       ; If the leash controller is hostile to the player there is a chance he will pull the
       ; player's leash to knock her off balance.
-      If ((_oLeashTarget As Actor).IsHostileToActor(_aPlayer))
+      If (_aLeashTarget && _aLeashTarget.IsHostileToActor(_aPlayer))
          If (Utility.RandomInt(0, 99) < _qMcm.iModLeashCombatChance)
             Log(_oLeashTarget + " yanks your leash and throws you off balance.", DL_CRIT, \
                 DC_LEASH)
@@ -1546,14 +2090,13 @@ Function PerformOnUpdate()
       If (bCellTransition || (1500 < fDistance))
          If ((!GetBdsmFurniture() || !_bIsFurnitureLocked) && \
              CheckLeashInterruptScene())
-            _aPlayer.MoveTo(_oLeashTarget, 25, 25, 50)
-            ; MoveTo enables fast travel.  Disable it again if necessary.
-            If (_iBlockFastTravel)
-               Game.EnableFastTravel(False)
-            EndIf
+            MovePlayer(_oLeashTarget, 25, 25, 50)
             Log("You feel a great tug on your leash as you are pulled along.", DL_CRIT, \
                 DC_LEASH)
+            ; Teleporting doesn't seem to trigger a change location event.  Change it manually.
+            OnLocationChange(None, None)
          EndIf
+         DebugTrace("TraceEvent PerformOnUpdate: Done (Leash Yanked)")
          Return
       ElseIf (iLeashLength < fDistance)
          ; Only try to drag the player if she is not busy or we can interrupt the scene.
@@ -1561,12 +2104,20 @@ Function PerformOnUpdate()
             If (!YankLeash())
                Log("You feel a jerk on your leash as you are pulled roughly.", DL_CRIT, \
                    DC_LEASH)
+               ; If the leash target is an actor have him hover at the player momentarily.
+               If (IsActor(_oLeashTarget))
+                  Actor aLeashTarget = (_oLeashTarget As Actor)
+                  If (!aLeashTarget.IsInCombat())
+                     HoverAt((_oLeashTarget As Actor), _aPlayer, S_MOD + "_LeashYank", 2)
+                  EndIf
+               EndIf
             EndIf
          EndIf
       EndIf
    EndIf
 
    ; Every so many poll iterations we need to detect nearby actors.
+DebugTrace("PerformOnUpdate-CP: Nearby Detection")
    If (_qMcm.iSettingsPollNearby)
       _iDetectPollCount += 1
       If (_iDetectPollCount >= _qMcm.iSettingsPollNearby)
@@ -1587,11 +2138,19 @@ Function PerformOnUpdate()
       _iFlagCheckMoveTo -= 1
    EndIf
 
-   If (!_bFlagSet)
+   If (!_iFlagSet)
       ; If there are no flags set clean up the nearby actor list.
       CleanupNearbyList()
 
       ; No flags are set so return here.
+      DebugTrace("TraceEvent PerformOnUpdate: Done (No Flags)")
+      Return
+   EndIf
+
+   ; Decrease the delay before checking the flags.
+   _iFlagSet -= 1
+   If (2 < _iFlagSet)
+      ; If there is still time before checking the flags don't do so now.
       Return
    EndIf
 
@@ -1613,6 +2172,7 @@ Function PerformOnUpdate()
       bCheckLockedUp = True
    EndIf
 
+DebugTrace("PerformOnUpdate-CP: Checking Clothes")
    If (_bFlagClothesEqupped || _bFlagClothesUnequpped)
       Log("Checking Naked", DL_TRACE, DC_STATUS)
 
@@ -1683,6 +2243,7 @@ Function PerformOnUpdate()
       If (bWristCuffsKeyword)
          _bIsPlayerArmLocked = True
       ElseIf (_aPlayer.WornHasKeyword(_oKeywordZadArmBinder) || \
+              _aPlayer.WornHasKeyword(_oKeywordZadBondageMittens) || \
               _aPlayer.WornHasKeyword(_oKeywordZadYoke) || \
               _aPlayer.WornHasKeyword(_oKeywordZbfWornYoke))
          _bIsPlayerArmLocked = True
@@ -1816,35 +2377,37 @@ Function PerformOnUpdate()
       EndIf
    EndIf
 
-   ; Reset all of the flags.
-   _bFlagSet              = False
-   _bFlagItemEqupped      = False
-   _bFlagItemUnequpped    = False
-   _bFlagClothesEqupped   = False
-   _bFlagClothesUnequpped = False
+   ; If the main control flag has not been reset, clear all the minor flags.
+   If (!_iFlagSet)
+      ; Reset all of the flags.
+      _bFlagItemEqupped      = False
+      _bFlagItemUnequpped    = False
+      _bFlagClothesEqupped   = False
+      _bFlagClothesUnequpped = False
+   EndIf
+   DebugTrace("TraceEvent PerformOnUpdate: Done")
 EndFunction
 
 ; This is called from the player monitor script when an item equipped event is seen.
 Function ItemEquipped(Form oItem, ObjectReference oReference)
-   Log("Equip Event: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+   DebugTrace("TraceEvent ItemEquipped - " + Utility.GetCurrentRealTime())
 
    Int iType = GetItemType(oItem)
    If (!iType)
-      Log("Equip Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+      DebugTrace("TraceEvent ItemEquipped: Done (No Item Type) - " + \
+                 Utility.GetCurrentRealTime())
       Return
    EndIf
 
    If (IT_RESTRAINT == iType)
-      _bFlagSet = True
+      _iFlagSet         = 2
       _bFlagItemEqupped = True
    ElseIf (IT_COVERINGS == iType)
-      _bFlagSet = True
-      _bFlagClothesEqupped   = False
-
       ; If we are configured to block clothing check that now.
       ; If the nearby master is assisting the player to dress allow her to dress as normal.
       If (IsAllowed(AP_DRESSING_ASSISTED))
-         Log("Equip Done (Assisted): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+         DebugTrace("TraceEvent ItemEquipped: Done (Dressing Allowed) - " + \
+                    Utility.GetCurrentRealTime())
          Return
       EndIf
 
@@ -1861,7 +2424,8 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
                _aPlayer.UnequipItem(oItem, abSilent=True)
                _iNumItemsUnequipped += 1
             EndIf
-            Log("Equip Done (Rape): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+            DebugTrace("TraceEvent ItemEquipped: Done (Post-Rape) - " + \
+                       Utility.GetCurrentRealTime())
             Return
          EndIf
          _fRapeRedressTimeout = 0
@@ -1875,7 +2439,8 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
                _aPlayer.UnequipItem(oItem, abSilent=True)
                _iNumItemsUnequipped += 1
             EndIf
-            Log("Equip Done (Redress): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+            DebugTrace("TraceEvent ItemEquipped: Done (Post-Redress) - " + \
+                       Utility.GetCurrentRealTime())
             Return
          EndIf
          _fNakedRedressTimeout = 0
@@ -1944,23 +2509,25 @@ Function ItemEquipped(Form oItem, ObjectReference oReference)
             _iNumItemsUnequipped += 1
          EndIf
       EndIf
+
+      _iFlagSet            = 2
+      _bFlagClothesEqupped = False
    EndIf
-   Log("Equip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+   DebugTrace("TraceEvent ItemEquipped: Done - " + Utility.GetCurrentRealTime())
 EndFunction
 
 ; This is called from the player monitor script when an item unequipped event is seen.
 Function ItemUnequipped(Form oItem, ObjectReference oReference)
-   Log("Unequip Event: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+   DebugTrace("TraceEvent ItemUnequipped - " + Utility.GetCurrentRealTime())
    Int iType = GetItemType(oItem)
    If (!iType)
       Log("Unequip Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+      DebugTrace("TraceEvent ItemUnequipped: Done (No Item Type) - " + \
+                 Utility.GetCurrentRealTime())
       Return
    EndIf
 
    If (IT_RESTRAINT == iType)
-      _bFlagSet           = True
-      _bFlagItemUnequpped = True
-
       ; Try to fix Devious Devices being unequipped by the Favourites clear armour mechanism.
       If (_qMcm.bSettingsDetectUnequip && oItem.HasKeyword(_oKeywordZadLockable))
          ; Note about devious devices.  All functions work on inventory items.  There isn't
@@ -1978,8 +2545,7 @@ Function ItemUnequipped(Form oItem, ObjectReference oReference)
                ; Check the item is an inventory item, is equipped and has the right keyword.
                Form oInventoryItem = _aPlayer.GetNthForm(iIndex)
                If (oInventoryItem && oInventoryItem.HasKeyword(_oKeywordZadInventoryDevice))
-                  If (oInventoryItem.HasKeyword(_oKeywordZadInventoryDevice) && \
-                      _aPlayer.IsEquipped(oInventoryItem) && \
+                  If (_aPlayer.IsEquipped(oInventoryItem) && \
                       (oDeviousKeyword == _qZadLibs.GetDeviceKeyword(oInventoryItem As Armor)))
                      ; Re-equip the original item (Not the inventory item).
                      _aPlayer.EquipItem(oItem)
@@ -1995,22 +2561,28 @@ Function ItemUnequipped(Form oItem, ObjectReference oReference)
          ; sometimes it is not so we will call it again.
          _qZbfPlayerSlot.OnItemRemoved(oItem, 1, oReference, None)
       EndIf
+
+      _iFlagSet           = 2
+      _bFlagItemUnequpped = True
    ElseIf (IT_COVERINGS == iType)
       ; If the player's clothes have changed always recheck how naked she is.
-      _bFlagSet              = True
+      _iFlagSet              = 2
       _bFlagClothesUnequpped = True
    EndIf
-   Log("Unequip Done:  " + Utility.GetCurrentRealTime(), DL_TRACE, DC_EQUIP)
+   DebugTrace("TraceEvent ItemUnequipped: Done - " + Utility.GetCurrentRealTime())
 EndFunction
 
 ; This is called from the player monitor script when an enter bleedout event is seen.
 Function EnteredBleedout()
+   DebugTrace("TraceEvent EnteredBleedout")
    _iBleedoutTime = Utility.GetCurrentRealTime() + 30
+   DebugTrace("TraceEvent EnteredBleedout: Done")
 EndFunction
 
 ; This is called from the player monitor script when an on sit event is seen.
 Function OnSit(ObjectReference oFurniture)
-   If (oFurniture.hasKeyword(_oKeywordZbfFurniture))
+   DebugTrace("TraceEvent OnSit")
+   If (oFurniture.HasKeyword(_oKeywordZbfFurniture))
       _oBdsmFurniture = oFurniture
       ; If the player's inventory is not locked lock it now.
       If (Game.IsMenuControlsEnabled())
@@ -2018,11 +2590,19 @@ Function OnSit(ObjectReference oFurniture)
          ;    DisablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
          Game.DisablePlayerControls(False, False, False, False, False, True,  False,  False)
       EndIf
+
+      ; If this is a Zaz Multi-Pose furniture see if we should select one specific pose.
+      If (oFurniture.HasKeyword(_oKeywordZbfFurnitureMulti))
+         Utility.Wait(1.0)
+         SetMultiAnimation()
+      EndIf
    EndIf
+   DebugTrace("TraceEvent OnSit: Done")
 EndFunction
 
 ; This is called from the player monitor script when an on get up event is seen.
 Function OnGetUp(ObjectReference oFurniture)
+   DebugTrace("TraceEvent OnGetUp")
    ; TODO: Maybe check for a sex scene in addition to checking if the furniture is locked?
    If (!_bIsFurnitureLocked)
       _oBdsmFurniture = None
@@ -2032,23 +2612,52 @@ Function OnGetUp(ObjectReference oFurniture)
          ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Active, Journ)
          Game.EnablePlayerControls(False, False, False, False, False, True,  False,  False)
       EndIf
-      _qZbfPlayerSlot.SetFurniture(None)
+      If (oFurniture.HasKeyword(_oKeywordZbfFurniture))
+         _qZbfPlayerSlot.SetFurniture(None)
+      EndIf
    EndIf
+   DebugTrace("TraceEvent OnGetUp: Done")
 EndFunction
 
 Function OnLocationChange(Location oOldLocation, Location oNewLocation)
+   DebugTrace("TraceEvent OnLocationChange")
+   If (!oOldLocation)
+      oOldLocation = _oCurrLocation
+   EndIf
+   If (!oNewLocation)
+      oNewLocation = _aPlayer.GetCurrentLocation()
+   EndIf
    _oCurrLocation = oNewLocation
 
    ; Figure out which "Region" we are now in.
    Location oNewRegion = GetRegion(oNewLocation)
    _oLastNearestRegion = GetNearestRegion()
 
+   ; Load screen can reset the actor animations.  Keep track of whether we should reset them.
+   Bool bResetPose
+   If (_bIsPlayerInterior || _aPlayer.IsInInterior())
+      bResetPose = True
+   EndIf
+
+   ; Make sure the player's interior status is up to date.
+   _bIsPlayerInterior = _aPlayer.IsInInterior()
+
+   ; If we might need to use the last door the player entered keep track of her position.
+   If (_bIsPlayerInterior && _qMcm.bModFadeInUseDoor && _aPlayer.X)
+DebugLog("Setting Door: (" + _aPlayer.X + "," + _aPlayer.Y + "," + _aPlayer.Z + ")", DL_CRIT)
+      _aiLastDoorLocation[0] = (_aPlayer.X As Int)
+      _aiLastDoorLocation[1] = (_aPlayer.Y As Int)
+      _aiLastDoorLocation[2] = (_aPlayer.Z As Int)
+   Else
+      _aiLastDoorLocation[0] = 0
+      _aiLastDoorLocation[1] = 0
+      _aiLastDoorLocation[2] = 0
+   EndIf
+
    ; If we are configured for full save game control check if the game should be auto-saved.
    If (2 == _iMcmSaveGameControlStyle)
       ; If the player has just changed into or out of a region (city) save the game.
       If (_oCurrRegion != oNewRegion)
-         ; Make sure the player's interior status is up to date.
-         _bIsPlayerInterior = _aPlayer.IsInInterior()
          AutoSave()
       EndIf
    EndIf
@@ -2077,12 +2686,62 @@ Function OnLocationChange(Location oOldLocation, Location oNewLocation)
    EndIf
    Log("Location Change: " + szOldLocation + " => " + szNewLocation + " (" + szRegion + ")", \
        DL_INFO, DC_LOCATION)
+
+   ; If we crossed a load screen try to reset nearby actor animations.
+   If (bResetPose)
+      ; Resetting the pose needs a delay.  I believe the Zaz Animation pack is also "fixing"
+      ; their animations on location change.  We need to reset our poses after they do.
+      ; TODO: Work with their system?  Reset our pose to default?  MCM Configurable?
+      Utility.Wait(0.75)
+      If (_iCurrPose)
+         SetPose(0, _aiKnownPoseFlags[0], _iCurrPose, _aiKnownPoseFlags[_iCurrPose], False)
+      EndIf
+
+      Form[] aoNearbySlaves = GetNearbyActorList(iIncludeFlags=AF_SUBMISSIVE)
+      Int iIndex = aoNearbySlaves.Length - 1
+      While (0 <= iIndex)
+         Actor aSubmissive = (aoNearbySlaves[iIndex] As Actor)
+         If (aSubmissive && aSubmissive.Is3DLoaded())
+; zxc
+Log("Resetting Slave Animation: " + aSubmissive.GetDisplayName(), DL_DEBUG, DC_NEARBY)
+            zbfSlot qZbfActorSlot = zbfBondageShell.GetApi().SlotActor(aSubmissive)
+            If (qZbfActorSlot)
+               If (qZbfActorSlot.GetCurrentArmBindings())
+                  ; Valid offset (wrist) animations? ZapWriOffset01, ZapYokeOffset01,
+                  ;                                  ZapArmbOffset01
+                  qZbfActorSlot.SetOffsetAnim("ZapWriOffset01", True)
+               EndIf
+               Form oGag = qZbfActorSlot.GetCurrentGag()
+               If (oGag)
+                  qZbfActorSlot.RemoveBinding(oGag)
+                  qZbfActorSlot.SetBinding(oGag)
+               EndIf
+
+               If (MutexLock(_iZazSlottedMutex))
+                  ; The count is a count down delay giving time for the slot to take effect
+                  ; before we clear the actor from the slot.
+                  _iZazSlottedCount = 5
+                  _aoZazSlottedActors = _qDfwUtil.AddFormToArray(_aoZazSlottedActors, \
+                                                                 aSubmissive)
+
+                  MutexRelease(_iZazSlottedMutex)
+               EndIf
+            EndIf
+         EndIf
+
+         iIndex -= 1
+      EndWhile
+   EndIf
+
+   DebugTrace("TraceEvent OnLocationChange: Done")
 EndFunction
 
 ; This is called from the _dfwNearbyDetectorEffect magic effect when it starts.
 Function NearbyActorSeen(Actor aActor)
+   DebugTrace("TraceEvent NearbyActorSeen")
    ; Ignore any new nearby actors if we are shutting down the mod.
    If (_bMcmShutdownMod)
+      DebugTrace("TraceEvent NearbyActorSeen: Done (Mod Shutting Down)")
       Return
    EndIf
 
@@ -2090,8 +2749,9 @@ Function NearbyActorSeen(Actor aActor)
    Int iIndex = _aoNearby.Find(aActor)
    If (0 <= iIndex)
       ; Add a log here to debug magic effect script isntances that are becoming stray.
-      Log("Nearby Not Registered 0x" + _qDfwUtil.ConvertHexToString(aActor.GetFormId(), 8) + \
-          ": " + aActor.GetDisplayName(), DL_TRACE, DC_NEARBY)
+      Log("TraceEvent NearbyActorSeen: Done (Not Registered) - 0x" + \
+          _qDfwUtil.ConvertHexToString(aActor.GetFormId(), 8) + ": " + \
+          aActor.GetDisplayName(), DL_TRACE, DC_NEARBY)
       Return
    EndIf
 
@@ -2099,11 +2759,13 @@ Function NearbyActorSeen(Actor aActor)
    ; Note: Converting the form ID to hex is a little bit expensive for something triggered by
    ;       every nearby actor; however, for now it will help diagnose which magic effect script
    ;       instances are becoming stray.
-   Log("Registering Nearby 0x" + _qDfwUtil.ConvertHexToString(aActor.GetFormId(), 8) + ": " + \
-       aActor.GetDisplayName(), DL_TRACE, DC_NEARBY)
+   ;Off-DebugTrace("Registering Nearby 0x" + \
+   ;           _qDfwUtil.ConvertHexToString(aActor.GetFormId(), 8) + ": " + \
+   ;           aActor.GetDisplayName(), DL_TRACE, DC_NEARBY)
 
    ; Perform some basic estimations for flags of this actor.
    Int iFlags = AF_ESTIMATE
+   Bool bIsSlave = False
    Bool bIsChild = False
    If (aActor.IsChild())
       iFlags = Math.LogicalOr(AF_CHILD, iFlags)
@@ -2134,6 +2796,7 @@ Function NearbyActorSeen(Actor aActor)
       ; are also in the CaravanSlaver faction.
       iFlags = Math.LogicalOr(AF_SUBMISSIVE, iFlags)
       iFlags = Math.LogicalOr(AF_SLAVE, iFlags)
+      bIsSlave = True
    ElseIf (_qZbfSlave.IsSlaver(aActor) || aActor.IsInFaction(_oFactionHydraSlaver) || \
        aActor.IsInFaction(_oFactionHydraCaravanSlaver))
       Log("Nearby Slaver: " + aActor.GetDisplayName(), DL_DEBUG, DC_NEARBY)
@@ -2159,7 +2822,13 @@ Function NearbyActorSeen(Actor aActor)
           aActor.WornHasKeyword(_oKeywordZbfWornWrist) || \
           aActor.WornHasKeyword(_oKeywordZbfWornYoke))
          iFlags = Math.LogicalOr(AF_SLAVE, iFlags)
+         bIsSlave = True
       EndIf
+   ElseIf (!aActor.WornHasKeyword(_oKeywordClothes) && \
+           !aActor.WornHasKeyword(_oKeywordArmourLight) && \
+           !aActor.WornHasKeyword(_oKeywordArmourHeavy))
+      ; The actor is naked.  Consider her submissive.
+      iFlags = Math.LogicalOr(AF_SUBMISSIVE, iFlags)
    ElseIf (!bIsChild)
       ; For now treat anyone not restrained as a dominant (other than children of course).
       iFlags = Math.LogicalOr(AF_DOMINANT, iFlags)
@@ -2169,6 +2838,32 @@ Function NearbyActorSeen(Actor aActor)
          Log("Nearby Slave Owner: " + aActor.GetDisplayName(), DL_DEBUG, DC_NEARBY)
 
          iFlags = Math.LogicalOr(AF_OWNER, iFlags)
+      EndIf
+   EndIf
+
+   If (bIsSlave)
+; zxc
+Log("Resetting Slave Animation: " + aActor.GetDisplayName(), DL_DEBUG, DC_NEARBY)
+      zbfSlot qZbfActorSlot = zbfBondageShell.GetApi().SlotActor(aActor)
+      If (qZbfActorSlot)
+         If (qZbfActorSlot.GetCurrentArmBindings())
+            ; Valid offset (wrist) animations? ZapWriOffset01, ZapYokeOffset01, ZapArmbOffset01
+            qZbfActorSlot.SetOffsetAnim("ZapWriOffset01", True)
+         EndIf
+         Form oGag = qZbfActorSlot.GetCurrentGag()
+         If (oGag)
+            qZbfActorSlot.RemoveBinding(oGag)
+            qZbfActorSlot.SetBinding(oGag)
+         EndIf
+
+         If (MutexLock(_iZazSlottedMutex))
+            ; The count is a count down delay giving time for the slot to take effect before
+            ; we clear the actor from the slot.
+            _iZazSlottedCount = 5
+            _aoZazSlottedActors = _qDfwUtil.AddFormToArray(_aoZazSlottedActors, aActor)
+
+            MutexRelease(_iZazSlottedMutex)
+         EndIf
       EndIf
    EndIf
 
@@ -2214,10 +2909,12 @@ Function NearbyActorSeen(Actor aActor)
              fNewArousal, DL_DEBUG, DC_NPC_AROUSAL)
       EndIf
    EndIf
-   Log("Nearby Seen Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent NearbyActorSeen: Done")
 EndFunction
 
 Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender)
+   DebugTrace("TraceEvent PostSexCallback")
+
    ; Make sure the player is involved in this scene.
    Bool bPlayerFound = False
    Actor aPartner = None
@@ -2232,16 +2929,24 @@ Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender
       iIndex -= 1
    EndWhile
    If (!bPlayerFound)
+      DebugTrace("TraceEvent PostSexCallback: Done (No Player)")
       Return
    EndIf
 
+   ; If the player was locked in furniture before the sex make sure she is locked back up.
    If (_bIsFurnitureLocked)
       ObjectReference oFurniture = GetBdsmFurniture()
       If (oFurniture)
          ; If there is no partner (this is a glitch?  How did the player get out of the
          ; furniture?) have the nearest actor lock her back up.
          If (!aPartner)
-            aPartner = GetNearestActor()
+            aPartner = GetNearestActor(iExcludeFlags=AF_SUBMISSIVE + AF_SLAVE)
+            If (!aPartner)
+               aPartner = GetNearestActor(iExcludeFlags=AF_SLAVE)
+               If (!aPartner)
+                  aPartner = GetNearestActor()
+               EndIf
+            EndIf
          EndIf
 
          If (aPartner)
@@ -2268,13 +2973,16 @@ Event PostSexCallback(String szEvent, String szArg, Float fNumArgs, Form oSender
          _fLastAssaultTime = Utility.GetCurrentGameTime()
       EndIf
    EndIf
+   DebugTrace("TraceEvent PostSexCallback: Done")
 EndEvent
 
 ; This is the ZAZ Animation Pack (ZBF) event when an animation for approaching/restrainting
 ; the player has completed.
 Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iSceneIndex)
+   DebugTrace("TraceEvent OnSlaveActionDone")
    ; We are only interested in animations that we started.
-   If (S_MOD != StringUtil.Substring(szMessage, 0, 4))
+   If (S_MOD + "_" != StringUtil.Substring(szMessage, 0, 4))
+      DebugTrace("TraceEvent OnSlaveActionDone: Done (Not Our Mod)")
       Return
    EndIf
 
@@ -2287,23 +2995,129 @@ Event OnSlaveActionDone(String szType, String szMessage, Form oMaster, Int iScen
    Else
       Log("Unknown Slave Action Event:  \"" + szMessage + "\"", DL_ERROR, DC_GENERAL)
    EndIf
+   DebugTrace("TraceEvent OnSlaveActionDone: Done")
 EndEvent
 
+Function SetPose(Int iOldPose, Int iOldFlags, Int iNewPose, Int iNewFlags, Bool bSetStatus=True)
+   _iCurrPose = iNewPose
+
+   If (bSetStatus)
+      ; 0x0008: This pose prevents movement.
+      Bool bOldStatus = Math.LogicalAnd(iOldFlags, 0x0008)
+      Bool bNewStatus = Math.LogicalAnd(iNewFlags, 0x0008)
+      If (bNewStatus)
+         If (!bOldStatus)
+            BlockMovement()
+         EndIf
+      ElseIf (bOldStatus)
+         RestoreMovement()
+      EndIf
+
+      ; 0x0010: This pose prevents activation.
+      bOldStatus = Math.LogicalAnd(iOldFlags, 0x0010)
+      bNewStatus = Math.LogicalAnd(iNewFlags, 0x0010)
+      If (bNewStatus)
+         If (!bOldStatus)
+            BlockActivate()
+         EndIf
+      ElseIf (bOldStatus)
+         RestoreActivate()
+      EndIf
+
+      ; 0x0020: This pose prevents inventory.
+      bOldStatus = Math.LogicalAnd(iOldFlags, 0x0020)
+      bNewStatus = Math.LogicalAnd(iNewFlags, 0x0020)
+      If (bNewStatus)
+         If (!bOldStatus)
+            BlockMenu()
+         EndIf
+      ElseIf (bOldStatus)
+         RestoreMenu()
+      EndIf
+
+      ; 0x0040: This pose prevents fighting.
+      bOldStatus = Math.LogicalAnd(iOldFlags, 0x0040)
+      bNewStatus = Math.LogicalAnd(iNewFlags, 0x0040)
+      If (bNewStatus)
+         If (!bOldStatus)
+            BlockFighting()
+         EndIf
+      ElseIf (bOldStatus)
+         RestoreFighting()
+      EndIf
+   EndIf
+
+   ; Clean up any complex behaviour from the previous pose.
+   ; 0x8000: A complex pose which can't be handled via the standard funcitons.
+   If (Math.LogicalAnd(iOldFlags, 0x8000))
+      If ("SD_Crawl" == _aszKnownPoses[iOldPose])
+         ; Clear our previous FNIS Alternate Animation idles.
+         FNIS_aa.SetAnimGroup(_aPlayer, "_mtidle", 0, 0, "DeviousFramework")
+         FNIS_aa.SetAnimGroup(_aPlayer, "_mt",     0, 0, "DeviousFramework")
+         FNIS_aa.SetAnimGroup(_aPlayer, "_mtx",    0, 0, "DeviousFramework")
+      EndIf
+   EndIf
+
+   If (Math.LogicalAnd(iNewFlags, 0x0001))
+      ; 0x0001: A default idle.
+
+      ; If this is a default idle clear any current poses.
+      If (Math.LogicalAnd(iOldFlags, 0x0004))
+         Debug.SendAnimationEvent(_aPlayer, "JumpLand")
+      EndIf
+   ElseIf (Math.LogicalAnd(iNewFlags, 0x0004))
+      ; 0x0004: A toggle pose.  It must be turned on and off.
+
+      ; This is a toggle pose.  Turn it on.
+      ; Note: Turning it off is done by changing the pose to a different one.
+      Debug.SendAnimationEvent(_aPlayer, _aszKnownPoses[iNewPose])
+   ElseIf (Math.LogicalAnd(iNewFlags, 0x8000))
+      ; 0x8000: A complex pose which can't be handled via the standard funcitons.
+
+      ; If the last pose was a toggle pose turn it off.
+      If (Math.LogicalAnd(iOldFlags, 0x0004))
+         Debug.SendAnimationEvent(_aPlayer, "JumpLand")
+      EndIf
+
+      ; This pose requires special processing to setup.
+      If ("SD_Crawl" == _aszKnownPoses[iNewPose])
+         ; Piggyback on the Sanguine Debauchery+ FNIS Alternate Animation crawl.
+         ; Use DeviousFramework as the mod ID so anyone looking through logs or errors will
+         ; know this mod is intiating the animation.
+         Int iSdPlusFnisId = FNIS_aa.GetAAModID("sdc", "DeviousFramework")
+         Int iSdPlusMtIdle = FNIS_aa.GetGroupBaseValue(iSdPlusFnisId, FNIS_aa._mtidle(), \
+                                                       "DeviousFramework")
+         Int iSdPlusMtBase = FNIS_aa.GetGroupBaseValue(iSdPlusFnisId, FNIS_aa._mt(), \
+                                                       "DeviousFramework")
+         Int iSdPlusMtX =    FNIS_aa.GetGroupBaseValue(iSdPlusFnisId, FNIS_aa._mtx(), \
+                                                       "DeviousFramework")
+
+         FNIS_aa.SetAnimGroup(_aPlayer, "_mtidle", iSdPlusMtIdle, 0, "DeviousFramework")
+         FNIS_aa.SetAnimGroup(_aPlayer, "_mt",     iSdPlusMtBase, 0, "DeviousFramework")
+         FNIS_aa.SetAnimGroup(_aPlayer, "_mtx",    iSdPlusMtX,    0, "DeviousFramework")
+      EndIf
+   EndIf
+EndFunction
+
 Event OnKeyUp(Int iKeyCode, Float fHoldTime)
+   DebugTrace("TraceEvent OnKeyUp: " + iKeyCode)
    ; Ignore any user keypresses if we are shutting down the mod.
    If (_bMcmShutdownMod)
       Log("Key Ignored.  Mod in shutdown mode.", DL_CRIT, DC_GENERAL)
+      DebugTrace("TraceEvent OnKeyUp: Done (Mod Shutting Down)")
       Return
    EndIf
 
    If ((_qMcm.iModHelpKey == iKeyCode) || (_qMcm.iModAttentionKey == iKeyCode))
       ; If a menu is open (e.g. the console or inventory) ignore KeyPress events.
       If (Utility.IsInMenuMode())
+         DebugTrace("TraceEvent OnKeyUp: Done (Menu Open)")
          Return
       EndIf
 
       ; If the player has called out too recently ignore this attempt.
       If (_iCallOutTimeout)
+         DebugTrace("TraceEvent OnKeyUp: Done (Too Soon)")
          Return
       EndIf
 
@@ -2388,16 +3202,84 @@ Event OnKeyUp(Int iKeyCode, Float fHoldTime)
    ElseIf (_qMcm.iModSaveKey == iKeyCode)
       ; If a menu is open (e.g. the console or inventory) ignore KeyPress events.
       If (Utility.IsInMenuMode())
+         DebugTrace("TraceEvent OnKeyUp: Done (Cannot Save-Menu)")
          Return
       EndIf
 
       QuickSave()
+   ElseIf ((_qMcm.iModTogglePoseKey == iKeyCode) || (_qMcm.iModCyclePoseKey == iKeyCode))
+      ; If a menu is open (e.g. the console or inventory) ignore KeyPress events.
+      If (Utility.IsInMenuMode())
+         DebugTrace("TraceEvent OnKeyUp: Done (Cannot Pose-Menu)")
+         Return
+      EndIf
+
+      ; Don't try to change poses while in a sex scene.
+      If (_qSexLab.IsActorActive(_aPlayer))
+         DebugTrace("TraceEvent OnKeyUp: Done (Cannot Pose-SexLab)")
+         Return
+      EndIf
+
+      ; Keep track of the pose we are leaving in case it needs some clean up.
+      Int iOldPose = _iCurrPose
+      Int iOldFlags = _aiKnownPoseFlags[iOldPose]
+
+      ; Find the new pose.
+      Int iNewPose
+      Int iNewFlags
+      If (_qMcm.iModTogglePoseKey == iKeyCode)
+         If (_iCurrPose)
+            iNewPose = 0
+         Else
+            iNewPose = _qMcm.iModTogglePose
+         EndIf
+         iNewFlags = _aiKnownPoseFlags[iNewPose]
+      Else
+         iNewPose = _iCurrPose + 1
+         Int iMaxPoses = _aszKnownPoses.Length
+         Bool bValidPoseFound
+         While (!bValidPoseFound)
+            If (iNewPose == iOldPose)
+               ; We have tried all other poses.  Stick with the one we have.
+               bValidPoseFound = True
+            ElseIf (iMaxPoses <= iNewPose)
+               ; We reached the last pose.  Loop around to the first pose.
+               iNewPose = 0
+            EndIf
+
+            iNewFlags = _aiKnownPoseFlags[iNewPose]
+
+            ; Check if the non-standard poses are supported.
+            ; 0x8000: A complex pose which can't be handled via the standard funcitons.
+            bValidPoseFound = True
+            If (Math.LogicalAnd(iNewFlags, 0x8000))
+               ; Assume each non-standard pose isn't valid until we create a check for it.
+               bValidPoseFound = False
+
+               ; Check if the SD+ crawling pose is valid.
+               If ("SD_Crawl" == _aszKnownPoses[iNewPose])
+                  bValidPoseFound = (_bModPapyrusUtil && _bModSdPlus)
+               EndIf
+            EndIf
+
+            ; If this pose isn't one we can use try the next one.
+            If (!bValidPoseFound)
+               iNewPose += 1
+            EndIf
+         EndWhile
+      EndIf
+      SetPose(iOldPose, iOldFlags, iNewPose, iNewFlags)
    EndIf
+   DebugTrace("TraceEvent OnKeyUp: Done")
 EndEvent
 
 ; Called from the approach package to indicate the approach is done (passed for failed).
 Function PlayerApproachComplete()
+   DebugTrace("TraceEvent PlayerApproachComplete")
+   Log("PlayerApproachComplete (" + _szApproachModId + ")", DL_DEBUG, DC_INTERACTION)
    Actor aApproachNpc = (_aAliasApproachPlayer.GetReference() As Actor)
+   String szModId = _szApproachModId
+   _szApproachModId = ""
    _aAliasApproachPlayer.Clear()
    Bool bSuccess = (1000 > aApproachNpc.GetDistance(_aPlayer))
 
@@ -2406,28 +3288,36 @@ Function PlayerApproachComplete()
       ModEvent.PushInt(iModEvent, 1)
       ModEvent.PushForm(iModEvent, aApproachNpc)
       ModEvent.PushBool(iModEvent, bSuccess)
-      ModEvent.PushString(iModEvent, _szApproachModId)
+      ModEvent.PushString(iModEvent, szModId)
       If (!ModEvent.Send(iModEvent))
-         Log("Failed to send Event DFW_MovementDone(1, " + bSuccess + ", " + \
-             _szApproachModId + ")", DL_ERROR, DC_INTERACTION)
+         Log("Failed to send Event DFW_MovementDone(1, " + bSuccess + ", " + szModId + ")", \
+             DL_ERROR, DC_INTERACTION)
       EndIf
    EndIf
    ; If no other move to packages are running stop monitoring them.
    If (!_aAliasMoveToLocation.GetReference() && !_aAliasMoveToObject.GetReference())
       _iMonitorMoveTo = 0
    EndIf
+   DebugTrace("TraceEvent PlayerApproachComplete: Done")
 EndFunction
 
-Function MoveToLocationComplete(Bool bForceSuccess)
+Function MoveToLocationComplete(Bool bForceSuccess=False)
+   DebugTrace("TraceEvent MoveToLocationComplete")
+   Log("MoveToLocationComplete (" + _szMoveToLocationModId + ")", DL_DEBUG, DC_INTERACTION)
    _iFlagCheckMoveTo = 0
    Actor aMovingNpc = (_aAliasMoveToLocation.GetReference() As Actor)
    Location oTargetLocation = _aAliasLocationTarget.GetLocation()
+   String szModId = _szMoveToLocationModId
+   _szMoveToLocationModId = ""
    _aAliasMoveToLocation.Clear()
    _aAliasLocationTarget.Clear()
    Bool bSuccess = (bForceSuccess || (oTargetLocation == aMovingNpc.GetCurrentLocation()))
    If (!bSuccess)
-      Log("MoveToLocation Failed: 0x" + \
-          _qDfwUtil.ConvertHexToString(oTargetLocation.GetFormId(), 8) + " != 0x" + \
+      String szTargetHexId = "0x00000000"
+      If (oTargetLocation)
+         szTargetHexId = "0x" + _qDfwUtil.ConvertHexToString(oTargetLocation.GetFormId(), 8)
+      EndIf
+      Log("MoveToLocation Failed: " + szTargetHexId + " != 0x" + \
           _qDfwUtil.ConvertHexToString(aMovingNpc.GetCurrentLocation().GetFormId(), 8), \
           DL_INFO, DC_INTERACTION)
    EndIf
@@ -2437,21 +3327,26 @@ Function MoveToLocationComplete(Bool bForceSuccess)
       ModEvent.PushInt(iModEvent, 2)
       ModEvent.PushForm(iModEvent, aMovingNpc)
       ModEvent.PushBool(iModEvent, bSuccess)
-      ModEvent.PushString(iModEvent, _szMoveToLocationModId)
+      ModEvent.PushString(iModEvent, szModId)
       If (!ModEvent.Send(iModEvent))
-         Log("Failed to send Event DFW_MovementDone(2, " + bSuccess + ", " + \
-             _szMoveToLocationModId + ")", DL_ERROR, DC_INTERACTION)
+         Log("Failed to send Event DFW_MovementDone(2, " + bSuccess + ", " + szModId + ")", \
+             DL_ERROR, DC_INTERACTION)
       EndIf
    EndIf
    ; If no other move to packages are running stop monitoring them.
    If (!_aAliasApproachPlayer.GetReference() && !_aAliasMoveToObject.GetReference())
       _iMonitorMoveTo = 0
    EndIf
+   DebugTrace("TraceEvent MoveToLocationComplete: Done")
 EndFunction
 
 Function MoveToObjectComplete()
+   DebugTrace("TraceEvent MoveToObjectComplete")
+   Log("MoveToObjectComplete (" + _szMoveToObjectModId + ")", DL_DEBUG, DC_INTERACTION)
    Actor aMovingNpc = (_aAliasMoveToObject.GetReference() As Actor)
    ObjectReference oTargetObject = _aAliasObjectTarget.GetReference()
+   String szModId = _szMoveToObjectModId
+   _szMoveToObjectModId = ""
    _aAliasMoveToObject.Clear()
    _aAliasObjectTarget.Clear()
    Bool bSuccess = (1000 > aMovingNpc.GetDistance(oTargetObject))
@@ -2461,16 +3356,17 @@ Function MoveToObjectComplete()
       ModEvent.PushInt(iModEvent, 3)
       ModEvent.PushForm(iModEvent, aMovingNpc)
       ModEvent.PushBool(iModEvent, bSuccess)
-      ModEvent.PushString(iModEvent, _szMoveToObjectModId)
+      ModEvent.PushString(iModEvent, szModId)
       If (!ModEvent.Send(iModEvent))
-         Log("Failed to send Event DFW_MovementDone(3, " + bSuccess + ", " + \
-             _szMoveToObjectModId + ")", DL_ERROR, DC_INTERACTION)
+         Log("Failed to send Event DFW_MovementDone(3, " + bSuccess + ", " + szModId + ")", \
+             DL_ERROR, DC_INTERACTION)
       EndIf
    EndIf
    ; If no other move to packages are running stop monitoring them.
    If (!_aAliasApproachPlayer.GetReference() && !_aAliasMoveToLocation.GetReference())
       _iMonitorMoveTo = 0
    EndIf
+   DebugTrace("TraceEvent MoveToObjectComplete: Done")
 EndFunction
 
 
@@ -2501,9 +3397,16 @@ Int Function iMutexCreate(String szName, Int iTimeoutMs=1000)
    Return iIndex
 EndFunction
 
+; iTimeoutMs: 0: Wait forever.  <0: Fail, don't wait.
 Bool Function MutexLock(Int iMutex, Int iTimeoutMs=1000)
    ; If this is not a valid mutex return a failure.
    If ((0 > iMutex) || (_iMutexNext <= iMutex))
+      Return False
+   EndIf
+
+   ; If we aren't going to wait on the mutex check immediately.
+   If ((0 > iTimeoutMs) && (0 < _aiMutex[iMutex]))
+      ; Locking Failed, mutex busy.
       Return False
    EndIf
 
@@ -2530,16 +3433,41 @@ Function MutexRelease(Int iMutex)
    EndIf
 EndFunction
 
+String Function GetDisplayName(ObjectReference oObject, Bool bIncludeFormId=False)
+   If (!oObject)
+      Return S_NONE
+   EndIf
+
+   If (bIncludeFormId)
+      Return "0x" + _qDfwUtil.ConvertHexToString(oObject.GetFormId(), 8) + " " + \
+             oObject.GetDisplayName()
+   EndIf
+   Return oObject.GetDisplayName()
+EndFunction
+
+String Function GetFormName(Form oForm, Bool bIncludeFormId=False)
+   If (!oForm)
+      Return S_NONE
+   EndIf
+
+   If (bIncludeFormId)
+      Return "0x" + _qDfwUtil.ConvertHexToString(oForm.GetFormId(), 8) + " " + oForm.GetName()
+   EndIf
+   Return oForm.GetName()
+EndFunction
+
 ; Waits for an actor to finish what they are doing while they are starting to sit or stand.
 ; Some functions of the game will not work when the actor is in this state.  The player speaking
 ; with the actor is one example.
 Function ActorSitStateWait(Actor aActor, Int iMaxWaitMs=1500)
+   DebugTrace("TraceEvent ActorSitStateWait")
    Int iSitState = aActor.GetSitState()
    While ((0 < iMaxWaitMs) && ((2 == iSitState) || (4 == iSitState)))
       Utility.Wait(0.1)
       iMaxWaitMs -= 100
       iSitState = aActor.GetSitState()
    EndWhile
+   DebugTrace("TraceEvent ActorSitStateWait: Done")
 EndFunction
 
 Function ReportStatus(String szStatusType, Bool bStatus, Bool bOldStatus)
@@ -2602,6 +3530,10 @@ Bool Function IsActor(Form oForm)
 EndFunction
 
 ; Figures out the actor's direction based on current position and last <X, Y> coordinates.
+; 6: North-West  7: North        8: North-East
+; 3:       West  4: No Movement  5:       East
+; 0: South-West  1: South        2: South-East
+; <=2: South  >=6: North (X%3)==0: West (X%3)==2: East
 Int Function GetDirection(Actor aActor, Int iLastX, Int iLastY)
    ; Start with a direction of not moving.
    Int iDirection = 4
@@ -2621,8 +3553,10 @@ Int Function GetDirection(Actor aActor, Int iLastX, Int iLastY)
 EndFunction
 
 Bool Function CheckLeashInterruptScene()
+   DebugTrace("TraceEvent CheckLeashInterruptScene")
    ; If the player is not in a scene, nothing to worry about.
    If (!IsPlayerCriticallyBusy(False))
+      DebugTrace("TraceEvent CheckLeashInterruptScene: Done (Not Busy)")
       Return True
    EndIf
 
@@ -2635,8 +3569,10 @@ Bool Function CheckLeashInterruptScene()
 
    ; If the player is still busy report a failure.
    If (IsPlayerCriticallyBusy(False))
+      DebugTrace("TraceEvent CheckLeashInterruptScene: Done (Still Busy)")
       Return False
    EndIf
+   DebugTrace("TraceEvent CheckLeashInterruptScene: Done")
    Return True
 EndFunction
 
@@ -2745,7 +3681,7 @@ Bool Function IsWeapon(Weapon oWeapon)
 EndFunction
 
 Function CheckIsNaked(Actor aActor=None)
-   Log("Naked Check: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
+   DebugTrace("TraceEvent CheckIsNaked - " + Utility.GetCurrentRealTime())
    If (!aActor)
       aActor = _aPlayer
    EndIf
@@ -2771,7 +3707,7 @@ Function CheckIsNaked(Actor aActor=None)
          _bChestReduced = True
          _bWaistReduced = True
       EndIf
-      Log("Naked Check Done (Covered): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
+      DebugTrace("TraceEvent CheckIsNaked: Done (Covered) - " + Utility.GetCurrentRealTime())
       Return
    EndIf
 
@@ -2839,16 +3775,18 @@ Function CheckIsNaked(Actor aActor=None)
    Else
       _iNakedStatus = NS_NAKED
    EndIf
-   Log("Naked Check Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
+   DebugTrace("TraceEvent CheckIsNaked: Done - " + Utility.GetCurrentRealTime())
 EndFunction
 
 Bool Function MoveNpcCheckForGround(Actor aNpc, Float fXAdjustment, Float fYAdjustment)
+   DebugTrace("TraceEvent MoveNpcCheckForGround")
    ; Move the NPC to the specified location.
    aNpc.MoveTo(_aPlayer, fXAdjustment, fYAdjustment, 0, False)
 
    ; If the NPC's 3D is not loaded don't try anything further.
    ; Note that sometimes it takes a few move attempts before the 3D is loaded.  Not sure why.
    If (!aNpc.Is3DLoaded())
+      DebugTrace("TraceEvent MoveNpcCheckForGround: Done (No 3D)")
       Return False
    EndIf
 
@@ -2869,17 +3807,101 @@ Bool Function MoveNpcCheckForGround(Actor aNpc, Float fXAdjustment, Float fYAdju
    If (fNewZValue == fZValue)
       ; If the values are the same it most likely means the NPC is too far away?
       ; And not on solid ground?
+      DebugTrace("TraceEvent MoveNpcCheckForGround: Done (Same Z-Value)")
       Return False
    EndIf
 
-   ; If the player has not moved downward more than one unit, most likely he is on solid ground.
+   ; If the NPC has not moved downward more than one unit, most likely he is on solid ground.
    ; TODO: Needs more testing.
    If (-1 < (fNewZValue - fZValue))
-      Return True
+      ; Perform a second, longer check to verify the NPC really isn't moving downward.
+      Utility.Wait(0.25)
+      fNewZValue = aNpc.Z
+
+      If (-1 < (fNewZValue - fZValue))
+         DebugTrace("TraceEvent MoveNpcCheckForGround: Done (Solid Ground)")
+         Return True
+      EndIf
    EndIf
 
    ; Otherwise the NPC is falling.  He is not on solid ground.  Consider it a failure.
+   DebugTrace("TraceEvent MoveNpcCheckForGround: Done")
    Return False
+EndFunction
+
+Function SetMultiAnimation()
+   ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
+   If (oCurrFurniture && oCurrFurniture.HasKeyword(_oKeywordZbfFurniture) && \
+       oCurrFurniture.HasKeyword(_oKeywordZbfFurnitureMulti))
+
+      ; Figure out if we are dealing with a multi=pole or a multi-wall.
+      ; iAnimIndex: -7: Recommended  -6: Cycle Real  -5: Cycle Alt     -4: Cycle Both
+      ;                  -3: Random Real  -2: Random Alt  -1: Random Both  0-x: Indexable Animations
+      Int iAnimIndex = -7
+      If ("Multi Restraint Wall" == oCurrFurniture.GetName())
+         iAnimIndex = _qMcm.iModMultiWallAnimation
+      Else
+         iAnimIndex = _qMcm.iModMultiPoleAnimation
+      EndIf
+
+      ; Keep an array of all of the animations we are expecting.
+      ; See also:
+      ;  Data\Meshes\actors\character\animations\ZaZAnimationPack\FNIS_ZaZAnimationPack_List.txt
+      ;  zbfBondageShell.psc => GetPoseAnimList() => iFurnitureMultiRestraint
+      String[] aiAnimationName = New String[12]
+      aiAnimationName[0]  = "ZaZAPFMPP01"
+      aiAnimationName[1]  = "ZaZAPFMPP02"
+      aiAnimationName[2]  = "ZaZAPFMPP03"
+      aiAnimationName[3]  = "ZaZAPFMPP04"
+      aiAnimationName[4]  = "ZaZAPFMPP05"
+      aiAnimationName[5]  = "ZaZAPFMPP06"
+      aiAnimationName[6]  = "ZazAPCAO301"
+      aiAnimationName[7]  = "ZazAPCAO302"
+      aiAnimationName[8]  = "ZazAPCAO303"
+      aiAnimationName[9]  = "ZazAPCAO304"
+      aiAnimationName[10] = "ZazAPCAO305"
+      aiAnimationName[11] = "ZazAPCAO306"
+
+      If ((-6 <= iAnimIndex) && (-4 >= iAnimIndex))
+         ; -6: Cycle Real  -5: Cycle Alt     -4: Cycle Both
+
+         Int iFirstIndex = 0
+         Int iIndex = 11
+         If (-6 == iAnimIndex)
+            iIndex = 5
+         ElseIf (-5 == iAnimIndex)
+            iFirstIndex = 6
+         EndIf
+
+         ; Create a comma separated string of all of the animations.
+         String szAllAnims
+         While (iFirstIndex <= iIndex)
+            If (szAllAnims)
+               szAllAnims += ","
+            EndIf
+            szAllAnims += aiAnimationName[iIndex]
+            iIndex -= 1
+         EndWhile
+
+         _qZbfPlayerSlot.SetAnimSet(szAllAnims, 15)
+      Else
+         ;  -7: Recommended  -3: Random Real  -2: Random Alt  -1: Random Both
+         ; 0-x: Indexable Animations
+
+         If (-7 == iAnimIndex)
+            iAnimIndex = Utility.RandomInt(0, 4)
+         ElseIf (-3 == iAnimIndex)
+            iAnimIndex = Utility.RandomInt(0, 5)
+         ElseIf (-2 == iAnimIndex)
+            iAnimIndex = Utility.RandomInt(6, 11)
+         ElseIf (-1 == iAnimIndex)
+            iAnimIndex = Utility.RandomInt(0, 11)
+         EndIf
+
+         _qZbfPlayerSlot.StopIdleAnim()
+         _qZbfPlayerSlot.SetAnim(aiAnimationName[iAnimIndex])
+      EndIf
+   EndIf
 EndFunction
 
 Function CleanupNearbyList()
@@ -2889,7 +3911,7 @@ Function CleanupNearbyList()
    EndIf
    Float fCurrTime = Utility.GetCurrentRealTime()
    _fNearbyCleanupTime = fCurrTime + 3
-   Log("Cleaning Nearby: " + fCurrTime, DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent CleanupNearbyList - " + fCurrTime)
 
    Cell oPlayerCell = _aPlayer.GetParentCell()
    Int iIndex = _aoNearby.Length - 1
@@ -2906,11 +3928,11 @@ Function CleanupNearbyList()
          MutexRelease(_iNearbyMutex)
       EndIf
 
-      ; I'm not sure what distance spell ranges are in (iSettingsNearbyDistance) but it must be
+      ; I'm not sure what distance spell ranges are in (_iMcmNearbyDistance) but it must be
       ; converted to the same units as GetDistance().  A rough estimate is 22.2 to 1.  Add extra
       ; so the actor is removed at a notably longer distance than he is added.
       If (aNearby && (aNearby.IsDead() || \
-                      ((30 * _qMcm.iSettingsNearbyDistance) < aNearby.GetDistance(_aPlayer))))
+                      ((30 * _iMcmNearbyDistance) < aNearby.GetDistance(_aPlayer))))
          ; Note: Converting the form ID to hex is a little bit expensive for something triggered
          ;       by every nearby actor; however, for now it will help diagnose which magic
          ;       effect script instances are becoming stray.
@@ -2946,9 +3968,10 @@ Function CleanupNearbyList()
    EndWhile
 
    ; Don't try to clean up the nearby list more than every three seconds.
-   Log("Cleaning Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent CleanupNearbyList: Done - " + Utility.GetCurrentRealTime())
 EndFunction
 
+; This must be called internally as it requires the known list mutex to be locked!
 Function RemoveKnownActor(Int iIndex)
    _aoKnown            = _qDfwUtil.RemoveFormFromArray(_aoKnown,         None, iIndex)
    _afKnownLastSeen    = _qDfwUtil.RemoveFloatFromArray(_afKnownLastSeen, 0.0, iIndex)
@@ -2962,7 +3985,7 @@ EndFunction
 
 ; This must be called internally as it requires the known list mutex to be locked!
 Function CleanupKnownList()
-   Log("Cleaning Known: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent CleanupKnownList - " + Utility.GetCurrentRealTime())
    Float fCurrTime = Utility.GetCurrentGameTime()
 
    ; On the first pass keep track of the max significance seen.
@@ -3019,7 +4042,7 @@ Function CleanupKnownList()
    While (20 <= _aoKnown.Length)
       RemoveKnownActor(_aoKnown.Length - 1)
    EndWhile
-   Log("Cleaning Known Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent CleanupKnownList: Done - " + Utility.GetCurrentRealTime())
 EndFunction
 
 Function Log(String szMessage, Int iLevel=0, Int iClass=0)
@@ -3031,9 +4054,9 @@ Function Log(String szMessage, Int iLevel=0, Int iClass=0)
    ;EndIf
 
    ; Log to the papyrus file.
-   If (ilevel <= _iMcmLogLevel)
+;   If (ilevel <= _iMcmLogLevel)
       Debug.Trace(szMessage)
-   EndIf
+;   EndIf
 
    ; Also log to the Notification area of the screen.
    If (_aiMcmScreenLogLevel && (ilevel <= _aiMcmScreenLogLevel[iClass]))
@@ -3046,12 +4069,21 @@ Function DebugLog(String szMessage, Int iLevel=4)
    Log(szMessage, iLevel, DC_DEBUG)
 EndFunction
 
+; A special name for function trace log messages making them easier to locate.
+Function DebugTrace(String szMessage, Int iLevel=0, Int iClass=0)
+   szMessage = "[" + S_MOD + "] " + szMessage
+
+   ; Log to the papyrus file only.
+   Debug.Trace(szMessage)
+EndFunction
+
 ; For status purposes only to be called by the MCM status menu.
 Form[] Function GetKnownActors()
    Return _aoKnown
 EndFunction
 
 Function UpdatePollingInterval(Float fNewInterval)
+   _fMcmPollTime = fNewInterval
    RegisterForSingleUpdate(fNewInterval)
 EndFunction
 
@@ -3098,7 +4130,96 @@ String[] Function GetDialogueTargetInfo()
    Return szInfo
 EndFunction
 
+Int Function MoveToObjectHelper(Actor aActor, ObjectReference oTarget, String szModId, \
+                                Int iDistance, Bool bForce)
+   DebugTrace("TraceEvent MoveToObjectHelper")
+   ; Don't start any movement packages if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      DebugTrace("TraceEvent MoveToObjectHelper: Done (Mod Shutting Down)")
+      Return FAIL
+   EndIf
+
+   Int iReturnCode = SUCCESS
+
+   ; Check if there already is an NPC performing the movement.
+   Actor aMovingNpc = (_aAliasMoveToObject.GetReference() As Actor)
+   If (aMovingNpc)
+      If (!bForce)
+         ; If we are not told to override the current NPC fail the request.
+         Log("MoveToObject Failed (" + szModId + "): In use by " + _szMoveToObjectModId, \
+             DL_DEBUG, DC_INTERACTION)
+         DebugTrace("TraceEvent MoveToObjectHelper: Done (Busy)")
+         Return FAIL
+      EndIf
+      iReturnCode = WARNING
+
+      ; Otherwise send an event to report the current NPC approach failed.
+      Int iModEvent = ModEvent.Create("DFW_MovementDone")
+      If (iModEvent)
+         ModEvent.PushInt(iModEvent, 3)
+         ModEvent.PushForm(iModEvent, aMovingNpc)
+         ModEvent.PushBool(iModEvent, False)
+         ModEvent.PushString(iModEvent, _szMoveToObjectModId)
+         If (!ModEvent.Send(iModEvent))
+            Log("Failed to send Event DFW_MovementDone(3, False, " + _szMoveToObjectModId + \
+                ")", DL_ERROR, DC_INTERACTION)
+         EndIf
+      EndIf
+   EndIf
+
+   ; If the NPC is nowhere nearby and the object is in the same cell as the player, bring him
+   ; close by before starting the approach package.
+   If ((!aActor.Is3DLoaded() || (150000 < aActor.GetDistance(oTarget))) && \
+       (oTarget.GetParentCell() == _aPlayer.GetParentCell()))
+      NpcMoveNearbyHidden(aActor)
+   EndIf
+
+   _iMoveToObjectDistance = iDistance
+
+   Log("MoveToObjectHelper (" + szModId + "," + GetDisplayName(aActor) + "," + \
+       GetDisplayName(oTarget) + ")", DL_DEBUG, DC_INTERACTION)
+
+   _szMoveToObjectModId = szModId
+   _aAliasObjectTarget.ForceRefTo(oTarget)
+   _aAliasMoveToObject.ForceRefTo(aActor)
+   _iMonitorMoveTo = 3
+
+   ; If we are forcing the same actor to the same package be sure to re-calculate his package.
+   If (aMovingNpc && (aMovingNpc == aActor))
+      ReEvaluatePackage(aActor)
+   EndIf
+   DebugTrace("TraceEvent MoveToObjectHelper: Done")
+   Return iReturnCode
+EndFunction
+
+; Called by dialog scripts to indicate the player has completed a conversation.
+; iContext: 0: No Relevant Context  1: Speaking with the collector.
+; iActions: Unused.  Represents generic actions, e.g. restraining the player.
+; iSpecialActions: 0x0001: Access the collector's special items chest.
+; iCooperation: Unused.  How cooperative the player is.  Positive numbers indicate cooperation.
+Function DialogueComplete(Int iContext, Int iActions, Actor aNpc, Int iCooperation=0, \
+                          Int iSpecialActions=0, Bool bWaitForEnd=True)
+   DebugTrace("TraceEvent DialogueComplete")
+   If (iSpecialActions)
+      ; 0x0001: Access the collector's special items chest.
+      If (0x0001 <= iSpecialActions)
+         If (_iMcmCollectorSpecialCost <= _aPlayer.GetItemCount(_oGold))
+            _aPlayer.RemoveItem(_oGold, _iMcmCollectorSpecialCost, akOtherContainer=aNpc)
+            _oCollectorsSpecialChest.Lock(False)
+            _oCollectorsSpecialChest.Activate(_aPlayer)
+            Utility.Wait(1.0)
+            _oCollectorsSpecialChest.Lock()
+         Else
+            Log("You can't afford the collector's fee of " + _iMcmCollectorSpecialCost + \
+                " gold.", DL_CRIT, DC_SAVE)
+         EndIf
+      EndIf
+   EndIf
+   DebugTrace("TraceEvent DialogueComplete: Done")
+EndFunction
+
 Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bool bOverride)
+   DebugTrace("TraceEvent SetMasterClose")
    If (!_aMasterClose || bOverride)
       Actor aOldMaster = _aMasterClose
       String szOldMod = _aMasterModClose
@@ -3128,16 +4249,20 @@ Int Function SetMasterClose(Actor aNewMaster, Int iPermissions, String szMod, Bo
                    aOldMaster.GetDisplayName() + ")", DL_ERROR, DC_MASTER)
             EndIf
          EndIf
+         DebugTrace("TraceEvent SetMasterClose: Done (Overridden)")
          Return WARNING
       EndIf
+      DebugTrace("TraceEvent SetMasterClose: Done (Master Set)")
       Return SUCCESS
    EndIf
    Log("Existing Master " + _aMasterClose.GetDisplayName() + " (" + _aMasterModClose + ")", \
        DL_ERROR, DC_MASTER)
+   DebugTrace("TraceEvent SetMasterClose: Done")
    Return FAIL
 EndFunction
 
 Int Function SetMasterDistant(Actor aNewMaster, Int iPermissions, String szMod, Bool bOverride)
+   DebugTrace("TraceEvent SetMasterDistant")
    If (!_aMasterDistant || bOverride)
       Actor aOldMaster = _aMasterDistant
       String szOldMod = _aMasterModDistant
@@ -3154,12 +4279,15 @@ Int Function SetMasterDistant(Actor aNewMaster, Int iPermissions, String szMod, 
       If (aOldMaster)
          Log("Overriding " + aOldMaster.GetDisplayName() + " (" + szOldMod + ")", \
              DL_INFO, DC_MASTER)
+         DebugTrace("TraceEvent SetMasterDistant: Done (Overridden)")
          Return WARNING
       EndIf
+      DebugTrace("TraceEvent SetMasterDistant: Done (Master Set)")
       Return SUCCESS
    EndIf
    Log("Existing Master " + _aMasterDistant.GetDisplayName() + " (" + _aMasterModDistant \
        + ")", DL_ERROR, DC_MASTER)
+   DebugTrace("TraceEvent SetMasterDistant: Done")
    Return FAIL
 EndFunction
 
@@ -3172,11 +4300,18 @@ EndFunction
 ;          --- General Functions ---
 ;          String GetModVersion()
 ;            Bool IsPlayerCriticallyBusy(Bool bIncludeBleedout)
-;             Int SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs)
-;             Int SceneContinue(String szSceneName, Int iSceneTimeout)
+;            Bool IsPlayerBusy(Bool bIncludeCritical, Bool bIncludeDialogue,
+;                              Bool bIncludeDfwScenes, Bool bIncludeSex, Bool bIncludeCombat,
+;                              Bool bIncludeBleedout)
+;             Int SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs,
+;                               Bool bExtendCallout)
+;             Int SceneContinue(String szSceneName, Int iSceneTimeout, String szPrevName)
 ;                 SceneDone(String szSceneName)
-;        Location GetRegion(Location oLocation, Cell oCell)
 ;          String GetCurrentScene()
+;        Location GetRegion(Location oLocation, Cell oCell)
+;             Int GetNearestRegionIndex(Location oNearestRegion, Int iVersion)
+;             Int MovePlayer(ObjectReference oTarget, Float fOffsetX, Float fOffsetY,
+;                            Float fOffsetZ, Int iTimeoutMs, Int iBusyBehaviour)
 ;                 BlockHealthRegen()
 ;                 RestoreHealthRegen()
 ;                 BlockMagickaRegen()
@@ -3234,6 +4369,7 @@ EndFunction
 ;            Bool IsBdsmFurnitureLocked()
 ;             Int GetVulnerability(Actor aActor)
 ;             Int GetWeaponLevel()
+;             Int GetCurrPoseFlags()
 ;          --- Nearby Actors ---
 ;          Form[] GetNearbyActorList(Float fMaxDistance, Int iIncludeFlags, Int iExcludeFlags)
 ;           Int[] GetNearbyActorFlags()
@@ -3248,6 +4384,9 @@ EndFunction
 ; ObjectReference GetLeashTarget()
 ;                 SetLeashLength(Int iLength)
 ;                 YankLeash()
+;             Int YankLeash(Float fDamageMultiplier, Int iOverrideLeashStyle,
+;                           Bool bInterruptScene, Bool bInterruptLeashTargetFalse,
+;                           Bool bForceDamage)
 ;             Int YankLeashWait(Int iTimeoutMs)
 ;          --- NPC Disposition ---
 ;             Int GetActorAnger(Actor aActor, Int iMinValue, Int iMaxValue,
@@ -3274,60 +4413,120 @@ EndFunction
 ;             Int GetActorWillingnessToHelp(Actor aActor)
 ;                 PrepareActorDialogue(Actor aActor)
 ;          --- NPC Interactions ---
-;            Bool NpcMoveNearbyHidden(aActor)
-;             Int ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String sModId,
-;                                Bool bForce=False)
-;             Int MoveToLocation(Actor aActor, Location oTarget, String sModId,
-;                                Bool bForce=False)
-;             Int MoveToObject(Actor aActor, ObjectReference oTarget, String sModId,
-;                              Bool bForce=False)
+;                 NpcMoveNearbyHidden(aActor)
+;            Bool IsMoving(Actor aActor, String szModId, Int iMovementType)
+;             Int ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String szModId,
+;                                Bool bForce)
+;             Int MoveToLocation(Actor aActor, Location oTarget, String szModId,
+;                                Bool bForce)
+;             Int MoveToObject(Actor aActor, ObjectReference oTarget, String szModId,
+;                              Bool bForce)
+;             Int MoveToObjectClose(Actor aActor, ObjectReference oTarget, String szModId,
+;                                   Int iDistance, Bool bForce)
+;             Int HoverAt(Actor aActor, ObjectReference oTarget, String szModId, Int iTimeout,
+;                         Bool bForce)
+;                 HoverAtClear(String szModId)
+;             Int GiveSpace(Actor aActor, ObjectReference oTarget, String szModId, Int iTimeout,
+;                           Bool bForce)
+;                 GiveSpaceClear(String szModId)
+;          String GetApproachModId()
+;          String GetMoveToLocationModId()
+;          String GetMoveToObjectModId()
+;          String GetGiveSpaceModId()
 ;            Bool HandleCallForHelp()
 ;            Bool HandleCallForAttention()
+;            Bool WasCallOutRecent(Bool bAttention, Bool bHelp)
 ;                 CallOutDone()
+;                 CallOutReset()
 ;                 ReEvaluatePackage(Actor aActor)
+;          --- Player Items (The Collector) ---
+;                 TransferItems(ObjectReference oItem, Int iCount, Bool bSilent)
 ;          --- Mod Events ---
 ;        ModEvent DFW_NewMaster(String szOldMod, Actor aOldMaster)
 ;        *** Warning: The following event is triggered often.  Handling should be fast! ***
 ;        ModEvent DFW_NearbyActor(Int iFlags, Actor aActor)
-;        ModEvent DFW_MovementDone(Int iType, Actor aActor, Bool bSucceeded, String sModId)
+;        ModEvent DFW_MovementDone(Int iType, Actor aActor, Bool bSucceeded, String szModId)
 ;        ModEvent DFW_CallForHelp(Int iCallType, Int iRange, Actor aRecommendedActor)
 ;        ModEvent DFW_CallForAttention(Int iCallType, Int iRange, Actor aRecommendedActor)
+;        ModEvent DFW_DialogueTarget(Actor aActor)
 ;
 
 ;----------------------------------------------------------------------------------------------
 ; API: General Functions
 String Function GetModVersion()
-   Return "2.06"
+   Return "3.00"
 EndFunction
 
 ; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
 Bool Function IsPlayerCriticallyBusy(Bool bIncludeBleedout=True)
+   DebugTrace("TraceEvent IsPlayerCriticallyBusy")
    If (_iBleedoutTime)
       ; If we are not supposed to consider bleedout as busy return false for anything during the
       ; bleedout.  Since bleedout locks player controls it is virtually impossible to
       ; distinguish it from other forms of being busy.
       If (!bIncludeBleedout)
+         DebugTrace("TraceEvent IsPlayerCriticallyBusy: Done (Bleedout Not Busy)")
          Return False
       EndIf
 
       If (Utility.GetCurrentRealTime() < _iBleedoutTime)
+         DebugTrace("TraceEvent IsPlayerCriticallyBusy: Done (Bleedout Busy)")
          Return True
       EndIf
       _iBleedoutTime = 0
    EndIf
 
    If (!_aPlayer.GetPlayerControls())
+      DebugTrace("TraceEvent IsPlayerCriticallyBusy: Done (Controls Locked)")
       Return True
    EndIf
 
+   DebugTrace("TraceEvent IsPlayerCriticallyBusy: Done")
+   Return False
+EndFunction
+
+; Includes: In Bleedout, Controls Locked (i.e. When in a scene)
+Bool Function IsPlayerBusy(Bool bIncludeCritical=True, Bool bIncludeDialogue=True, \
+                           Bool bIncludeDfwScenes=True, Bool bIncludeSex=True, \
+                           Bool bIncludeCombat=True, Bool bIncludeBleedout=True)
+   DebugTrace("TraceEvent IsPlayerBusy")
+   If (bIncludeCritical && IsPlayerCriticallyBusy(bIncludeBleedout))
+      DebugTrace("TraceEvent IsPlayerBusy: Done (Critically)")
+      Return True
+   EndIf
+
+   If (bIncludeDfwScenes && ("" != _szCurrentScene))
+      DebugTrace("TraceEvent IsPlayerBusy: Done (Scene)")
+      Return True
+   EndIf
+
+   If (bIncludeCombat && _aPlayer.IsInCombat())
+      DebugTrace("TraceEvent IsPlayerBusy: Done (Combat)")
+      Return True
+   EndIf
+
+   If (bIncludeSex && _qSexLab.IsActorActive(_aPlayer))
+      DebugTrace("TraceEvent IsPlayerBusy: Done (SexLab)")
+      Return True
+   EndIf
+
+   If (bIncludeDialogue && GetPlayerTalkingTo())
+      DebugTrace("TraceEvent IsPlayerBusy: Done (Dialogue)")
+      Return True
+   EndIf
+
+   DebugTrace("TraceEvent IsPlayerBusy: Done")
    Return False
 EndFunction
 
 ; szSceneName can be anything.
 ; iSceneTimeout is in seconds.  The amount of time before giving up waiting for the scene done.
-Int Function SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs=0)
+Int Function SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs=0, \
+                           Bool bExtendCallout=True)
+   DebugTrace("TraceEvent SceneStarting")
    ; Don't start any scenes if we are shutting down the mod.
    If (_bMcmShutdownMod)
+      DebugTrace("TraceEvent SceneStarting: Done (Mod Shutting Down)")
       Return FAIL
    EndIf
 
@@ -3336,57 +4535,77 @@ Int Function SceneStarting(String szSceneName, Int iSceneTimeout, Int iWaitMs=0)
       iWaitMs -= 100
    EndWhile
    If (_szCurrentScene)
-      Log("Scene " + szSceneName + " failed due to " + _szCurrentScene, DL_INFO, \
+      Log("Scene " + szSceneName + " failed due to " + _szCurrentScene, DL_DEBUG, \
           DC_INTERACTION)
+      DebugTrace("TraceEvent SceneStarting: Done (Scene Busy)")
       Return FAIL
    EndIf
    Log("Scene Starting: " + szSceneName, DL_DEBUG, DC_INTERACTION)
+   _bInScene = True
    _szCurrentScene = szSceneName
    _fSceneTimeout = Utility.GetCurrentRealTime() + iSceneTimeout
+   _bSceneExtendsCallout = bExtendCallout
+   DebugTrace("TraceEvent SceneStarting: Done")
    Return SUCCESS
 EndFunction
 
-Int Function SceneContinue(String szSceneName, Int iSceneTimeout)
-   If (_szCurrentScene && (_szCurrentScene != szSceneName))
-      Log("Scene Cannot Continue: " + szSceneName + " != " + _szCurrentScene, DL_INFO, \
+Int Function SceneContinue(String szSceneName, Int iSceneTimeout, String szPrevName="")
+   DebugTrace("TraceEvent SceneContinue")
+   If (_szCurrentScene && (_szCurrentScene != szSceneName) && (_szCurrentScene != szPrevName))
+      Log("Scene Cannot Continue: " + szSceneName + " != " + _szCurrentScene, DL_DEBUG, \
           DC_INTERACTION)
+      DebugTrace("TraceEvent SceneContinue: Done (Scene Busy)")
       Return FAIL
    EndIf
-   Log("Scene Continuing: " + szSceneName, DL_DEBUG, DC_INTERACTION)
+   Log("Scene Continuing: " + szPrevName + " => " + szSceneName, DL_DEBUG, DC_INTERACTION)
    Int iReturnCode = SUCCESS
    If (!_szCurrentScene)
-      _szCurrentScene = szSceneName
       iReturnCode = WARNING
    EndIf
+   _bInScene = True
+   _szCurrentScene = szSceneName
    _fSceneTimeout = Utility.GetCurrentRealTime() + iSceneTimeout
+   DebugTrace("TraceEvent SceneContinue: Done")
    Return iReturnCode
 EndFunction
 
 Function SceneDone(String szSceneName)
+   DebugTrace("TraceEvent SceneDone")
    Log("Scene Done: " + szSceneName, DL_DEBUG, DC_INTERACTION)
    If (_szCurrentScene == szSceneName)
       _fSceneTimeout = 0
+      _bInScene = False
       _szCurrentScene = ""
+      _bSceneExtendsCallout = False
    EndIf
+   DebugTrace("TraceEvent SceneDone: Done")
+EndFunction
+
+String Function GetCurrentScene()
+   Return _szCurrentScene
 EndFunction
 
 ; Returns a location represnting the region (or town area) the location is close to.
 ; Regions not close to a town or civilization are None (considered "Wilderness").
 ; Note: This is not likely a particularly fast function and should be used sparingly.
 Location Function GetRegion(Location oLocation, Cell oCell=None)
+   DebugTrace("TraceEvent GetRegion")
    If (!oLocation)
       If (!oCell)
+         DebugTrace("TraceEvent GetRegion: Done (No Cell)")
          Return None
       EndIf
 
       Int iIndex = SPECIAL_CELLS.Find(oCell)
       If (-1 == iIndex)
+         DebugTrace("TraceEvent GetRegion: Done (Cannot Find Location)")
          Return None
       EndIf
       oLocation = (SPECIAL_CELL_LOCATIONS[iIndex] As Location)
    EndIf
 
    ; Check for the base regions first as they are quickest to search.
+   Location oCurrLocation = None
    If ((oLocation == REGION_DAWNSTAR)    || (oLocation == REGION_DRAGON_BRIDGE)   || \
        (oLocation == REGION_FALKREATH)   || (oLocation == REGION_HIGH_HROTHGAR)   || \
        (oLocation == REGION_IVARSTEAD)   || (oLocation == REGION_KARTHWASTEN)     || \
@@ -3397,98 +4616,159 @@ Location Function GetRegion(Location oLocation, Cell oCell=None)
        (oLocation == REGION_SOLITUDE)    || (oLocation == REGION_THALMOR_EMBASSY) || \
        (oLocation == REGION_WHITERUN)    || (oLocation == REGION_WINDHELM)        || \
        (oLocation == REGION_WINTERHOLD))
-      Return oLocation
+      oCurrLocation = oLocation
    ; Next check for any special suburbs of the region.
    ElseIf ((oLocation == SUBURB_SOLITUDE_WELLS) || (oLocation == SUBURB_SOLITUDE_AVENUES))
-      Return REGION_SOLITUDE
+      oCurrLocation = REGION_SOLITUDE
    ElseIf (oLocation == SUBURB_WINTERHOLD_COLLEGE)
-      Return REGION_WINTERHOLD
+      oCurrLocation = REGION_WINTERHOLD
    ; Next check if the location is in one of the suburb lists.
    ElseIf (SUBURBS_DAWNSTAR && (-1 != SUBURBS_DAWNSTAR.Find(oLocation)))
-      Return REGION_DAWNSTAR
+      oCurrLocation = REGION_DAWNSTAR
    ElseIf (SUBURBS_DRAGON_BRIDGE && (-1 != SUBURBS_DRAGON_BRIDGE.Find(oLocation)))
-      Return REGION_DRAGON_BRIDGE
+      oCurrLocation = REGION_DRAGON_BRIDGE
    ElseIf (SUBURBS_FALKREATH && (-1 != SUBURBS_FALKREATH.Find(oLocation)))
-      Return REGION_FALKREATH
+      oCurrLocation = REGION_FALKREATH
    ElseIf (SUBURBS_HIGH_HROTHGAR && (-1 != SUBURBS_HIGH_HROTHGAR.Find(oLocation)))
-      Return REGION_HIGH_HROTHGAR
+      oCurrLocation = REGION_HIGH_HROTHGAR
    ElseIf (SUBURBS_IVARSTEAD && (-1 != SUBURBS_IVARSTEAD.Find(oLocation)))
-      Return REGION_IVARSTEAD
+      oCurrLocation = REGION_IVARSTEAD
    ElseIf (SUBURBS_KARTHWASTEN && (-1 != SUBURBS_KARTHWASTEN.Find(oLocation)))
-      Return REGION_KARTHWASTEN
+      oCurrLocation = REGION_KARTHWASTEN
    ElseIf (SUBURBS_MARKARTH && (-1 != SUBURBS_MARKARTH.Find(oLocation)))
-      Return REGION_MARKARTH
+      oCurrLocation = REGION_MARKARTH
    ElseIf (SUBURBS_MORTHAL && (-1 != SUBURBS_MORTHAL.Find(oLocation)))
-      Return REGION_MORTHAL
+      oCurrLocation = REGION_MORTHAL
    ElseIf (SUBURBS_OLD_HROLDAN && (-1 != SUBURBS_OLD_HROLDAN.Find(oLocation)))
-      Return REGION_OLD_HROLDAN
+      oCurrLocation = REGION_OLD_HROLDAN
    ElseIf (SUBURBS_RIFTEN && (-1 != SUBURBS_RIFTEN.Find(oLocation)))
-      Return REGION_RIFTEN
+      oCurrLocation = REGION_RIFTEN
    ElseIf (SUBURBS_RIVERWOOD && (-1 != SUBURBS_RIVERWOOD.Find(oLocation)))
-      Return REGION_RIVERWOOD
+      oCurrLocation = REGION_RIVERWOOD
    ElseIf (SUBURBS_RORIKSTEAD && (-1 != SUBURBS_RORIKSTEAD.Find(oLocation)))
-      Return REGION_RORIKSTEAD
+      oCurrLocation = REGION_RORIKSTEAD
    ElseIf (SUBURBS_SHORS_STONE && (-1 != SUBURBS_SHORS_STONE.Find(oLocation)))
-      Return REGION_SHORS_STONE
+      oCurrLocation = REGION_SHORS_STONE
    ElseIf (SUBURBS_SKY_HAVEN && (-1 != SUBURBS_SKY_HAVEN.Find(oLocation)))
-      Return REGION_SKY_HAVEN
+      oCurrLocation = REGION_SKY_HAVEN
    ElseIf (SUBURBS_SOLITUDE && (-1 != SUBURBS_SOLITUDE.Find(oLocation)))
-      Return REGION_SOLITUDE
+      oCurrLocation = REGION_SOLITUDE
    ElseIf (SUBURBS_THALMOR_EMBASSY && (-1 != SUBURBS_THALMOR_EMBASSY.Find(oLocation)))
-      Return REGION_THALMOR_EMBASSY
+      oCurrLocation = REGION_THALMOR_EMBASSY
    ElseIf (SUBURBS_WHITERUN && (-1 != SUBURBS_WHITERUN.Find(oLocation)))
-      Return REGION_WHITERUN
+      oCurrLocation = REGION_WHITERUN
    ElseIf (SUBURBS_WINDHELM && (-1 != SUBURBS_WINDHELM.Find(oLocation)))
-      Return REGION_WINDHELM
+      oCurrLocation = REGION_WINDHELM
    ElseIf (SUBURBS_WINTERHOLD && (-1 != SUBURBS_WINTERHOLD.Find(oLocation)))
-      Return REGION_WINTERHOLD
+      oCurrLocation = REGION_WINTERHOLD
    ; Finally check if a base region is a parent of the new location.
    ElseIf (REGION_DAWNSTAR.IsChild(oLocation))
-      Return REGION_DAWNSTAR
+      oCurrLocation = REGION_DAWNSTAR
    ElseIf (REGION_DRAGON_BRIDGE.IsChild(oLocation))
-      Return REGION_DRAGON_BRIDGE
+      oCurrLocation = REGION_DRAGON_BRIDGE
    ElseIf (REGION_FALKREATH.IsChild(oLocation))
-      Return REGION_FALKREATH
+      oCurrLocation = REGION_FALKREATH
    ElseIf (REGION_HIGH_HROTHGAR.IsChild(oLocation))
-      Return REGION_HIGH_HROTHGAR
+      oCurrLocation = REGION_HIGH_HROTHGAR
    ElseIf (REGION_IVARSTEAD.IsChild(oLocation))
-      Return REGION_IVARSTEAD
+      oCurrLocation = REGION_IVARSTEAD
    ElseIf (REGION_KARTHWASTEN.IsChild(oLocation))
-      Return REGION_KARTHWASTEN
+      oCurrLocation = REGION_KARTHWASTEN
    ElseIf (REGION_MARKARTH.IsChild(oLocation))
-      Return REGION_MARKARTH
+      oCurrLocation = REGION_MARKARTH
    ElseIf (REGION_MORTHAL.IsChild(oLocation))
-      Return REGION_MORTHAL
+      oCurrLocation = REGION_MORTHAL
    ElseIf (REGION_OLD_HROLDAN.IsChild(oLocation))
-      Return REGION_OLD_HROLDAN
+      oCurrLocation = REGION_OLD_HROLDAN
    ElseIf (REGION_RIFTEN.IsChild(oLocation))
-      Return REGION_RIFTEN
+      oCurrLocation = REGION_RIFTEN
    ElseIf (REGION_RIVERWOOD.IsChild(oLocation))
-      Return REGION_RIVERWOOD
+      oCurrLocation = REGION_RIVERWOOD
    ElseIf (REGION_RORIKSTEAD.IsChild(oLocation))
-      Return REGION_RORIKSTEAD
+      oCurrLocation = REGION_RORIKSTEAD
    ElseIf (REGION_SHORS_STONE.IsChild(oLocation))
-      Return REGION_SHORS_STONE
+      oCurrLocation = REGION_SHORS_STONE
    ElseIf (REGION_SKY_HAVEN.IsChild(oLocation))
-      Return REGION_SKY_HAVEN
+      oCurrLocation = REGION_SKY_HAVEN
    ElseIf (REGION_SOLITUDE.IsChild(oLocation) || \
            SUBURB_SOLITUDE_WELLS.IsChild(oLocation) || \
            SUBURB_SOLITUDE_AVENUES.IsChild(oLocation))
-      Return REGION_SOLITUDE
+      oCurrLocation = REGION_SOLITUDE
    ElseIf (REGION_THALMOR_EMBASSY.IsChild(oLocation))
-      Return REGION_THALMOR_EMBASSY
+      oCurrLocation = REGION_THALMOR_EMBASSY
    ElseIf (REGION_WHITERUN.IsChild(oLocation))
-      Return REGION_WHITERUN
+      oCurrLocation = REGION_WHITERUN
    ElseIf (REGION_WINDHELM.IsChild(oLocation))
-      Return REGION_WINDHELM
+      oCurrLocation = REGION_WINDHELM
    ElseIf (REGION_WINTERHOLD.IsChild(oLocation) || \
            SUBURB_WINTERHOLD_COLLEGE.IsChild(oLocation))
-      Return REGION_WINTERHOLD
+      oCurrLocation = REGION_WINTERHOLD
    EndIf
+   DebugTrace("TraceEvent GetRegion: Done")
+   Return oCurrLocation
 EndFunction
 
-String Function GetCurrentScene()
-   Return _szCurrentScene
+; iVersion: In the future regions may be added to this mod.  If the calling code will not
+;           support greater indexes that are returned the calling code needs to specify the
+;           version of this function that they do support (which is currently 1).
+Int Function GetNearestRegionIndex(Location oNearestRegion=None, Int iVersion=0)
+   If (!iVersion)
+      iVersion = 1
+   EndIf
+   If (!oNearestRegion)
+      oNearestRegion = GetNearestRegion()
+   EndIf
+
+   Return REGIONS_INDEXED.Find(oNearestRegion)
+EndFunction
+
+; I am fairly certain that two mods using _aPlayer.MoveTo() at the same time causes the game to
+; crash.  The intent of this function is to guarantee there is a delay between MoveTo() calls
+; that move the player.
+;
+; fTimeout: In Seconds.
+; iBusyBehaviour: 0: Wait until complete  1: Return FAIL  2: Move anyway (Not recommended).
+Int Function MovePlayer(ObjectReference oTarget, Float fOffsetX=0.0, Float fOffsetY=0.0, \
+                        Float fOffsetZ=0.0, Float fTimeout=2.0, Int iBusyBehaviour=0)
+   If ((2 != iBusyBehaviour) && (_qSexLab.IsActorActive(_aPlayer) || IsPlayerCriticallyBusy()))
+      If (iBusyBehaviour)
+         Return FAIL
+      EndIf
+      While (_qSexLab.IsActorActive(_aPlayer) || IsPlayerCriticallyBusy())
+         Utility.Wait(1.5)
+      EndWhile
+   EndIf
+
+   ; Try to lock the mutex.  Keep track of whether the mutex is currently locked.  If another
+   ; request is moving the player we want to add an extra delay to space them out.
+   Float fOriginalTimeout = fTimeout
+   Bool bLockedByUs = MutexLock(_iMovePlayerMutex, -1)
+   While (!bLockedByUs && (0.0 < fTimeout))
+      Utility.Wait(0.1)
+      fTimeout -= 0.1
+      bLockedByUs = MutexLock(_iMovePlayerMutex, -1)
+   EndWhile
+
+   ; If we did not procure the mutex fail the move request.
+   If (!bLockedByUs)
+      Return FAIL
+   EndIf
+
+   ; We now have the mutex locked.
+   ; If the timeout has changed we did not procure the mutex on the first try.
+   If (fOriginalTimeout != fTimeout)
+      ; Add a delay to space out the attempts to move the player.
+      Utility.Wait(1.2)
+   EndIf
+
+   ActorSitStateWait(_aPlayer)
+   _aPlayer.MoveTo(oTarget, fOffsetX, fOffsetY, fOffsetZ)
+   MutexRelease(_iMovePlayerMutex)
+
+   ; MoveTo enables fast travel.  Disable it again if necessary.
+   If (_iBlockFastTravel)
+      Game.EnableFastTravel(False)
+   EndIf
 EndFunction
 
 Function BlockHealthRegen()
@@ -3810,8 +5090,10 @@ Function RestoreJournal()
 EndFunction
 
 Function ForceSave()
+   DebugTrace("TraceEvent ForceSave")
    ; Don't perform any game saves if we are shutting down the mod.
    If (_bMcmShutdownMod)
+      DebugTrace("TraceEvent ForceSave: Done (Mod Shutting Down)")
       Return
    EndIf
 
@@ -3845,15 +5127,15 @@ Function ForceSave()
          If (2 == _iLastSaveType)
             ; 0: Unknown  1: Auto  2: Quick  3: Force
             _iLastSaveType = 3
-            Game.SaveGame("QuickSave")
+            Game.SaveGame(_szQuickSaveName)
             Utility.Wait(0.01)
-            Game.SaveGame("AutoSave1")
+            Game.SaveGame(_szAutoSaveName)
          Else
             ; 0: Unknown  1: Auto  2: Quick  3: Force
             _iLastSaveType = 3
-            Game.SaveGame("AutoSave1")
+            Game.SaveGame(_szAutoSaveName)
             Utility.Wait(0.01)
-            Game.SaveGame("QuickSave")
+            Game.SaveGame(_szQuickSaveName)
          EndIf
          ; Add a delay before resetting _bBlockLoad as the Save doesn't happen immediately.
          Utility.Wait(0.5)
@@ -3866,19 +5148,22 @@ Function ForceSave()
    If (qBondageShell)
       qBondageShell.ReapplyPlayerControls()
    EndIf
+   DebugTrace("TraceEvent ForceSave: Done")
 EndFunction
 
 Function QuickSave()
+   DebugTrace("TraceEvent QuickSave")
    ; Don't perform any game saves if we are shutting down the mod.
    If (_bMcmShutdownMod)
+      DebugTrace("TraceEvent QuickSave: Done (Mod Shutting Down)")
       Return
    EndIf
 
    Float fCurrTime = Game.GetRealHoursPassed()
-   If (fCurrTime < (_fLastSave + (_qMcm.fModSaveMinTime / 60.0)))
-      Log("Cannot Save: Too Soon.", DL_INFO, DC_SAVE)
-   Else
-      Log("Quicksave", DL_INFO, DC_SAVE)
+;   If (fCurrTime < (_fLastSave + (_qMcm.fModSaveMinTime / 60.0)))
+;      Log("Cannot Save: Too Soon.", DL_INFO, DC_SAVE)
+;   Else
+      Log("QuickSave", DL_INFO, DC_SAVE)
       ; Add a delay for the game to print the saving message.
       Utility.Wait(0.4)
 
@@ -3889,24 +5174,28 @@ Function QuickSave()
       _iLastSaveType = 2
       _bBlockLoad = False
       _fLastSave = fCurrTime
-      Game.SaveGame("QuickSave")
+      Game.SaveGame(_szQuickSaveName)
 
       ; Add a delay before resetting _bBlockLoad as the Save doesn't happen immediately.
       Utility.Wait(0.5)
       If (2 == _iMcmSaveGameControlStyle)
          _bBlockLoad = True
       EndIf
-   EndIf
+;   EndIf
+   DebugTrace("TraceEvent QuickSave: Done")
 EndFunction
 
 Function AutoSave()
+   DebugTrace("TraceEvent AutoSave")
    ; Don't perform any game saves if we are shutting down the mod.
    If (_bMcmShutdownMod)
+      DebugTrace("TraceEvent AutoSave: Done (Mod Shutting Down)")
       Return
    EndIf
 
    ; Autosave should only be done with the Full Control save game style.
    If (2 != _iMcmSaveGameControlStyle)
+      DebugTrace("TraceEvent AutoSave: Done (Not Configured)")
       Return
    EndIf
 
@@ -3925,12 +5214,13 @@ Function AutoSave()
       _iLastSaveType = 1
       _bBlockLoad = False
       _fLastSave = fCurrTime
-      Game.SaveGame("AutoSave1")
+      Game.SaveGame(_szAutoSaveName)
 
       ; Add a delay before resetting _bBlockLoad as the Save doesn't happen immediately.
       Utility.Wait(0.5)
       _bBlockLoad = True
    EndIf
+   DebugTrace("TraceEvent AutoSave: Done")
 EndFunction
 
 
@@ -3960,7 +5250,7 @@ EndFunction
 Event OnMenuOpen(String szMenu)
    If ("Journal Menu" == szMenu)
       Actor aAlvor = (Game.GetForm(0x00013482) As Actor)
-      _aPlayer.MoveTo(aAlvor)
+      MovePlayer(aAlvor)
    ElseIf ("Console" == szMenu)
       ; If the player is accessing the console but is too vulnerable shut down the game.
       Int iConsoleVulnerability = _qMcm.iConConsoleVulnerability
@@ -3979,6 +5269,7 @@ EndEvent
 ; Set aNewMaster=None as a transition period between two Masters.
 Int Function SetMaster(Actor aNewMaster, String szMod, Int iPermissions, \
                        Int iMasterDistance=0x00000004, Bool bOverride=False)
+   DebugTrace("TraceEvent SetMaster")
    String szName = "None"
    If (aNewMaster)
       szName = aNewMaster.GetDisplayName()
@@ -4011,14 +5302,16 @@ Int Function SetMaster(Actor aNewMaster, String szMod, Int iPermissions, \
       ForceSave()
 
       ; Restore the player's access to her menus.
-      UnregisterForMenu("Journal Menu") 
+      UnregisterForMenu("Journal Menu")
       RestoreJournal()
       RestoreMenu()
    EndIf
+   DebugTrace("TraceEvent SetMaster: Done")
    Return iStatus
 EndFunction
 
 Int Function ClearMaster(Actor aMaster, String szMod="", Bool bEscaped=False)
+   DebugTrace("TraceEvent ClearMaster")
    String szName = "None"
    If (aMaster)
       szName = aMaster.GetDisplayName()
@@ -4050,10 +5343,12 @@ Int Function ClearMaster(Actor aMaster, String szMod="", Bool bEscaped=False)
    If (szControllingMod && !_aMasterClose && !_aMasterDistant)
       _qZbfSlave.ReleaseSlave(_aPlayer, szControllingMod, bEscaped)
    EndIf
+   DebugTrace("TraceEvent ClearMaster: Done")
    Return iStatus
 EndFunction
 
 Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool bOverride=False)
+   DebugTrace("TraceEvent ChangeMasterDistance")
    String szName = "None"
    If (aMaster)
       szName = aMaster.GetDisplayName()
@@ -4066,10 +5361,12 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
          If (_aMasterDistant != aMaster)
             Log("Current Master differs " + _aMasterClose.GetDisplayName() + " (" + \
                 _aMasterModClose + ")", DL_ERROR, DC_MASTER)
+            DebugTrace("TraceEvent ChangeMasterDistance: Done (Wrong Master Close)")
             Return FAIL
          EndIf
          ; It is only a warning if the specified Master is already distant.
          Log("Already Distant.", DL_DEBUG, DC_MASTER)
+            DebugTrace("TraceEvent ChangeMasterDistance: Done (Already Distant)")
          Return WARNING
       EndIf
 
@@ -4078,6 +5375,7 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
       If (SUCCESS <= iStatus)
          _aMasterClose = None
       EndIf
+      DebugTrace("TraceEvent ChangeMasterDistance: Done (Set Distant)")
       Return iStatus
    EndIf
 
@@ -4086,10 +5384,12 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
       If (_aMasterClose != aMaster)
          Log("Current Master differs " + _aMasterDistant.GetDisplayName() + " (" + \
              _aMasterModDistant + ")", DL_ERROR, DC_MASTER)
+         DebugTrace("TraceEvent ChangeMasterDistance: Done (Wrong Master Distant)")
          Return FAIL
       EndIf
       ; It is only a warning if the specified Master is already close.
       Log("Already Close.", DL_DEBUG, DC_MASTER)
+      DebugTrace("TraceEvent ChangeMasterDistance: Done (Already Close)")
       Return WARNING
    EndIf
 
@@ -4098,6 +5398,7 @@ Int Function ChangeMasterDistance(Actor aMaster, Bool bMoveToDistant=True, Bool 
    If (SUCCESS <= iStatus)
       _aMasterDistant = None
    EndIf
+   DebugTrace("TraceEvent ChangeMasterDistance: Done")
    Return iStatus
 EndFunction
 
@@ -4340,13 +5641,14 @@ ObjectReference Function GetBdsmFurniture()
       Return _oBdsmFurniture
    EndIf
    ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
-   If (oCurrFurniture && oCurrFurniture.hasKeyword(_oKeywordZbfFurniture))
+   If (oCurrFurniture && oCurrFurniture.HasKeyword(_oKeywordZbfFurniture))
       Return oCurrFurniture
    EndIf
    Return None
 EndFunction
 
 Function SetBdsmFurnitureLocked(Bool bLocked=True)
+   DebugTrace("TraceEvent SetBdsmFurnitureLocked")
    _bIsFurnitureLocked = bLocked
    If (!_bIsFurnitureLocked && (3 > _aPlayer.GetSitState()))
       _oBdsmFurniture = None
@@ -4356,8 +5658,31 @@ Function SetBdsmFurnitureLocked(Bool bLocked=True)
    ; If the player is actively in furniture register this with the Zaz Animation Pack as well.
    If (_bIsFurnitureLocked)
       ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
-      If (oCurrFurniture && oCurrFurniture.hasKeyword(_oKeywordZbfFurniture))
+      If (oCurrFurniture && oCurrFurniture.HasKeyword(_oKeywordZbfFurniture))
          _qZbfPlayerSlot.SetFurniture(oCurrFurniture)
+
+         ; If this is a multi-restraint furniture, try to identify the pose to use.
+         If (oCurrFurniture.HasKeyword(_oKeywordZbfFurnitureMulti))
+            SetMultiAnimation()
+;
+;             String szFirstAnim = _qZbfPlayerSlot.sCurrentAnim
+;             Log("First Animation: " + szFirstAnim, DL_DEBUG, DC_DEBUG)
+;             _qZbfPlayerSlot.PlayNext()
+;             While (szFirstAnim != _qZbfPlayerSlot.sCurrentAnim)
+;                Log("Next Animation: " + _qZbfPlayerSlot.sCurrentAnim, DL_DEBUG, DC_DEBUG)
+; First Animation:
+;  Next Animation: ZazAPCAO301
+;  Next Animation: ZazAPCAO302
+;  Next Animation: ZazAPCAO303
+;  Next Animation: ZazAPCAO304
+;  Next Animation: ZazAPCAO305
+;  Next Animation: ZazAPCAO306
+; Example: _qZbfPlayerSlot.SetAnim("ZazAPCAO301")
+; Default: _qZbfPlayerSlot.SetAnimSet(None) or _qZbfPlayerSlot.StopIdleAnim()
+;
+;                _qZbfPlayerSlot.PlayNext()
+;             EndWhile
+         EndIf
       EndIf
    EndIf
 
@@ -4368,6 +5693,11 @@ Function SetBdsmFurnitureLocked(Bool bLocked=True)
       ;    EnablePlayerControls(Move,  Fight, Cam,   Look,  Sneak, Menu,  Activ, Journ)
       Game.EnablePlayerControls(False, False, False, False, False, True,  False, False)
    Endif
+
+   ; Make sure the dialogue conditional is updated in case it has changed.
+   _bIsPlayerFurnitureLocked = (_bIsFurnitureLocked && GetBdsmFurniture())
+
+   DebugTrace("TraceEvent SetBdsmFurnitureLocked: Done")
 EndFunction
 
 Bool Function IsBdsmFurnitureLocked()
@@ -4381,7 +5711,7 @@ Int Function GetVulnerability(Actor aActor=None)
       Return 0
    EndIf
 
-   Log("Get Vulnerability: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
+   ;Off-DebugTrace("Get Vulnerability: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_STATUS)
    If (!aActor)
       aActor = _aPlayer
    EndIf
@@ -4431,7 +5761,7 @@ Int Function GetVulnerability(Actor aActor=None)
       Log("Vulnerability for NPCs not implemented.", DL_ERROR, DC_STATUS)
    EndIf
 
-   Log("Vulnerability: " + iVulnerability, DL_TRACE, DC_STATUS)
+   ;Off-DebugTrace("Vulnerability: " + iVulnerability, DL_TRACE, DC_STATUS)
    If (100 < iVulnerability)
       iVulnerability = 100
    EndIf
@@ -4482,6 +5812,10 @@ Int Function GetWeaponLevel()
    Return (fTotalValue As Int)
 EndFunction
 
+Int Function GetCurrPoseFlags()
+   Return _aiKnownPoseFlags[_iCurrPose]
+EndFunction
+
 
 ;----------------------------------------------------------------------------------------------
 ; API: Nearby Actors
@@ -4489,7 +5823,7 @@ EndFunction
 ; New actors are excluded by default.
 Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, \
                                    Int iExcludeFlags=0)
-   Log("Get Nearby: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent GetNearbyActorList - " + Utility.GetCurrentRealTime())
    ; Clean up the actor list before we return elements from it.
    ; Note: The cleanup has it's own throttle mechanism preventing it from running all the time.
    CleanupNearbyList()
@@ -4497,7 +5831,8 @@ Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, 
    ; If there is no filtering just return the known list.
    If (!iIncludeFlags && !iExcludeFlags && !fMaxDistance)
       _aiRecentFlags = _aiNearbyFlags
-      Log("Get Nearby Done (Simple): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+      DebugTrace("TraceEvent GetNearbyActorList: Done (Simple) - " + \
+                 Utility.GetCurrentRealTime())
       Return _aoNearby
    EndIf
 
@@ -4529,7 +5864,7 @@ Form[] Function GetNearbyActorList(Float fMaxDistance=0.0, Int iIncludeFlags=0, 
    ; Fill in the flags from the recent GetNearbyActorsList() before returning.  See note above.
    _aiRecentFlags = aiTempFlags
 
-   Log("Get Nearby Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent GetNearbyActorList: Done - " + Utility.GetCurrentRealTime())
    Return aoSubList
 EndFunction
 
@@ -4557,24 +5892,24 @@ Int Function GetActorFlags(Actor aNearby)
 EndFunction
 
 Actor Function GetRandomActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
-   Log("Get Random: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent GetRandomActor - " + Utility.GetCurrentRealTime())
    Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
    Int iCount = aoNearbyList.Length
    If (iCount)
       Int iRandomIndex = Utility.RandomInt(0, iCount - 1)
-      Log("Get Random Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+      DebugTrace("TraceEvent GetRandomActor: Done (Actor) - " + Utility.GetCurrentRealTime())
       Return (aoNearbyList[iRandomIndex] As Actor)
    EndIf
-   Log("Get Random Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent GetRandomActor: Done - " + Utility.GetCurrentRealTime())
    Return None
 EndFunction
 
 Actor Function GetNearestActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int iExcludeFlags=0)
-   Log("Get Nearest: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent GetNearestActor - " + Utility.GetCurrentRealTime())
    Form[] aoNearbyList = GetNearbyActorList(fMaxDistance, iIncludeFlags, iExcludeFlags)
    Int iIndex = aoNearbyList.Length - 1
    If (0 > iIndex)
-      Log("Get Nearest Done (None): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+      DebugTrace("TraceEvent GetNearestActor: Done - (None) " + Utility.GetCurrentRealTime())
       Return None
    EndIf
 
@@ -4590,42 +5925,60 @@ Actor Function GetNearestActor(Float fMaxDistance=0.0, Int iIncludeFlags=0, Int 
          aNearest = aCurrent
       EndIf
    EndWhile
-   Log("Get Nearest Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_NEARBY)
+   DebugTrace("TraceEvent GetNearestActor: Done - " + Utility.GetCurrentRealTime())
    Return aNearest
 EndFunction
 
 Bool Function IsActorNearby(Actor aActor)
    CleanupNearbyList()
-   Return (-1 != _aoNearby.Find(aActor))
+
+   Bool bIsNearby = False
+   If (MutexLock(_iNearbyMutex))
+      bIsNearby = (-1 != _aoNearby.Find(aActor))
+
+      MutexRelease(_iNearbyMutex)
+   EndIf
+
+   Return bIsNearby
 EndFunction
 
 Actor Function GetPlayerTalkingTo()
-   Log("Get Talking: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
-   Int iIndex = _aoNearby.Length - 1
-   While (0 <= iIndex)
-      Actor aActor = (_aoNearby[iIndex] As Actor)
-      If (aActor.IsInDialogueWithPlayer())
-         Log("Get Talking Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
-         Return aActor
-      EndIf
-      iIndex -= 1
-   EndWhile
-   Log("Get Talking Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
-   Return None
+   DebugTrace("TraceEvent GetPlayerTalkingTo - " + Utility.GetCurrentRealTime())
+   Actor aMatchFound = None
+
+   If (MutexLock(_iNearbyMutex))
+      Int iIndex = _aoNearby.Length - 1
+      While (!aMatchFound && (0 <= iIndex))
+         Actor aActor = (_aoNearby[iIndex] As Actor)
+         If (aActor.IsInDialogueWithPlayer())
+            aMatchFound = aActor
+         EndIf
+         iIndex -= 1
+      EndWhile
+
+      MutexRelease(_iNearbyMutex)
+   EndIf
+   DebugTrace("TraceEvent GetPlayerTalkingTo: Done - " + Utility.GetCurrentRealTime())
+   Return aMatchFound
 EndFunction
 
 Actor Function GetPlayerInCombatWith()
-   Log("Get In Combat With: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
-   Int iIndex = _aoNearby.Length - 1
-   While (0 <= iIndex)
-      Actor aActor = (_aoNearby[iIndex] As Actor)
-      If (_aPlayer == aActor.GetCombatTarget())
-         Log("Get In Combat With Done (Actor): " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
-         Return aActor
-      EndIf
-      iIndex -= 1
-   EndWhile
-   Log("Get In Combat With Done: " + Utility.GetCurrentRealTime(), DL_TRACE, DC_GENERAL)
+   DebugTrace("TraceEvent GetPlayerInCombatWith - " + Utility.GetCurrentRealTime())
+   Actor aMatchFound = None
+
+   If (MutexLock(_iNearbyMutex))
+      Int iIndex = _aoNearby.Length - 1
+      While (!aMatchFound && (0 <= iIndex))
+         Actor aActor = (_aoNearby[iIndex] As Actor)
+         If (_aPlayer == aActor.GetCombatTarget())
+            aMatchFound = aActor
+         EndIf
+         iIndex -= 1
+      EndWhile
+
+      MutexRelease(_iNearbyMutex)
+   EndIf
+   DebugTrace("TraceEvent GetPlayerInCombatWith: Done - " + Utility.GetCurrentRealTime())
    Return None
 EndFunction
 
@@ -4646,10 +5999,13 @@ Function SetLeashLength(Int iLength)
 EndFunction
 
 Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
-                       Bool bInterruptScene=True, Bool bInterruptLeashTarget=False)
+                       Bool bInterruptScene=True, Bool bInterruptLeashTarget=False, \
+                       Bool bForceDamage=False)
+   DebugTrace("TraceEvent YankLeash")
    ; Use a simplified mutex to make sure the leash isn't yanked twice at the same time.
    ; Also fail the request if there is no current leash target.
    If (_bYankingLeash || !_oLeashTarget)
+      DebugTrace("TraceEvent YankLeash: Done (Busy/No Target)")
       Return FAIL
    EndIf
    _bYankingLeash = True
@@ -4658,6 +6014,19 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
    ; TODO: This should be an MCM setting to decide if she should be yanked from the furniture.
    If (GetBdsmFurniture() && _bIsFurnitureLocked)
       _bYankingLeash = False
+      DebugTrace("TraceEvent YankLeash: Done (In Furniture)")
+      Return WARNING
+   EndIf
+
+   ; If the player is AI driven she is being controlled by some mod.  Don't try to yank her
+   ; leash if the user is not in control of her movements.
+;   If (_aPlayer.IsAIEnabled())
+;   If (!_aPlayer.GetPlayerControls())
+;   If (Math.LogicalAnd(_qZbfPlayerSlot.iPlayerControlMask, 0x0001))
+   zbfBondageShell qBondageShell = zbfBondageShell.GetApi()
+   If (qBondageShell && qBondageShell.GetAiRef())
+      _bYankingLeash = False
+      DebugTrace("TraceEvent YankLeash: Done (AI)")
       Return WARNING
    EndIf
 
@@ -4665,18 +6034,15 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
    ; It would interrupt the conversation.
    Actor aLeashTarget = (_oLeashTarget As Actor)
    Actor aPlayerTalkingTo = GetPlayerTalkingTo()
-   If (!bInterruptLeashTarget && (aLeashTarget == aPlayerTalkingTo))
+   If (!bInterruptLeashTarget && aLeashTarget && (aLeashTarget == aPlayerTalkingTo))
       _bYankingLeash = False
+      DebugTrace("TraceEvent YankLeash: Done (Conversation)")
       Return WARNING
    EndIf
 
    If (aPlayerTalkingTo && (aPlayerTalkingTo != _oLeashTarget))
       ; Moving the player to her own location will end the conversation.
-      _aPlayer.MoveTo(_aPlayer)
-      ; MoveTo enables fast travel.  Disable it again if necessary.
-      If (_iBlockFastTravel)
-         Game.EnableFastTravel(False)
-      EndIf
+      MovePlayer(_aPlayer)
    EndIf
 
    ; Keep track of whether there are movement issues with the leash (player hobbled, etc.).
@@ -4735,20 +6101,27 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
       _aPlayer.ModActorValue("DamageResist", -10000)
 
       ; Do damage if there are no movement issues.  Otherwise just drag the player along.
-      If (!bMovementIssues)
+      If (!bMovementIssues || bForceDamage)
          Float fDamage = ((_aPlayer.GetActorValue("Health") * _qMcm.iModLeashDamage / 100) + \
                           (_aPlayer.GetLevel() / 2))
          fDamage *= fDamageMultiplier
          _aPlayer.DamageActorValue("Health", fDamage)
       EndIf
    Else ; LS_TELEPORT
-      While ((iLeashLength / 1.75) < _oLeashTarget.GetDistance(_aPlayer))
+      ; Figure out how close to teleport the player to the target.  try not to set this maximum
+      ; to less than 100 units so there is some space between her and the target.
+      Float fTargetLength = ((iLeashLength As Float) / 1.75)
+      If (100.0 > fTargetLength)
+         fTargetLength = 100.0
+      EndIf
+
+      While (fTargetLength < _oLeashTarget.GetDistance(_aPlayer))
          _qDfwUtil.TeleportToward(_aPlayer, _oLeashTarget, 40)
 
          Utility.Wait(0.5)
       EndWhile
       ; Do damage if there are no movement issues.  Otherwise just drag the player along.
-      If (!bMovementIssues)
+      If (!bMovementIssues || bForceDamage)
          Float fDamage = ((_aPlayer.GetActorValue("Health") * _qMcm.iModLeashDamage / \
                            100) + (_aPlayer.GetLevel() / 2))
          fDamage *= fDamageMultiplier
@@ -4756,11 +6129,13 @@ Int Function YankLeash(Float fDamageMultiplier=1.0, Int iOverrideLeashStyle=0, \
       EndIf
    EndIf
    _bYankingLeash = False
+   DebugTrace("TraceEvent YankLeash: Done")
    Return SUCCESS
 EndFunction
 
 ; Waits for any yank leash in progress to complete before returning.
 Int Function YankLeashWait(Int iTimeoutMs)
+   DebugTrace("TraceEvent YankLeashWait")
    Bool bUseTimeout = (iTimeoutMs As Bool)
 
    While (_bYankingLeash)
@@ -4768,10 +6143,12 @@ Int Function YankLeashWait(Int iTimeoutMs)
       If (bUseTimeout)
          iTimeoutMs -= 100
          If (0 >= iTimeoutMs)
+            DebugTrace("TraceEvent YankLeashWait: Done (Timed Out)")
             Return FAIL
          EndIf
       EndIf
    EndWhile
+   DebugTrace("TraceEvent YankLeashWait: Done")
    Return SUCCESS
 EndFunction
 
@@ -4785,6 +6162,7 @@ EndFunction
 
 Int Function IncActorAnger(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxValue=50, \
                            Bool bCreateAsNeeded=False, Int iSignificant=0)
+   DebugTrace("TraceEvent IncActorAnger")
    Float fCurrTime = Utility.GetCurrentGameTime()
    Int iValue = 50
    If (MutexLock(_iKnownMutex))
@@ -4838,6 +6216,7 @@ Int Function IncActorAnger(Actor aActor, Int iDelta, Int iMinValue=50, Int iMaxV
 
       MutexRelease(_iKnownMutex)
    EndIf
+   DebugTrace("TraceEvent IncActorAnger: Done")
    Return iValue
 EndFunction
 
@@ -5120,6 +6499,7 @@ EndFunction
 
 ; Fills in all dialogue condition variables based on the actor specified.
 Function PrepareActorDialogue(ObjectReference oActor)
+   DebugTrace("TraceEvent PrepareActorDialogue")
    Actor aActor = (oActor As Actor)
 
    ; First set all variables that don't depend on the other actor.
@@ -5142,6 +6522,7 @@ Function PrepareActorDialogue(ObjectReference oActor)
    ; If the actor is not yet resgistered nearby wait until he is.
    _iDialogRetries -= 1
    If (!iActorFlags)
+      DebugTrace("TraceEvent PrepareActorDialogue: Done (Not Nearby)")
       Return
    EndIf
    _iDialogRetries = _iMcmDialogueRetries + 1
@@ -5207,14 +6588,55 @@ Function PrepareActorDialogue(ObjectReference oActor)
          _iWillingnessToHelp += _iMcmDispWillingBdsm
       EndIf
    EndIf
+
+   ; Send out an even so other mods can set their own dialogue target information.
+   Int iModEvent = ModEvent.Create("DFW_DialogueTarget")
+   If (iModEvent)
+      ModEvent.PushForm(iModEvent, oActor)
+      If (!ModEvent.Send(iModEvent))
+         Log("Failed to send Event DFW_DialogueTarget()", DL_ERROR, DC_GENERAL)
+      EndIf
+   EndIf
+
+   DebugTrace("TraceEvent PrepareActorDialogue: Done")
 EndFunction
 
 
 ;----------------------------------------------------------------------------------------------
 ; API: NPC Interactions
-Bool Function NpcMoveNearbyHidden(Actor aActor)
+Function NpcMoveNearbyHidden(Actor aActor)
+   DebugTrace("TraceEvent NpcMoveNearbyHidden")
+   String szName = "None"
+   If (aActor)
+      szName = aActor.GetDisplayName()
+   EndIf
+
+   If (_qMcm.bModFadeInUseDoor && _aiLastDoorLocation[0])
+      Int iDeltaX = _aiLastDoorLocation[0] - (_aPlayer.X As Int)
+      Int iDeltaY = _aiLastDoorLocation[1] - (_aPlayer.Y As Int)
+      Int iDeltaZ = _aiLastDoorLocation[2] - (_aPlayer.Z As Int)
+DebugTrace("Player(" + (_aPlayer.X As Int) + "," + (_aPlayer.Y As Int) + "," + (_aPlayer.Z As Int) + ") " +\
+           "Door(" + _aiLastDoorLocation[0] + "," + _aiLastDoorLocation[1] + "," + _aiLastDoorLocation[2] + ") " +\
+           "Delta(" + iDeltaX + "," + iDeltaY + "," + iDeltaZ + ")")
+      aActor.MoveTo(_aPlayer, iDeltaX, iDeltaY, iDeltaZ, False)
+
+      ; Wait for a while to make sure the actor is loaded.
+      Float fSecurity = 1.0
+      While (0 < fSecurity)
+         ; If the actor's 3D data is loaded consider it a success.  We are done.
+         If (aActor.Is3DLoaded())
+            DebugTrace("TraceEvent NpcMoveNearbyHidden: Done (Using Door)")
+            Return
+         EndIf
+         Utility.Wait(0.1)
+         fSecurity -= 0.1
+      EndWhile
+      DebugLog("NpcMoveNearbyHidden: Door failed.  Trying location.")
+   EndIf
+
    Int iDistance = 10000
    While (iDistance)
+      Log("Trying Distance: " + iDistance, DL_TRACE, DC_INTERACTION)
       ; Try to move the NPC to a distance away from the player.  Then wait a moment.
       ; If the NPC is falling he has not landed on a solid floor.  Try a different direction.
       ; First of all try directly forward.
@@ -5258,13 +6680,59 @@ Bool Function NpcMoveNearbyHidden(Actor aActor)
          iDistance -= 100
       EndIf
    EndWhile
+   DebugTrace("TraceEvent NpcMoveNearbyHidden: Done")
+EndFunction
+
+; iMovementType: 0: Any (1-4).        1: Player Approach.  2: Move To Location.
+;                3: Move To Object.   4: Hover At.         5: Clear Space.
+Bool Function IsMoving(Actor aActor=None, String szModId="", Int iMovementType=0)
+   If ((0 == iMovementType) || (1 == iMovementType))
+      If ((aActor && (aActor == (_aAliasApproachPlayer.GetReference() As Actor))) || \
+          (szModId && (szModId == _szApproachModId)))
+         Return True
+      EndIf
+   EndIf
+   If ((0 == iMovementType) || (2 == iMovementType))
+      If ((aActor && (aActor == (_aAliasMoveToLocation.GetReference() As Actor))) || \
+          (szModId && (szModId == _szMoveToLocationModId)))
+         Return True
+      EndIf
+   EndIf
+   If ((0 == iMovementType) || (3 == iMovementType))
+      If ((aActor && (aActor == (_aAliasMoveToObject.GetReference() As Actor))) || \
+          (szModId && (szModId == _szMoveToObjectModId)))
+         Return True
+      EndIf
+   EndIf
+   If ((0 == iMovementType) || (4 == iMovementType))
+      Int iIndex
+      While (iIndex < 3)
+         If ((aActor && (aActor == (_aaAliasHover[iIndex].GetReference() As Actor))) || \
+             (szModId && (szModId == _aszHoverAtModId[iIndex])))
+            Return True
+         EndIf
+
+         iIndex += 1
+      EndWhile
+   EndIf
+   If (5 == iMovementType)
+      If ((aActor && ((aActor == (_aAliasGiveSpace1.GetReference() As Actor)) || \
+                      (aActor == (_aAliasGiveSpace2.GetReference() As Actor)) || \
+                      (aActor == (_aAliasGiveSpace3.GetReference() As Actor)))) || \
+          (szModId && (szModId == _szGiveSpaceModId)))
+         Return True
+      EndIf
+   EndIf
+   Return False
 EndFunction
 
 ; iSpeed: 2 Walk Fast  3 Jog  4 Run
-Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String sModId, \
+Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, String szModId, \
                             Bool bForce=False)
+   DebugTrace("TraceEvent ApproachPlayer")
    ; Don't start any movement packages if we are shutting down the mod.
    If (_bMcmShutdownMod)
+      DebugTrace("TraceEvent ApproachPlayer: Done (Mod Shutting Down)")
       Return FAIL
    EndIf
 
@@ -5275,6 +6743,9 @@ Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, Strin
    If (aApproachNpc)
       If (!bForce)
          ; If we are not told to override the current NPC fail the request.
+         Log("Approach Failed (" + szModId + "): In use by " + _szApproachModId, DL_DEBUG, \
+             DC_INTERACTION)
+         DebugTrace("TraceEvent ApproachPlayer: Done (Busy)")
          Return FAIL
       EndIf
       iReturnCode = WARNING
@@ -5293,23 +6764,27 @@ Int Function ApproachPlayer(Actor aActor, Int iTimeoutSeconds, Int iSpeed, Strin
       EndIf
    EndIf
 
-   ; If the NPC is nowhere nearby, bring him closeby before starting the approach package.
-   If (!aActor.Is3DLoaded() && (10000 < aActor.GetDistance(_aPlayer)))
+   ; If the NPC is nowhere nearby, bring him close by before starting the approach package.
+   If (!aActor.Is3DLoaded() || (150000 < aActor.GetDistance(_aPlayer)))
       NpcMoveNearbyHidden(aActor)
    EndIf
 
-   _szApproachModId = sModId
+   Log("ApproachPlayer (" + szModId + ")", DL_DEBUG, DC_INTERACTION)
+   _szApproachModId = szModId
    _iApproachSpeed = iSpeed
    _aAliasApproachPlayer.ForceRefTo(aActor)
    aActor.EvaluatePackage()
    _iMonitorMoveTo = 3
 
+   DebugTrace("TraceEvent ApproachPlayer: Done")
    Return iReturnCode
 EndFunction
 
-Int Function MoveToLocation(Actor aActor, Location oTarget, String sModId, Bool bForce=False)
+Int Function MoveToLocation(Actor aActor, Location oTarget, String szModId, Bool bForce=False)
+   DebugTrace("TraceEvent MoveToLocation")
    ; Don't start any movement packages if we are shutting down the mod.
    If (_bMcmShutdownMod)
+      DebugTrace("TraceEvent MoveToLocation: Done (Mod Shutting Down)")
       Return FAIL
    EndIf
 
@@ -5320,6 +6795,9 @@ Int Function MoveToLocation(Actor aActor, Location oTarget, String sModId, Bool 
    If (aMovingNpc)
       If (!bForce)
          ; If we are not told to override the current NPC fail the request.
+         Log("MoveToLocation Failed (" + szModId + "): In use by " + _szMoveToLocationModId, \
+             DL_DEBUG, DC_INTERACTION)
+         DebugTrace("TraceEvent MoveToLocation: Done (Busy)")
          Return FAIL
       EndIf
       iReturnCode = WARNING
@@ -5338,7 +6816,8 @@ Int Function MoveToLocation(Actor aActor, Location oTarget, String sModId, Bool 
       EndIf
    EndIf
 
-   _szMoveToLocationModId = sModId
+   Log("MoveToLocation (" + szModId + ")", DL_DEBUG, DC_INTERACTION)
+   _szMoveToLocationModId = szModId
    _aAliasLocationTarget.ForceLocationTo(oTarget)
    _aAliasMoveToLocation.ForceRefTo(aActor)
    _iMonitorMoveTo = 3
@@ -5350,46 +6829,204 @@ Int Function MoveToLocation(Actor aActor, Location oTarget, String sModId, Bool 
       _iFlagCheckMoveTo = 3
    EndIf
 
+   DebugTrace("TraceEvent MoveToLocation: Done")
    Return iReturnCode
 EndFunction
 
-Int Function MoveToObject(Actor aActor, ObjectReference oTarget, String sModId, \
+Int Function MoveToObject(Actor aActor, ObjectReference oTarget, String szModId, \
                           Bool bForce=False)
+   Return MoveToObjectHelper(aActor, oTarget, szModId, 75, bForce)
+EndFunction
+
+; This is the same as MoveToObject() but move the NPC closer to the target.
+; It is created as a separate interface to maintain backwards compatibility.
+Int Function MoveToObjectClose(Actor aActor, ObjectReference oTarget, String szModId, \
+                               Int iDistance=25, Bool bForce=False)
+   Return MoveToObjectHelper(aActor, oTarget, szModId, iDistance, bForce)
+EndFunction
+
+; This is simlar to the MoveToObject() feature with a couple of differences:
+; The package does not stop when the NPC arrives.  It continues until cleared or it times out.
+; Movement of the NPC is not monitored.  It should only be used for nearby objects.
+; Timeout is in Real Time seconds.  If 0 it will continue until cleared.
+Int Function HoverAt(Actor aActor, ObjectReference oTarget, String szModId, Int iTimeout=0, \
+                     Bool bForce=False)
+   ;Off-DebugTrace("TraceEvent HoverAt")
    ; Don't start any movement packages if we are shutting down the mod.
    If (_bMcmShutdownMod)
+      ;Off-DebugTrace("TraceEvent HoverAt: Done Mod Shutting Down)")
       Return FAIL
    EndIf
 
    Int iReturnCode = SUCCESS
 
-   ; Check if there already is an NPC performing the movement.
-   Actor aMovingNpc = (_aAliasMoveToObject.GetReference() As Actor)
+   ; Find an empty hover at alias.
+   Int iIndex
+   Actor aMovingNpc = (_aaAliasHover[iIndex].GetReference() As Actor)
+   While (aMovingNpc && (iIndex < 2))
+      iIndex += 1
+      aMovingNpc = (_aaAliasHover[iIndex].GetReference() As Actor)
+   EndWhile
+
+   ; Check if all of the aliases are already in use.
    If (aMovingNpc)
+      ; Use the first alias.  It is most likely to be closest to complete.
+      iIndex = 0
+      aMovingNpc = (_aaAliasHover[iIndex].GetReference() As Actor)
+
       If (!bForce)
          ; If we are not told to override the current NPC fail the request.
+         Log("HoverAt Failed (" + szModId + "): In use by " + _aszHoverAtModId[iIndex], \
+             DL_TRACE, DC_INTERACTION)
+         ;Off-DebugTrace("TraceEvent HoverAt: Done (Busy)")
          Return FAIL
       EndIf
       iReturnCode = WARNING
 
-      ; Otherwise send an event to report the current NPC approach failed.
+      ; Otherwise send an event to report the current hover at package has ended.
       Int iModEvent = ModEvent.Create("DFW_MovementDone")
       If (iModEvent)
-         ModEvent.PushInt(iModEvent, 3)
+         ModEvent.PushInt(iModEvent, 4)
          ModEvent.PushForm(iModEvent, aMovingNpc)
          ModEvent.PushBool(iModEvent, False)
-         ModEvent.PushString(iModEvent, _szMoveToObjectModId)
+         ModEvent.PushString(iModEvent, _aszHoverAtModId[iIndex])
          If (!ModEvent.Send(iModEvent))
-            Log("Failed to send Event DFW_MovementDone(3, False, " + _szMoveToObjectModId + \
-                ")", DL_ERROR, DC_INTERACTION)
+            Log("Failed to send Event DFW_MovementDone(4, False, " + \
+                _aszHoverAtModId[iIndex] + ")", DL_ERROR, DC_INTERACTION)
          EndIf
       EndIf
    EndIf
 
-   _szMoveToObjectModId = sModId
-   _aAliasObjectTarget.ForceRefTo(oTarget)
-   _aAliasMoveToObject.ForceRefTo(aActor)
-   _iMonitorMoveTo = 3
+   ; Convert the timeout from seconds into number of polls.
+   _iHoverAtTimeout[iIndex] = 0
+   If (iTimeout)
+      _iHoverAtTimeout[iIndex] = ((iTimeout / _fMcmPollTime) As Int) + 1
+   EndIf
+
+   _aszHoverAtModId[iIndex] = szModId
+   _aaAliasHoverTarget[iIndex].ForceRefTo(oTarget)
+   _aaAliasHover[iIndex].ForceRefTo(aActor)
+
+   ; If we are forcing the same actor to the same package be sure to re-calculate his package.
+   If (aMovingNpc && (aMovingNpc == aActor))
+      ReEvaluatePackage(aActor)
+   EndIf
+   ;Off-DebugTrace("TraceEvent HoverAt: Done")
    Return iReturnCode
+EndFunction
+
+Function HoverAtClear(String szModId)
+   Int iIndex
+   While (iIndex < 3)
+      If (szModId == _aszHoverAtModId[iIndex])
+         _iHoverAtTimeout[iIndex] = 0
+         _aszHoverAtModId[iIndex] = ""
+         _aaAliasHoverTarget[iIndex].Clear()
+         _aaAliasHover[iIndex].Clear()
+      EndIf
+
+      iIndex += 1
+   EndWhile
+EndFunction
+
+Int Function GiveSpace(Actor aActor, ObjectReference oTarget, String szModId, Int iTimeout=4, \
+                       Bool bForce=False)
+   ;Off-DebugTrace("TraceEvent GiveSpace")
+   ; Don't start any movement packages if we are shutting down the mod.
+   If (_bMcmShutdownMod)
+      ;Off-DebugTrace("TraceEvent GiveSpace: Done Mod Shutting Down)")
+      Return FAIL
+   EndIf
+
+   Int iReturnCode = SUCCESS
+
+   ; Check if all of the give space aliases are in use.
+   Actor aMovingNpc = (_aAliasGiveSpace1.GetReference() As Actor)
+   Int iAlias = 1
+   If (aMovingNpc)
+      aMovingNpc = (_aAliasGiveSpace2.GetReference() As Actor)
+      iAlias = 2
+      If (aMovingNpc)
+         aMovingNpc = (_aAliasGiveSpace3.GetReference() As Actor)
+         iAlias = 3
+      EndIf
+   EndIf
+
+   ; Consider failing the request if all of the aliases are in use.
+   If (aMovingNpc)
+      If (!bForce)
+         ; If we are not told to override the current NPC fail the request.
+         Log("GiveSpace Failed (" + szModId + "): In use by " + _szGiveSpaceModId, DL_TRACE, \
+             DC_INTERACTION)
+         ;Off-DebugTrace("TraceEvent GiveSpace: Done (Busy)")
+         Return FAIL
+      EndIf
+      iReturnCode = WARNING
+
+      ; Otherwise send an event to report the current give space package has ended.
+      Int iModEvent = ModEvent.Create("DFW_MovementDone")
+      If (iModEvent)
+         ModEvent.PushInt(iModEvent, 5)
+         ModEvent.PushForm(iModEvent, aMovingNpc)
+         ModEvent.PushBool(iModEvent, False)
+         ModEvent.PushString(iModEvent, _szGiveSpaceModId)
+         If (!ModEvent.Send(iModEvent))
+            Log("Failed to send Event DFW_MovementDone(5, False, " + _szGiveSpaceModId + ")", \
+                DL_ERROR, DC_INTERACTION)
+         EndIf
+      EndIf
+   EndIf
+
+   ; Convert the timeout from seconds into number of polls.
+   _iGiveSpaceTimeout = 0
+   If (iTimeout)
+      _iGiveSpaceTimeout = ((iTimeout / _fMcmPollTime) As Int) + 1
+   EndIf
+
+   _szGiveSpaceModId = szModId
+   _aAliasGiveSpaceTarget.ForceRefTo(oTarget)
+   If (1 == iAlias)
+      _aAliasGiveSpace1.ForceRefTo(aActor)
+   ElseIf (2 == iAlias)
+      _aAliasGiveSpace2.ForceRefTo(aActor)
+   Else
+      _aAliasGiveSpace3.ForceRefTo(aActor)
+   EndIf
+
+   ; If we are forcing the same actor to the same package be sure to re-calculate his package.
+   If (aMovingNpc && (aMovingNpc == aActor))
+      ReEvaluatePackage(aActor)
+   EndIf
+   ;Off-DebugTrace("TraceEvent GiveSpace: Done")
+   Return iReturnCode
+EndFunction
+
+Function GiveSpaceClear(String szModId)
+   If (szModId != _szGiveSpaceModId)
+      Return
+   EndIf
+   _iGiveSpaceTimeout = 0
+   _szGiveSpaceModId = ""
+   _aAliasGiveSpaceTarget.Clear()
+   _aAliasGiveSpace1.Clear()
+   _aAliasGiveSpace2.Clear()
+   _aAliasGiveSpace3.Clear()
+EndFunction
+
+String Function GetApproachModId()
+   Return _szApproachModId
+EndFunction
+
+String Function GetMoveToLocationModId()
+   Return _szMoveToLocationModId
+EndFunction
+
+String Function GetMoveToObjectModId()
+   Return _szMoveToObjectModId
+EndFunction
+
+String Function GetGiveSpaceModId()
+   Return _szGiveSpaceModId
 EndFunction
 
 ; This function prevents multiple mods from handling a DFW_CallForHelp event.  Only handle the
@@ -5418,14 +7055,26 @@ Bool Function HandleCallForAttention()
    Return False
 EndFunction
 
+; Indicates if a callout was made recently.
+Bool Function WasCallOutRecent(Bool bAttention=True, Bool bHelp=True)
+   Return ((bAttention && _bCallingForAttention) || (bHelp && _bCallingForHelp) || \
+           _iCallOutTimeout)
+EndFunction
+
 ; Indicates the call for help or attention has been handled and should no longer be considered
 ; in progress.
 Function CallOutDone()
    _iCallOutType = 0
-   _iCallOutTimeout = 0
    _iCallOutResponse = 0
    _bCallingForAttention = False
    _bCallingForHelp      = False
+EndFunction
+
+; Resets the timeout for the player calling out.  This is intended for when the player is
+; calling out/protesting during a scene.  By resetting the timeout we can detect if the player
+; continues protesting or not.
+Function CallOutReset()
+   _iCallOutTimeout = 0
 EndFunction
 
 ; Forces an actor to re-evaluate his AI package by forcing him into an alias and then removing
@@ -5438,7 +7087,103 @@ Function ReEvaluatePackage(Actor aActor)
       _aAliasMoveToLocation.Clear()
    ElseIf (_aAliasMoveToObject.ForceRefIfEmpty(aActor))
       _aAliasMoveToObject.Clear()
+   ElseIf (_aaAliasHover[0].ForceRefIfEmpty(aActor))
+      _aaAliasHover[0].Clear()
+   ElseIf (_aaAliasHover[1].ForceRefIfEmpty(aActor))
+      _aaAliasHover[1].Clear()
+   ElseIf (_aaAliasHover[2].ForceRefIfEmpty(aActor))
+      _aaAliasHover[2].Clear()
    EndIf
    aActor.EvaluatePackage()
 EndFunction
 
+Function TransferItemsProcessItem(Form oItem=None, Int iCount=0, Bool bSilent=True)
+   ; Check for invalid items, gold and restraints.
+   If (!oItem || (_oGold == oItem) || (_oZazRestraintHider == oItem) || \
+       (_oZbfRestraintHider == oItem) || oItem.HasKeyword(_oKeywordZadInventoryDevice) || \
+        oItem.HasKeyword(_oKeywordZadLockable) || oItem.HasKeyword(_oKeywordZbfWornDevice))
+      Return
+   EndIf
+
+   ; TODO: Ignore any items that are worn.
+
+   ; Make sure we know how many items to process.
+   If (!iCount)
+      iCount = _aPlayer.GetItemCount(oItem)
+   EndIf
+
+   If (_oLockpick == oItem)
+      ; Dispose of any lock picks the player may have.
+      _aPlayer.RemoveItem(oItem, iCount, abSilent=bSilent)
+      Return
+   EndIf
+
+   ; Handle keys and no sale items separately.
+   If (oItem.HasKeyword(_oKeywordVendorNoSale) || oItem.HasKeyword(_oKeywordVendorItemKey))
+      ObjectReference oChest = _oCollectorsSpecialChest
+      If ((_oDeviousKeyChastity == oItem) || (_oDeviousKeyPiercings == oItem) || \
+          (_oDeviousKeyRestraints == oItem) || (_oFtmChastityKey == oItem) || \
+          (_oFtmRestraintKey == oItem) || (_oFtmPiercingTool == oItem) || \
+          (_oDclKeyBody == oItem) || (_oDclKeyHand == oItem) || \
+          (_oDclKeyHead == oItem) || (_oDclKeyHighSecurity == oItem) || \
+          (_oDclKeyLeg == oItem))
+         ; Restraint keys should be disposed of.
+         oChest = None
+      EndIf
+      _aPlayer.RemoveItem(oItem, iCount, akOtherContainer=oChest, abSilent=bSilent)
+      Return
+   EndIf
+
+   ; Regular items (Anything remaining) go to the new items chest.
+   _aPlayer.RemoveItem(oItem, iCount, akOtherContainer=_oCollectorsNewItemChest, \
+                       abSilent=bSilent)
+EndFunction
+
+; WARNING: This function only handles quest items correctly when oItem is set to None and all
+;          of the player's items are transferred to the collector.
+; Transfers items to The Collector's New Items chests.
+;  - Gold and worn items are left alone.
+;  - Unworn BDSM items are disposed of.
+;  - Keys and no-sale items are moved directly into the Special Items chest.
+;  - Others are moved to the New Items chest where they will be shearched for quest items later.
+; oItem: If set to None all of the player's items will be processed.
+; iCount: If set to 0 all of the specified items in the player's inventory will be transferred.
+; bSilent: If oItem is set to None all items will be transferred silently regardless of this.
+Function TransferItems(Form oItem=None, Int iCount=0, Bool bSilent=True)
+   If (!oItem)
+      Int iIndex = _aPlayer.GetNumItems() - 1
+      Log("Moving " + (iIndex + 1) + " items.", DL_CRIT, DC_GENERAL)
+      While (0 <= iIndex)
+         oItem = _aPlayer.GetNthForm(iIndex)
+
+Int iKeywordIndex = oItem.GetNumKeywords() - 1
+String szDisplayString = "Moving " + (iIndex + 1) + ": 0x" + _qDfwUtil.ConvertHexToString(oItem.GetFormId(), 8) + " - " + oItem.GetName() + "\n"
+While (0 <= iKeywordIndex)
+   szDisplayString += iKeywordIndex + "-" + oItem.GetNthKeyword(iKeywordIndex) + "\n"
+   iKeywordIndex -= 1
+EndWhile
+Debug.Trace(szDisplayString)
+
+         ; Use a helper function to process each item.
+         TransferItemsProcessItem(oItem, iCount, bSilent)
+
+         iIndex -= 1
+      EndWhile
+      Log("Done moving items.", DL_CRIT, DC_GENERAL)
+      Return
+   EndIf
+
+   ; Use a helper function to process the item.
+   TransferItemsProcessItem(oItem, iCount, bSilent)
+EndFunction
+
+;Function CheckForQuestItems()
+;The basic idea is:
+;   Maybe fade out the screen so the user doesn't see what is going on?
+;   Move all of the player's items to a temporary player item chest.
+;   Move all items from the new items chest into the player's inventory where they can be
+;      affected by the quest item related function.
+;   Run the quest item related function to move all non quest items to the merchant chest.
+;      _aPlayer.RemoveAllItems(akTransferTo=_oCollectorsNewItemChest, abRemoveQuestItems=False)
+;   Move all remaining (quest) items to the collector's special items chest.
+;EndFunction
