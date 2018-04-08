@@ -47,6 +47,7 @@ Import StringUtil
 ; Constants for the add/remove menu items.
 String S_ADD_NONE = "Add None"
 String S_REM_NONE = "Remove None"
+String S_ERROR    = "Error"
 
 ; Clothing slot (CS_) constants.
 Int CS_START     = 0x00000001
@@ -87,28 +88,19 @@ Bool _bSecureHardcore
 Bool _bInfoForPlayer
 
 ; *** Toggle Options ***
-Bool _bDefModLeashVisible
-Bool _bDefLeashInterrupt
-Bool _bDefBlockNipple
-Bool _bDefBlockVagina
-Bool _bDefBlockHobble
-Bool _bDefBlockShoes
-Bool _bDefBlockArmour
-Bool _bDefBlockArms
-Bool _bDefBlockLeash
-Bool _bDefSaveGameConfirm
-Bool _bDefBlockOnGameLoad
-Bool _bDefSetDeviousFix
 Bool Property bModLeashVisible        Auto
 Bool Property bModLeashInterrupt      Auto
-Bool Property bBlockNipple Auto
-Bool Property bBlockVagina Auto
-Bool Property bBlockHobble Auto
-Bool Property bBlockShoes  Auto
-Bool Property bBlockArmour Auto
-Bool Property bBlockArms   Auto
-Bool Property bBlockLeash  Auto
+Bool Property bModFadeInUseDoor       Auto
+Bool Property bModCrawlBlockActivate  Auto
+Bool Property bBlockNipple            Auto
+Bool Property bBlockVagina            Auto
+Bool Property bBlockHobble            Auto
+Bool Property bBlockShoes             Auto
+Bool Property bBlockArmour            Auto
+Bool Property bBlockArms              Auto
+Bool Property bBlockLeash             Auto
 Bool Property bSaveGameConfirm        Auto
+Bool Property bConNativeSaves         Auto
 Bool Property bModBlockOnGameLoad     Auto
 Bool Property bSettingsDetectUnequip  Auto
 Bool Property bEasternHouseIsWindhelm Auto
@@ -116,51 +108,10 @@ Bool Property bShutdownMod            Auto
 Bool Property bShutdownSecure         Auto
 
 ; *** Float Slider Options ***
-Float _fDefSetPollTime
-Float _fDefSaveMinTime
 Float Property fSettingsPollTime Auto
 Float Property fModSaveMinTime   Auto
 
 ; *** Integer Slider Options ***
-Int _iDefSetPollNearby
-Int _iDefSetNearbyDistance
-Int _iDefVulNude
-Int _iDefVulCollar
-Int _iDefVulBinder
-Int _iDefVulGagged
-Int _iDefVulRestraints
-Int _iDefVulLeashed
-Int _iDefVulFurniture
-Int _iDefVulNight
-Int _iDefWillingGuards
-Int _iDefWillingMerchants
-Int _iDefWillingBdsm
-Int _iDefRapeRedressTimeout
-Int _iDefNakedRedressTimeout
-Int _iDefLeashCombatChance
-Int _iDefLeashDamage
-Int _iDefLeashMinLength
-Int _iDefSlaThreshold
-Int _iDefSlaAdjustedMin
-Int _iDefSlaAdjustedMax
-Int _iDefDialogueTargetStyle
-Int _iDefDialogueTargetRetries
-Int _iDefCallTimeout
-Int _iDefSaveGameStyle
-Int _iDefLogLevel
-Int _iDefLogLevelScreenGeneral
-Int _iDefLogLevelScreenDebug
-Int _iDefLogLevelScreenStatus
-Int _iDefLogLevelScreenMaster
-Int _iDefLogLevelScreenNearby
-Int _iDefLogLevelScreenLeash
-Int _iDefLogLevelScreenEquip
-Int _iDefLogLevelScreenArousal
-Int _iDefLogLevelScreenInteraction
-Int _iDefLogLevelScreenLocation
-Int _iDefLogLevelScreenRedress
-Int _iDefLogLevelScreenSave
-Int _iDefVulNakedReduce
 Int Property iSettingsSecurity          Auto
 Int Property iSettingsPollNearby        Auto
 Int Property iSettingsNearbyDistance    Auto
@@ -181,10 +132,16 @@ Int Property iModLeashCombatChance      Auto
 Int Property iModLeashDamage            Auto
 Int Property iModLeashMinLength         Auto
 Int Property iModSlaThreshold           Auto
+Int Property iModMultiPoleAnimation     Auto
+Int Property iModMultiWallAnimation     Auto
 Int Property iModSlaAdjustedMin         Auto
 Int Property iModSlaAdjustedMax         Auto
 Int Property iModDialogueTargetStyle    Auto
 Int Property iModDialogueTargetRetries  Auto
+Int Property iModTogglePoseKey          Auto
+Int Property iModTogglePose             Auto
+Int Property iModCyclePoseKey           Auto
+Int Property iModCollectorSpecialCost   Auto
 Int Property iModHelpKey                Auto
 Int Property iModAttentionKey           Auto
 Int Property iModCallTimeout            Auto
@@ -207,7 +164,6 @@ Int Property iLogLevelScreenSave        Auto
 Int Property iVulnerabilityNakedReduce  Auto
 
 ; *** Enumeration Options ***
-Int _iDefModLeashStyle
 Int Property iModLeashStyle Auto
 
 ; *** Lists and Advanced Options ***
@@ -239,64 +195,48 @@ Bool _bDebug
 ;***********************************************************************************************
 ;***                                    INITIALIZATION                                       ***
 ;***********************************************************************************************
-Function UpdateScript()
+Function UpdateScript(Int iUpgradeFrom=-1)
+   ; If we weren't explicitly given a version to upgrade from, assume the current version.
+   ; Note: We can't use CurrentVersion directly as it can be updated by the MCM scripts.
+   ;       This happens if OnVersionUpdate() returns due to init already proceeding.
+   If (-1 == iUpgradeFrom)
+      iUpgradeFrom = CurrentVersion
+   EndIf
+
    ; Hardcore mode is turned off on all script updates.
    _bSecureHardcore = False
 
-   Debug.Trace("[DFW-MCM] Updating Script: " + CurrentVersion + " => " + GetVersion())
-   Debug.Notification("[DFW-MCM] Updating Script: " + CurrentVersion + " => " + GetVersion())
+   Debug.Trace("[DFW-MCM] Updating Script: " + iUpgradeFrom + " => " + GetVersion())
+   Debug.Notification("[DFW-MCM] Updating Script: " + iUpgradeFrom + " => " + GetVersion())
 
    ; Very basic initialization.
-   If (1 > CurrentVersion)
+   If (1 > iUpgradeFrom)
       _aPlayer = Game.GetPlayer()
       _qFramework = ((Self As Quest) As dfwDeviousFramework)
    EndIf
 
    ; Historical configuration...
-   If (2 > CurrentVersion)
-      ; Initialize all default values.
-      _bDefSetDeviousFix       = False
-      _bDefBlockNipple         = True
-      _bDefBlockVagina         = True
-      _bDefBlockHobble         = True
-      _bDefBlockShoes          = True
-      _bDefBlockArmour         = True
-      _bDefBlockArms           = True
-      _fDefSetPollTime         = 1.0
-      _iDefSetPollNearby       = 5
-      _iDefSetNearbyDistance   = 40
-      _iDefVulNude             = 15
-      _iDefVulNakedReduce      = 50
-      _iDefVulCollar           = 25
-      _iDefVulBinder           = 20
-      _iDefVulGagged           = 20
-      _iDefVulRestraints       = 10
-      _iDefVulNight            =  5
-      _iDefLogLevel            =  5
-      _iDefNakedRedressTimeout = 20
-      _iDefRapeRedressTimeout  = 90
-
-      fSettingsPollTime = _fDefSetPollTime
-
-      iSettingsPollNearby = _iDefSetPollNearby
-      iSettingsNearbyDistance = _iDefSetNearbyDistance
-      bSettingsDetectUnequip    = _bDefSetDeviousFix
-      bBlockNipple              = _bDefBlockNipple
-      bBlockVagina              = _bDefBlockVagina
-      bBlockHobble              = _bDefBlockHobble
-      bBlockShoes               = _bDefBlockShoes
-      bBlockArmour              = _bDefBlockArmour
-      bBlockArms                = _bDefBlockArms
-      iVulnerabilityNude        = _iDefVulNude
-      iVulnerabilityNakedReduce = _iDefVulNakedReduce
-      iVulnerabilityCollar      = _iDefVulCollar
-      iVulnerabilityBinder      = _iDefVulBinder
-      iVulnerabilityGagged      = _iDefVulGagged
-      iVulnerabilityRestraints  = _iDefVulRestraints
-      iVulnerabilityNight       = _iDefVulNight
-      iModRapeRedressTimeout    = _iDefRapeRedressTimeout
-      iModNakedRedressTimeout   = _iDefNakedRedressTimeout
-      iLogLevel                 = _iDefLogLevel
+   If (2 > iUpgradeFrom)
+      fSettingsPollTime         =  1.0
+      iSettingsPollNearby       =  5
+      iSettingsNearbyDistance   = 65
+      bSettingsDetectUnequip    = False
+      bBlockNipple              = True
+      bBlockVagina              = True
+      bBlockHobble              = True
+      bBlockShoes               = True
+      bBlockArmour              = True
+      bBlockArms                = True
+      iVulnerabilityNude        = 15
+      iVulnerabilityNakedReduce = 50
+      iVulnerabilityCollar      = 25
+      iVulnerabilityBinder      = 20
+      iVulnerabilityGagged      = 20
+      iVulnerabilityRestraints  = 10
+      iVulnerabilityNight       =  5
+      iModRapeRedressTimeout    = 90
+      iModNakedRedressTimeout   = 20
+      iLogLevel                 =  5
 
       _aszSlotList = New String[32]
       _aszSlotList[0]  = "Head           0x00000001"   ; 30
@@ -341,17 +281,14 @@ Function UpdateScript()
       _aszDefSetSlotsWaist[1] = _aszSlotList[22]
    EndIf
 
-   If (3 > CurrentVersion)
+   If (3 > iUpgradeFrom)
       ; 0 = LS_AUTO
-      ; Don't access LS_AUTO here to avoid deadlocks.
-      _iDefModLeashStyle = 0
-      iModLeashStyle = _iDefModLeashStyle
-      _bDefModLeashVisible = True
-      bModLeashVisible = _bDefModLeashVisible
-      _iDefVulLeashed = 10
-      iVulnerabilityLeashed = _iDefVulLeashed
-      _bDefBlockLeash = True
-      bBlockLeash = _bDefBlockLeash
+      ; Don't access LS_AUTO (from the main script) here to avoid deadlocks.
+      iModLeashStyle        = 0
+      bModLeashVisible      = True
+      iVulnerabilityLeashed = 10
+      bBlockLeash           = True
+
       _bInfoForPlayer = True
 
       ; Block List Exceptions
@@ -364,41 +301,34 @@ Function UpdateScript()
       aiSettingsSlotsWaist[1] = _qDfwUtil.ConvertStringToHex(_aszDefSetSlotsWaist[1])
    EndIf
 
-   If (4 > CurrentVersion)
-      _bDefLeashInterrupt = True
-      bModLeashInterrupt = _bDefLeashInterrupt
+   If (4 > iUpgradeFrom)
+      bModLeashInterrupt = True
    EndIf
 
    ; Updated the default nearby distance from 40 to 65.
-   If (5 > CurrentVersion)
-      _iDefSetNearbyDistance   = 65
+   If (5 > iUpgradeFrom)
       ; If the distance setting equals the previous default update it now.
       If (40 == iSettingsNearbyDistance)
-         iSettingsNearbyDistance = _iDefSetNearbyDistance
+         iSettingsNearbyDistance = 65
       EndIf
 
       ; Added SexLab Aroused (SLA) arousal adjustments in version 5.
-      _iDefSlaThreshold   =  3
-      _iDefSlaAdjustedMin =  5
-      _iDefSlaAdjustedMax = 50
-      iModSlaThreshold   = _iDefSlaThreshold
-      iModSlaAdjustedMin = _iDefSlaAdjustedMin
-      iModSlaAdjustedMax = _iDefSlaAdjustedMax
+      iModSlaThreshold   =  3
+      iModSlaAdjustedMin =  5
+      iModSlaAdjustedMax = 50
 
       ; Made leash damage configurable.
-      _iDefLeashDamage = 12
-      iModLeashDamage  = _iDefLeashDamage
+      iModLeashDamage  = 12
    EndIf
 
    ; Added a vulnerability configuration for BDSM furniture in version 6.
-   If (6 > CurrentVersion)
-      _iDefVulFurniture       = 10
-      iVulnerabilityFurniture = _iDefVulFurniture
+   If (6 > iUpgradeFrom)
+      iVulnerabilityFurniture = 10
    EndIf
 
    ; Changed the default security setting to allow changing settings in new games where the
    ; player is already vulnerable in version 7.
-   If (7 > CurrentVersion)
+   If (7 > iUpgradeFrom)
       ; Set the Security level to the maximum.  This does not prevent settings to be changed
       ; when installing the mod into games where the player is already vulnerable.
       iSettingsSecurity = 100
@@ -408,96 +338,65 @@ Function UpdateScript()
    EndIf
 
    ; Separated logging into different classes.
-   If (8 > CurrentVersion)
-      _iDefLogLevelScreenGeneral = 3
-      _iDefLogLevelScreenStatus  = 3
-      _iDefLogLevelScreenMaster  = 3
-      _iDefLogLevelScreenNearby  = 3
-      _iDefLogLevelScreenLeash   = 3
-      _iDefLogLevelScreenEquip   = 3
-
-      iLogLevelScreenGeneral = _iDefLogLevelScreenGeneral
-      iLogLevelScreenStatus  = _iDefLogLevelScreenStatus
-      iLogLevelScreenMaster  = _iDefLogLevelScreenMaster
-      iLogLevelScreenNearby  = _iDefLogLevelScreenNearby
-      iLogLevelScreenLeash   = _iDefLogLevelScreenLeash
-      iLogLevelScreenEquip   = _iDefLogLevelScreenEquip
+   If (8 > iUpgradeFrom)
+      iLogLevelScreenGeneral = 3
+      iLogLevelScreenStatus  = 3
+      iLogLevelScreenMaster  = 3
+      iLogLevelScreenNearby  = 3
+      iLogLevelScreenLeash   = 3
+      iLogLevelScreenEquip   = 3
    EndIf
 
-   If (9 > CurrentVersion)
-      _bDefBlockOnGameLoad = False
-      bModBlockOnGameLoad = _bDefBlockOnGameLoad
+   If (9 > iUpgradeFrom)
+      bModBlockOnGameLoad = False
    EndIf
 
-   If (10 > CurrentVersion)
+   If (10 > iUpgradeFrom)
       ; 2 = DS_MANUAL
-      ; Don't access DS_MANUAL here to avoid deadlocks.
-      _iDefDialogueTargetStyle = 2
-      iModDialogueTargetStyle = _iDefDialogueTargetStyle
+      ; Don't access DS_MANUAL (from the main script) here to avoid deadlocks.
+      iModDialogueTargetStyle = 2
    EndIf
 
-   If (11 > CurrentVersion)
-      _iDefWillingGuards    =  10
-      _iDefWillingMerchants =   3
-      _iDefWillingBdsm      = -25
-
-      iDispWillingGuards    = _iDefWillingGuards
-      iDispWillingMerchants = _iDefWillingMerchants
-      iDispWillingBdsm      = _iDefWillingBdsm
-
-      _iDefLogLevelScreenArousal = 3
-      iLogLevelScreenArousal     = _iDefLogLevelScreenArousal
-
-      _iDefDialogueTargetRetries = 0
-      iModDialogueTargetRetries  = _iDefDialogueTargetRetries
+   If (11 > iUpgradeFrom)
+      iDispWillingGuards        =  10
+      iDispWillingMerchants     =   3
+      iDispWillingBdsm          = -25
+      iLogLevelScreenArousal    =   3
+      iModDialogueTargetRetries =   0
    EndIf
 
-   If (12 > CurrentVersion)
+   If (12 > iUpgradeFrom)
       iModHelpKey      = 0x00
       iModAttentionKey = 0x00
 
-      _iDefCallTimeout               = 30
-      _iDefLeashMinLength            = 550
-      _iDefLogLevelScreenRedress     = 3
-      _iDefLogLevelScreenDebug       = 3
-      _iDefLogLevelScreenInteraction = 3
-      _iDefLogLevelScreenLocation    = 3
-
-      iModCallTimeout            = _iDefCallTimeout
-      iModLeashMinLength         = _iDefLeashMinLength
-      iLogLevelScreenRedress     = _iDefLogLevelScreenRedress
-      iLogLevelScreenDebug       = _iDefLogLevelScreenDebug
-      iLogLevelScreenInteraction = _iDefLogLevelScreenInteraction
-      iLogLevelScreenLocation    = _iDefLogLevelScreenLocation
+      iModCallTimeout            =  30
+      iModLeashMinLength         = 550
+      iLogLevelScreenRedress     =   3
+      iLogLevelScreenDebug       =   3
+      iLogLevelScreenInteraction =   3
+      iLogLevelScreenLocation    =   3
    EndIf
 
-   If (13 > CurrentVersion)
-      _iDefLeashCombatChance = 20
-      iModLeashCombatChance  = _iDefLeashCombatChance
+   If (13 > iUpgradeFrom)
+      iModLeashCombatChance  = 20
    EndIf
 
-   If (14 > CurrentVersion)
-      _iDefSaveGameStyle   = 0
-      _bDefSaveGameConfirm = False
-
-      iModSaveGameStyle = _iDefSaveGameStyle
-      bSaveGameConfirm  = _bDefSaveGameConfirm
+   If (14 > iUpgradeFrom)
+      iModSaveGameStyle = 0
+      bSaveGameConfirm  = False
    EndIf
 
-   If (15 > CurrentVersion)
-      _iDefLogLevelScreenSave = 3
-      _fDefSaveMinTime        = 5.0
-
+   If (15 > iUpgradeFrom)
       iModSaveKey         = 0x00
-      iLogLevelScreenSave = _iDefLogLevelScreenSave
-      fModSaveMinTime     = _fDefSaveMinTime
+      iLogLevelScreenSave = 3
+      fModSaveMinTime     = 5.0
    EndIf
 
-   If (16 > CurrentVersion)
+   If (16 > iUpgradeFrom)
       bEasternHouseIsWindhelm = False
    EndIf
 
-   If (17 > CurrentVersion)
+   If (17 > iUpgradeFrom)
       Pages = New String[8]
       Pages[0] = "Framework Settings"
       Pages[1] = "Vulnerability"
@@ -513,6 +412,24 @@ Function UpdateScript()
       bShutdownSecure          = False
    EndIf
 
+   If (18 > iUpgradeFrom)
+      bConNativeSaves = False
+   EndIf
+
+   If (19 > iUpgradeFrom)
+      bModFadeInUseDoor = True
+   EndIf
+
+   If (20 > iUpgradeFrom)
+      iModCollectorSpecialCost = 10000
+      iModMultiPoleAnimation   =    -7
+      iModMultiWallAnimation   =    -7
+      iModTogglePoseKey        =  0x00
+      iModTogglePose           =     1
+      iModCyclePoseKey         =  0x00
+      bModCrawlBlockActivate   =  True
+   EndIf
+
    ; Any time the script is updated have the main script sync it's parameters.
    ; Give the main script some time to initialize first.
    Utility.Wait(3.0)
@@ -522,10 +439,17 @@ EndFunction
 ; Version of the MCM script.
 ; Unrelated to the Devious Framework Version.
 Int Function GetVersion()
+; zxc
+If (7 != iConConsoleVulnerability)
+   iConConsoleVulnerability = 7
+EndIf
+If (90 != iModCallTimeout)
+   iModCallTimeout = 90
+EndIf
    ; Reset the version number.
-   ;If (14 < CurrentVersion)
-   ;   CurrentVersion = 14
-   ;EndIf
+   If (19 < CurrentVersion)
+      CurrentVersion = 19
+   EndIf
 
    ; Update all quest variables upon loading each game.
    ; There are too many things that can cause them to become invalid.
@@ -533,23 +457,32 @@ Int Function GetVersion()
    _qDfwUtil = ((Self As Quest) As dfwUtil)
    _qZbfPlayerSlot = zbfBondageShell.GetApi().FindPlayer()
 
-   Return 17
+   Return 20
 EndFunction
 
 Event OnConfigInit()
-   Debug.Trace("[DFW-MCM] Script Initialized.")
+   Debug.Trace("[DFW-MCM] TraceEvent OnConfigInit")
 
-   If (!_bInitBegun)
-      _bInitBegun = True
-      UpdateScript()
+   If (_bInitBegun)
+      Debug.Trace("[DFW-MCM] TraceEvent OnConfigInit: Done (Init Begun)")
+      Return
    EndIf
+   _bInitBegun = True
+   UpdateScript(0)
+   Debug.Trace("[DFW-MCM] TraceEvent OnConfigInit: Done")
 EndEvent
 
 Event OnVersionUpdate(Int iNewVersion)
-   If (!_bInitBegun)
-      _bInitBegun = True
-      UpdateScript()
+   Debug.Trace("[DFW-MCM] TraceEvent OnVersionUpdate")
+
+   If (_bInitBegun)
+      Debug.Trace("[DFW-MCM] TraceEvent OnVersionUpdate: Done (Init Begun)")
+      Return
    EndIf
+
+   _bInitBegun = True
+   UpdateScript()
+   Debug.Trace("[DFW-MCM] TraceEvent OnVersionUpdate: Done")
 EndEvent
 
 
@@ -568,6 +501,20 @@ String Function LeashStyleToString(Int iStyle)
    ElseIf (_qFramework.LS_TELEPORT == iStyle)
       Return "Teleport"
    EndIf
+   Return S_ERROR
+EndFunction
+
+String Function PoseToString(Int iPose)
+   If (0 == iPose)
+      Return "Default Idle"
+   ElseIf (1 == iPose)
+      Return "Kneeling"
+   ElseIf (2 == iPose)
+      Return "Kneeling Spread"
+   ElseIf (3 == iPose)
+      Return "Crawling"
+   EndIf
+   Return S_ERROR
 EndFunction
 
 String Function DialogueStyleToString(Int iStyle)
@@ -578,6 +525,7 @@ String Function DialogueStyleToString(Int iStyle)
    ElseIf (_qFramework.DS_MANUAL == iStyle)
       Return "Manual"
    EndIf
+   Return S_ERROR
 EndFunction
 
 String Function SaveGameStyleToString(Int iStyle)
@@ -588,6 +536,7 @@ String Function SaveGameStyleToString(Int iStyle)
    ElseIf (2 == iStyle)
       Return "Full Control"
    EndIf
+   Return S_ERROR
 EndFunction
 
 String Function GetFactionName(Faction oFaction)
@@ -620,11 +569,85 @@ String Function GetFactionName(Faction oFaction)
          szFactionName = "WE Aggressive Adventurer"
       ElseIf (0x0010F5A0 == iFormId)
          szFactionName = "Companions Training Special Combat Hate"
+      ElseIf (0x0002817F == iFormId)
+         szFactionName = "TownDawnstarFaction"
+      ElseIf (0x0002817B == iFormId)
+         szFactionName = "TownDragonBridgeFaction"
+      ElseIf (0x00028177 == iFormId)
+         szFactionName = "TownFalkreathFaction"
+      ElseIf (0x00028185 == iFormId)
+         szFactionName = "TownIvarsteadFaction"
+      ElseIf (0x0002817A == iFormId)
+         szFactionName = "TownKarthwastenFaction"
+      ElseIf (0x00028178 == iFormId)
+         szFactionName = "TownMarkarthFaction"
+      ElseIf (0x0002817D == iFormId)
+         szFactionName = "TownMorthalFaction"
+      ElseIf (0x00028179 == iFormId)
+         szFactionName = "TownOldHroldanFaction"
+      ElseIf (0x00028186 == iFormId)
+         szFactionName = "TownRiftenFaction"
+      ElseIf (0x00013481 == iFormId)
+         szFactionName = "TownRiverwoodFaction"
+      ElseIf (0x00028174 == iFormId)
+         szFactionName = "TownRoriksteadFaction"
+      ElseIf (0x00028184 == iFormId)
+         szFactionName = "TownShorsStoneFaction"
+      ElseIf (0x0002817C == iFormId)
+         szFactionName = "TownSolitudeFaction"
+      ElseIf (0x00028172 == iFormId)
+         szFactionName = "TownWhiterunFaction"
+      ElseIf (0x00028173 == iFormId)
+         szFactionName = "TownWindhelmFaction"
+      ElseIf (0x00028181 == iFormId)
+         szFactionName = "TownWinterholdFaction"
       Else
          szFactionName = "0x" + _qDfwUtil.ConvertHexToString(iFormId, 8)
       EndIf
    EndIf
    Return szFactionName
+EndFunction
+
+String Function GetMultiAnimationName(Int iAnimationIndex)
+   If (-6 == iAnimationIndex)
+      Return "Cycle Real"
+   ElseIf (-5 == iAnimationIndex)
+      Return "Cycle Alt"
+   ElseIf (-4 == iAnimationIndex)
+      Return "Cycle Both"
+   ElseIf (-3 == iAnimationIndex)
+      Return "Random Real"
+   ElseIf (-2 == iAnimationIndex)
+      Return "Random Alt"
+   ElseIf (-1 == iAnimationIndex)
+      Return "Random Both"
+   ElseIf (0 == iAnimationIndex)
+      Return "Arms Back"
+   ElseIf (1 == iAnimationIndex)
+      Return "Kneeling"
+   ElseIf (2 == iAnimationIndex)
+      Return "Arms Up"
+   ElseIf (3 == iAnimationIndex)
+      Return "Arms Overhead"
+   ElseIf (4 == iAnimationIndex)
+      Return "Upside Down"
+   ElseIf (5 == iAnimationIndex)
+      Return "Suspended"
+   ElseIf (6 == iAnimationIndex)
+      Return "Alt Standing Straight"
+   ElseIf (7 == iAnimationIndex)
+      Return "Alt Standing Spread"
+   ElseIf (8 == iAnimationIndex)
+      Return "Alt Hanging Spread"
+   ElseIf (9 == iAnimationIndex)
+      Return "Alt Hanging Weights"
+   ElseIf (10 == iAnimationIndex)
+      Return "Alt Bent Over"
+   ElseIf (11 == iAnimationIndex)
+      Return "Alt Standing Eagle"
+   EndIf
+   ; -7 == Recommended
+   Return "Recommended"
 EndFunction
 
 String[] Function CreateWornOptions(String szFirstEntry, Actor oActor=None, \
@@ -643,9 +666,7 @@ String[] Function CreateWornOptions(String szFirstEntry, Actor oActor=None, \
    Int iSlotsChecked
 
    ; Ignore items that would be in reserved slots.
-   iSlotsChecked += CS_RESERVED1
-   iSlotsChecked += CS_RESERVED2
-   iSlotsChecked += CS_RESERVED3
+   iSlotsChecked += (CS_RESERVED1 + CS_RESERVED2 + CS_RESERVED3)
 
    Int iSearchMask = CS_START
    While (iSearchMask < CS_MAX)
@@ -694,7 +715,31 @@ String Function GetSlotString(Int iSlot, Bool bFancyInfo=False)
    Return szPureHex
 EndFunction
 
+; Checks if this mod needs to start registering for a newly defined key.  Also checks if the
+; mod should deregister for keypresses.
+; Handle key registration in this script.  Events should be sent to all scripts in the same quest.
+Function RegisterNewKey(Int iOldKey, Int iNewKey)
+   ; If the new key has been cleared we only need to consider deregistering.
+   If (!iNewKey)
+      If (iOldKey && ((iModTogglePoseKey != iOldKey) && (iModCyclePoseKey != iOldKey) && \
+                      (iModHelpKey != iOldKey) &&       (iModAttentionKey != iOldKey) && \
+                      (iModSaveKey != iOldKey)))
+         UnregisterForKey(iOldKey)
+      EndIf
+      Return
+   EndIf
+
+   ; Register for the new event if it is not already registered.
+   If ((iModTogglePoseKey != iNewKey) && (iModCyclePoseKey != iNewKey) && \
+       (iModHelpKey != iNewKey) &&       (iModAttentionKey != iNewKey) && \
+       (iModSaveKey != iNewKey))
+      RegisterForKey(iNewKey)
+   EndIf
+EndFunction
+
 Bool Function IsSecure()
+   Return False
+
    ; If the security setting is set to 100 don't lock the settings at all.
    If (100 == iSettingsSecurity)
       Return False
@@ -960,8 +1005,20 @@ Function DisplayModFeaturesPage(Bool bSecure)
 
    AddEmptyOption()
    AddHeaderOption("Miscellaneous")
-   AddTextOptionST("ST_MOD_ENABLE_DIALOGUE",     "Greeting Dialogue Style",     DialogueStyleToString(iModDialogueTargetStyle))
-   AddSliderOptionST("ST_MOD_DIALOGUE_RETRIES",  "Dialogue Target Retries",     iModDialogueTargetRetries)
+   AddTextOptionST("ST_MOD_ENABLE_DIALOGUE",    "Greeting Dialogue Style",   DialogueStyleToString(iModDialogueTargetStyle))
+   AddSliderOptionST("ST_MOD_DIALOGUE_RETRIES", "Dialogue Target Retries",   iModDialogueTargetRetries)
+   AddToggleOptionST("ST_MOD_FADE_IN_USE_DOOR", "Move NPC Nearby Use Doors", bModFadeInUseDoor)
+
+   AddEmptyOption()
+   AddHeaderOption("Pose Management")
+   AddKeyMapOptionST("ST_MOD_POSE_TOGGLE_KEY",     "Pose Toggle Key",       iModTogglePoseKey)
+   AddMenuOptionST("ST_MOD_POSE_TOGGLE",           "Toggle Pose",           PoseToString(iModTogglePose))
+   AddKeyMapOptionST("ST_MOD_POSE_CYCLE_KEY",      "Pose Cycle Key",        iModCyclePoseKey)
+   AddToggleOptionST("ST_MOD_POSE_CRAWL_ACTIVATE", "Crawl Blocks Activate", bModCrawlBlockActivate)
+
+   AddEmptyOption()
+   AddHeaderOption("The Collector")
+   AddTextOptionST("ST_COL_SPECIAL_COST", "Access Quest Items for ", iModCollectorSpecialCost + " gold")
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -1011,9 +1068,10 @@ Function DisplayGameControlPage(Bool bSecure)
    If (!bSaveGameConfirm || (2 != iModSaveGameStyle))
       iTempFlags = OPTION_FLAG_DISABLED
    EndIf
-   AddKeyMapOptionST("ST_CON_SAVE_KEY",       "Quick Save Key",                iModSaveKey, a_flags=iTempFlags)
-   AddSliderOptionST("ST_CON_SAVE_MIN_TIME",  "Minimum Save Time",             fModSaveMinTime, "{0}min", a_flags=iTempFlags)
-   AddSliderOptionST("ST_CON_CONSOLE_ACCESS", "Max Vulnerability for Console", iConConsoleVulnerability, a_flags=iTempFlags)
+   AddToggleOptionST("ST_CON_NATIVE_SAVES",   "Overwrite Normal Quick/Auto Games", bConNativeSaves, a_flags=iFlags)
+   AddKeyMapOptionST("ST_CON_SAVE_KEY",       "Quick Save Key",                    iModSaveKey, a_flags=iTempFlags)
+   AddSliderOptionST("ST_CON_SAVE_MIN_TIME",  "Minimum Save Time",                 fModSaveMinTime, "{0}min", a_flags=iTempFlags)
+   AddSliderOptionST("ST_CON_CONSOLE_ACCESS", "Max Vulnerability for Console",     iConConsoleVulnerability, a_flags=iTempFlags)
 
    ; Start on the second column.
    SetCursorPosition(1)
@@ -1035,6 +1093,11 @@ Function DisplayModCompatibilityPage(Bool bSecure)
 
    AddHeaderOption("Devices")
    AddToggleOptionST("ST_COMP_DD_FIX", "Detect Device Unequips", bSettingsDetectUnequip)
+
+   AddEmptyOption()
+   AddHeaderOption("Zaz Multi-Furniture Animations")
+   AddMenuOptionST("ST_MOD_MULTI_POLE_ANIM", "Mult-Pole", GetMultiAnimationName(iModMultiPoleAnimation), a_flags=iFlags)
+   AddMenuOptionST("ST_MOD_MULTI_WALL_ANIM", "Mult-Wall", GetMultiAnimationName(iModMultiWallAnimation), a_flags=iFlags)
 
    AddEmptyOption()
    AddHeaderOption("SexLab Aroused Base")
@@ -1149,9 +1212,17 @@ Function DisplayStatusPage(Bool bSecure)
    AddTextOption("Weapon Level",  _qFramework.GetWeaponLevel(),   a_flags=OPTION_FLAG_DISABLED)
    AddEmptyOption()
 
+   AddHeaderOption("Active Scene")
+   String szValue = _qFramework.GetCurrentScene()
+   If (!szValue)
+      szValue = "None"
+   EndIf
+   AddLabel("Current Scene: " + szValue)
+
+   AddEmptyOption()
    AddHeaderOption("Furniture")
    ObjectReference oCurrFurniture = _qZbfPlayerSlot.GetFurniture()
-   String szValue = "None"
+   szValue = "None"
    If (oCurrFurniture)
       szValue = oCurrFurniture.GetDisplayName()
    EndIf
@@ -1170,9 +1241,7 @@ Function DisplayStatusPage(Bool bSecure)
    Int iSlotsChecked
 
    ; Ignore items that would be in reserved slots.
-   iSlotsChecked += CS_RESERVED1
-   iSlotsChecked += CS_RESERVED2
-   iSlotsChecked += CS_RESERVED3
+   iSlotsChecked += (CS_RESERVED1 + CS_RESERVED2 + CS_RESERVED3)
 
    Actor aActor = _aPlayer
    If (!_bInfoForPlayer)
@@ -1229,10 +1298,14 @@ Function DisplayDebugPage(Bool bSecure)
    ; Start on the second column.
    SetCursorPosition(1)
 
+   AddLabel("Current Game Time: " + Utility.GetCurrentGameTime())
+   AddLabel("Current Real Time: " + Utility.GetCurrentRealTime())
+
    Int iShutdownFlags = OPTION_FLAG_NONE
    If (bShutdownSecure)
       iShutdownFlags = iFlags
    EndIf
+   AddEmptyOption()
    AddToggleOptionST("ST_DBG_SHUTDOWN",     "Shutdown Mod",            bShutdownMod, a_flags=iShutdownFlags)
    AddToggleOptionST("ST_DBG_SHUTDOWN_SEC", "...Make Shutdown Secure", bShutdownSecure, a_flags=iShutdownFlags)
 
@@ -1245,10 +1318,13 @@ Function DisplayDebugPage(Bool bSecure)
       Actor aNearby = _qFramework.GetNearestActor(0)
       szTarget = aNearby.GetDisplayName()
    EndIf
-   AddMenuOptionST("ST_DBG_REM_FACTION",    "Remove From Faction",  szTarget)
-   AddTextOptionST("ST_DBG_MOD_EVENTS",     "Fix Mod Events",       "Fix Now")
-   AddTextOptionST("ST_SAFEWORD_FURNITURE", "Safeword: Furniture",  "Use Safeword", a_flags=iFlags)
-   AddTextOptionST("ST_SAFEWORD_LEASH",     "Safeword: Leash",      "Use Safeword", a_flags=iFlags)
+   AddMenuOptionST("ST_DBG_REM_FACTION",    "Remove From Faction",   szTarget)
+   AddTextOptionST("ST_DBG_MCM_UPGRADE",    "Force MCM Upgrade",     "Upgrade Now")
+   AddTextOptionST("ST_DBG_MOD_EVENTS",     "Fix Mod Events",        "Fix Now")
+   AddTextOptionST("ST_DBG_CLEAR_HOVER",    "Clear Hovering Actors", "Clear Now")
+   AddTextOptionST("ST_DBG_CLEAR_MOVEMENT", "Clear All Movement",    "Clear Now")
+   AddTextOptionST("ST_SAFEWORD_FURNITURE", "Safeword: Furniture",   "Use Safeword", a_flags=iFlags)
+   AddTextOptionST("ST_SAFEWORD_LEASH",     "Safeword: Leash",       "Use Safeword", a_flags=iFlags)
 EndFunction
 
 
@@ -1258,7 +1334,7 @@ EndFunction
 State ST_FWK_POLL_TIME
    Event OnSliderOpenST()
       SetSliderDialogStartValue(fSettingsPollTime)
-      SetSliderDialogDefaultValue(_fDefSetPollTime)
+      SetSliderDialogDefaultValue(1.0)
       SetSliderDialogRange(1, 5)
       SetSliderDialogInterval(0.5)
    EndEvent
@@ -1272,7 +1348,7 @@ State ST_FWK_POLL_TIME
    EndEvent
 
    Event OnDefaultST()
-      fSettingsPollTime = _fDefSetPollTime
+      fSettingsPollTime = 1.0
       SetSliderOptionValueST(fSettingsPollTime, "{1}")
    EndEvent
 
@@ -1286,7 +1362,7 @@ EndState
 State ST_FWK_POLL_NEAR
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iSettingsPollNearby)
-      SetSliderDialogDefaultValue(_iDefSetPollNearby)
+      SetSliderDialogDefaultValue(5)
       SetSliderDialogRange(0, 10)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1297,7 +1373,7 @@ State ST_FWK_POLL_NEAR
    EndEvent
 
    Event OnDefaultST()
-      iSettingsPollNearby = _iDefSetPollNearby
+      iSettingsPollNearby = 5
       SetSliderOptionValueST(iSettingsPollNearby)
    EndEvent
 
@@ -1311,7 +1387,7 @@ EndState
 State ST_FWK_POLL_DISTANCE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iSettingsNearbyDistance)
-      SetSliderDialogDefaultValue(_iDefSetNearbyDistance)
+      SetSliderDialogDefaultValue(65)
       SetSliderDialogRange(10, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1323,7 +1399,7 @@ State ST_FWK_POLL_DISTANCE
    EndEvent
 
    Event OnDefaultST()
-      iSettingsNearbyDistance = _iDefSetNearbyDistance
+      iSettingsNearbyDistance = 65
       SetSliderOptionValueST(iSettingsNearbyDistance)
    EndEvent
 
@@ -1506,7 +1582,7 @@ EndState
 State ST_VUL_NUDE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityNude)
-      SetSliderDialogDefaultValue(_iDefVulNude)
+      SetSliderDialogDefaultValue(15)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1517,7 +1593,7 @@ State ST_VUL_NUDE
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityNude = _iDefVulNude
+      iVulnerabilityNude = 15
       SetSliderOptionValueST(iVulnerabilityNude)
    EndEvent
 
@@ -1531,7 +1607,7 @@ EndState
 State ST_VUL_COLLAR
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityCollar)
-      SetSliderDialogDefaultValue(_iDefVulCollar)
+      SetSliderDialogDefaultValue(25)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1542,7 +1618,7 @@ State ST_VUL_COLLAR
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityCollar = _iDefVulCollar
+      iVulnerabilityCollar = 25
       SetSliderOptionValueST(iVulnerabilityCollar)
    EndEvent
 
@@ -1556,7 +1632,7 @@ EndState
 State ST_VUL_BINDER
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityBinder)
-      SetSliderDialogDefaultValue(_iDefVulBinder)
+      SetSliderDialogDefaultValue(20)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1567,7 +1643,7 @@ State ST_VUL_BINDER
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityBinder = _iDefVulBinder
+      iVulnerabilityBinder = 20
       SetSliderOptionValueST(iVulnerabilityBinder)
    EndEvent
 
@@ -1581,7 +1657,7 @@ EndState
 State ST_VUL_GAGGED
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityGagged)
-      SetSliderDialogDefaultValue(_iDefVulGagged)
+      SetSliderDialogDefaultValue(20)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1592,7 +1668,7 @@ State ST_VUL_GAGGED
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityGagged = _iDefVulGagged
+      iVulnerabilityGagged = 20
       SetSliderOptionValueST(iVulnerabilityGagged)
    EndEvent
 
@@ -1606,7 +1682,7 @@ EndState
 State ST_VUL_RESTRAINTS
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityRestraints)
-      SetSliderDialogDefaultValue(_iDefVulRestraints)
+      SetSliderDialogDefaultValue(10)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1617,7 +1693,7 @@ State ST_VUL_RESTRAINTS
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityRestraints = _iDefVulRestraints
+      iVulnerabilityRestraints = 10
       SetSliderOptionValueST(iVulnerabilityRestraints)
    EndEvent
 
@@ -1631,7 +1707,7 @@ EndState
 State ST_VUL_LEASHED
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityLeashed)
-      SetSliderDialogDefaultValue(_iDefVulLeashed)
+      SetSliderDialogDefaultValue(10)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1642,7 +1718,7 @@ State ST_VUL_LEASHED
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityLeashed = _iDefVulLeashed
+      iVulnerabilityLeashed = 10
       SetSliderOptionValueST(iVulnerabilityLeashed)
    EndEvent
 
@@ -1656,7 +1732,7 @@ EndState
 State ST_VUL_FURNITURE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityFurniture)
-      SetSliderDialogDefaultValue(_iDefVulFurniture)
+      SetSliderDialogDefaultValue(10)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1667,7 +1743,7 @@ State ST_VUL_FURNITURE
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityFurniture = _iDefVulFurniture
+      iVulnerabilityFurniture = 10
       SetSliderOptionValueST(iVulnerabilityFurniture)
    EndEvent
 
@@ -1681,7 +1757,7 @@ EndState
 State ST_VUL_NIGHT
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityNight)
-      SetSliderDialogDefaultValue(_iDefVulNight)
+      SetSliderDialogDefaultValue(5)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1692,7 +1768,7 @@ State ST_VUL_NIGHT
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityNight = _iDefVulNight
+      iVulnerabilityNight = 5
       SetSliderOptionValueST(iVulnerabilityNight)
    EndEvent
 
@@ -1706,7 +1782,7 @@ EndState
 State ST_VUL_REDUCE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iVulnerabilityNakedReduce)
-      SetSliderDialogDefaultValue(_iDefVulNakedReduce)
+      SetSliderDialogDefaultValue(50)
       SetSliderDialogRange(0, 300)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1717,7 +1793,7 @@ State ST_VUL_REDUCE
    EndEvent
 
    Event OnDefaultST()
-      iVulnerabilityNakedReduce = _iDefVulNakedReduce
+      iVulnerabilityNakedReduce = 50
       SetSliderOptionValueST(iVulnerabilityNakedReduce)
    EndEvent
 
@@ -1735,7 +1811,7 @@ EndState
 State ST_DISP_WILL_GUARDS
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iDispWillingGuards)
-      SetSliderDialogDefaultValue(_iDefWillingGuards)
+      SetSliderDialogDefaultValue(10)
       SetSliderDialogRange(-100, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1749,7 +1825,7 @@ State ST_DISP_WILL_GUARDS
    EndEvent
 
    Event OnDefaultST()
-      iDispWillingGuards = _iDefWillingGuards
+      iDispWillingGuards = 10
       SetSliderOptionValueST(iDispWillingGuards)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -1765,7 +1841,7 @@ EndState
 State ST_DISP_WILL_MERCHANTS
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iDispWillingMerchants)
-      SetSliderDialogDefaultValue(_iDefWillingMerchants)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(-100, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1779,7 +1855,7 @@ State ST_DISP_WILL_MERCHANTS
    EndEvent
 
    Event OnDefaultST()
-      iDispWillingMerchants = _iDefWillingMerchants
+      iDispWillingMerchants = 3
       SetSliderOptionValueST(iDispWillingMerchants)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -1795,7 +1871,7 @@ EndState
 State ST_DISP_WILL_BDSM
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iDispWillingBdsm)
-      SetSliderDialogDefaultValue(_iDefWillingBdsm)
+      SetSliderDialogDefaultValue(-25)
       SetSliderDialogRange(-100, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1809,7 +1885,7 @@ State ST_DISP_WILL_BDSM
    EndEvent
 
    Event OnDefaultST()
-      iDispWillingBdsm = _iDefWillingBdsm
+      iDispWillingBdsm = -25
       SetSliderOptionValueST(iDispWillingBdsm)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -1837,7 +1913,7 @@ State ST_MOD_LEASH_STYLE
    EndEvent
 
    Event OnDefaultST()
-      iModLeashStyle = _iDefModLeashStyle
+      iModLeashStyle = _qFramework.LS_AUTO
       SetTextOptionValueST(LeashStyleToString(iModLeashStyle))
    EndEvent
 
@@ -1855,7 +1931,7 @@ State ST_MOD_LEASH_VISIBLE
    EndEvent
 
    Event OnDefaultST()
-      bModLeashVisible = _bDefModLeashVisible
+      bModLeashVisible = True
       SetToggleOptionValueST(bModLeashVisible)
    EndEvent
 
@@ -1871,7 +1947,7 @@ State ST_MOD_LEASH_INTERRUPT
    EndEvent
 
    Event OnDefaultST()
-      bModLeashInterrupt = _bDefLeashInterrupt
+      bModLeashInterrupt = True
       SetToggleOptionValueST(bModLeashInterrupt)
    EndEvent
 
@@ -1883,7 +1959,7 @@ EndState
 State ST_MOD_LEASH_COMBAT
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModLeashCombatChance)
-      SetSliderDialogDefaultValue(_iDefLeashCombatChance)
+      SetSliderDialogDefaultValue(20)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1894,7 +1970,7 @@ State ST_MOD_LEASH_COMBAT
    EndEvent
 
    Event OnDefaultST()
-      iModLeashCombatChance = _iDefLeashCombatChance
+      iModLeashCombatChance = 20
       SetSliderOptionValueST(iModLeashCombatChance)
    EndEvent
 
@@ -1907,7 +1983,7 @@ EndState
 State ST_MOD_LEASH_DAMAGE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModLeashDamage)
-      SetSliderDialogDefaultValue(_iDefLeashDamage)
+      SetSliderDialogDefaultValue(12)
       SetSliderDialogRange(0, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -1918,7 +1994,7 @@ State ST_MOD_LEASH_DAMAGE
    EndEvent
 
    Event OnDefaultST()
-      iModLeashDamage = _iDefLeashDamage
+      iModLeashDamage = 12
       SetSliderOptionValueST(iModLeashDamage)
    EndEvent
 
@@ -1930,7 +2006,7 @@ EndState
 State ST_MOD_LEASH_LENGTH
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModLeashMinLength)
-      SetSliderDialogDefaultValue(_iDefLeashMinLength)
+      SetSliderDialogDefaultValue(550)
       SetSliderDialogRange(0, 1000)
       SetSliderDialogInterval(10)
    EndEvent
@@ -1944,7 +2020,7 @@ State ST_MOD_LEASH_LENGTH
    EndEvent
 
    Event OnDefaultST()
-      iModLeashMinLength = _iDefLeashMinLength
+      iModLeashMinLength = 550
       SetSliderOptionValueST(iModLeashMinLength)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -1971,7 +2047,7 @@ State ST_MOD_ENABLE_DIALOGUE
    EndEvent
 
    Event OnDefaultST()
-      iModDialogueTargetStyle = _iDefDialogueTargetStyle
+      iModDialogueTargetStyle = _qFramework.DS_MANUAL
       SetTextOptionValueST(DialogueStyleToString(iModDialogueTargetStyle))
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -1988,7 +2064,7 @@ EndState
 State ST_MOD_DIALOGUE_RETRIES
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModDialogueTargetRetries)
-      SetSliderDialogDefaultValue(_iDefDialogueTargetRetries)
+      SetSliderDialogDefaultValue(0)
       SetSliderDialogRange(0, 10)
       SetSliderDialogInterval(1)
    EndEvent
@@ -2002,7 +2078,7 @@ State ST_MOD_DIALOGUE_RETRIES
    EndEvent
 
    Event OnDefaultST()
-      iModDialogueTargetRetries = _iDefDialogueTargetRetries
+      iModDialogueTargetRetries = 0
       SetSliderOptionValueST(iModDialogueTargetRetries)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2016,22 +2092,183 @@ State ST_MOD_DIALOGUE_RETRIES
    EndEvent
 EndState
 
-State ST_MOD_CALL_HELP
-   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
-      ; Handle key registration here.  Events should be sent to all scripts in the same quest.
-      If (iModHelpKey && (iModHelpKey != iModAttentionKey))
-         UnregisterForKey(iModHelpKey)
-      EndIf
-      iModHelpKey = iKeyCode
-      RegisterForKey(iModHelpKey)
-      SetKeyMapOptionValueST(iModHelpKey)
+State ST_MOD_FADE_IN_USE_DOOR
+   Event OnSelectST()
+      bModFadeInUseDoor = !bModFadeInUseDoor
+      SetToggleOptionValueST(bModFadeInUseDoor)
    EndEvent
 
    Event OnDefaultST()
-      If (iModHelpKey && (iModHelpKey != iModAttentionKey))
-         UnregisterForKey(iModHelpKey)
+      bModFadeInUseDoor = True
+      SetToggleOptionValueST(bModFadeInUseDoor)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("This mod has a feature to move an NPC near a player without the NPC being near enough to be seen.\n" +\
+                  "This allows NPCs to approach the player as if they are walking over from off screen somewhere.\n" +\
+                  "When enabled and the player is indoors the NPC will \"fade in\" via the last door used by the player.")
+   EndEvent
+EndState
+
+State ST_MOD_POSE_TOGGLE_KEY
+   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
+      If (iModTogglePoseKey != iKeyCode)
+         Int iOldKey = iModTogglePoseKey
+         iModTogglePoseKey = 0x00
+         RegisterNewKey(iOldKey, iKeyCode)
+         iModTogglePoseKey = iKeyCode
+         SetKeyMapOptionValueST(iModTogglePoseKey)
       EndIf
+   EndEvent
+
+   Event OnDefaultST()
+      Int iOldKey = iModTogglePoseKey
+      iModTogglePoseKey = 0x00
+      RegisterNewKey(iOldKey, iModTogglePoseKey)
+      SetKeyMapOptionValueST(iModTogglePoseKey)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The pose feature allows the user to control the player's poses.  Pressing the toggle key\n" +\
+                  "alternates between the player's default idle pose and the configured Toggle Pose.\n" +\
+                  "Recommended Key: \"g\"  Set to default to turn off.")
+   EndEvent
+EndState
+
+State ST_MOD_POSE_TOGGLE
+   Event OnMenuOpenST()
+      ; Create a new array to hold all of the options.
+      Int iMaxPoses = 4
+      String[] aszOptions = New String[4]
+      Int iIndex
+      While (iMaxPoses > iIndex)
+         aszOptions[iIndex] = PoseToString(iIndex)
+         iIndex += 1
+      EndWhile
+
+      SetMenuDialogStartIndex(iModTogglePose)
+      SetMenuDialogDefaultIndex(1)
+      SetMenuDialogOptions(aszOptions)
+   EndEvent
+
+   Event OnMenuAcceptST(Int iChosenIndex)
+      iModTogglePose = iChosenIndex
+      SetMenuOptionValueST(PoseToString(iModTogglePose))
+   EndEvent
+
+   Event OnDefaultST()
+      iModTogglePose = 1
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Using the Pose Toggle Key will toggle this pose on and off.")
+   EndEvent
+EndState
+
+State ST_MOD_POSE_CYCLE_KEY
+   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
+      If (iModCyclePoseKey != iKeyCode)
+         Int iOldKey = iModCyclePoseKey
+         iModCyclePoseKey = 0x00
+         RegisterNewKey(iOldKey, iKeyCode)
+         iModCyclePoseKey = iKeyCode
+         SetKeyMapOptionValueST(iModCyclePoseKey)
+      EndIf
+   EndEvent
+
+   Event OnDefaultST()
+      Int iOldKey = iModCyclePoseKey
+      iModCyclePoseKey = 0x00
+      RegisterNewKey(iOldKey, iModCyclePoseKey)
+      SetKeyMapOptionValueST(iModCyclePoseKey)
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The pose feature allows the user to control the player's poses.  Pressing this key cycles through\n" +\
+                  "all available poses, currently the user's default pose and kneeling.\n" +\
+                  "Recommended Key: \"b\"  Set to default to turn off.")
+   EndEvent
+EndState
+
+State ST_MOD_POSE_CRAWL_ACTIVATE
+   Event OnSelectST()
+      bModCrawlBlockActivate = !bModCrawlBlockActivate
+      SetToggleOptionValueST(bModCrawlBlockActivate)
+
+      ; Changing this setting requires the pose flags list to be modified in the main script.
+      SendSettingChangedEvent("ModCrawlActivate")
+   EndEvent
+
+   Event OnDefaultST()
+      If (!bModCrawlBlockActivate)
+         bModCrawlBlockActivate = True
+         SetToggleOptionValueST(bModCrawlBlockActivate)
+
+         ; Changing this setting requires the pose flags list to be modified in the main script.
+         SendSettingChangedEvent("ModCrawlActivate")
+      EndIf
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The idea is when you are crawling around on a leash people aren't likely to treat you with respect or\n" +\
+                  "engage in meaningful conversation with you.  Blocking activation is a way to simulate this, preventing\n" +\
+                  "you from engaging in dialogue with people.  If you are able you can activate things by standing up first.")
+   EndEvent
+EndState
+
+
+State ST_COL_SPECIAL_COST
+   Event OnSelectST()
+      If (0 == iModCollectorSpecialCost)
+         iModCollectorSpecialCost = 1000
+      ElseIf (1000 == iModCollectorSpecialCost)
+         iModCollectorSpecialCost = 2500
+      ElseIf (2500 == iModCollectorSpecialCost)
+         iModCollectorSpecialCost = 10000
+      ElseIf (10000 == iModCollectorSpecialCost)
+         iModCollectorSpecialCost = 25000
+      ElseIf (25000 == iModCollectorSpecialCost)
+         iModCollectorSpecialCost = 50000
+      Else
+         iModCollectorSpecialCost = 0
+      EndIf
+      SetTextOptionValueST(iModCollectorSpecialCost + " gold")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Collector")
+   EndEvent
+
+   Event OnDefaultST()
+      iModCollectorSpecialCost = 10000
+      SetTextOptionValueST(iModCollectorSpecialCost + " gold")
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("Collector")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The Dragonborn Collector lives in a cave near Froki's cabin and collects all things Dragonborn.  If you loose items\n" +\
+                  "visit him and he may sell them back to you but be prepared.  He does want to collect all things Dragonborn after all.\n" +\
+                  "Quest Items cannot be sold so they are kept in a separate chest.  This is the cost to access that chest.\n" +\
+                  "This change will only take effect when the chest is empty.")
+   EndEvent
+EndState
+
+State ST_MOD_CALL_HELP
+   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
+      If (iModHelpKey != iKeyCode)
+         Int iOldKey = iModHelpKey
+         iModHelpKey = 0x00
+         RegisterNewKey(iOldKey, iKeyCode)
+         iModHelpKey = iKeyCode
+         SetKeyMapOptionValueST(iModHelpKey)
+      EndIf
+   EndEvent
+
+   Event OnDefaultST()
+      Int iOldKey = iModHelpKey
       iModHelpKey = 0x00
+      RegisterNewKey(iOldKey, iModHelpKey)
       SetKeyMapOptionValueST(iModHelpKey)
    EndEvent
 
@@ -2044,19 +2281,19 @@ EndState
 
 State ST_MOD_CALL_ATTENTION
    Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
-      If (iModAttentionKey && (iModAttentionKey != iModHelpKey))
-         UnregisterForKey(iModAttentionKey)
+      If (iModAttentionKey != iKeyCode)
+         Int iOldKey = iModAttentionKey
+         iModAttentionKey = 0x00
+         RegisterNewKey(iOldKey, iKeyCode)
+         iModAttentionKey = iKeyCode
+         SetKeyMapOptionValueST(iModAttentionKey)
       EndIf
-      iModAttentionKey = iKeyCode
-      RegisterForKey(iModAttentionKey)
-      SetKeyMapOptionValueST(iModAttentionKey)
    EndEvent
 
    Event OnDefaultST()
-      If (iModAttentionKey && (iModAttentionKey != iModHelpKey))
-         UnregisterForKey(iModAttentionKey)
-      EndIf
+      Int iOldKey = iModAttentionKey
       iModAttentionKey = 0x00
+      RegisterNewKey(iOldKey, iModAttentionKey)
       SetKeyMapOptionValueST(iModAttentionKey)
    EndEvent
 
@@ -2070,7 +2307,7 @@ EndState
 State ST_MOD_CALL_TIMEOUT
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModCallTimeout)
-      SetSliderDialogDefaultValue(_iDefCallTimeout)
+      SetSliderDialogDefaultValue(30)
       SetSliderDialogRange(0, 300)
       SetSliderDialogInterval(5)
    EndEvent
@@ -2081,7 +2318,7 @@ State ST_MOD_CALL_TIMEOUT
    EndEvent
 
    Event OnDefaultST()
-      iModCallTimeout = _iDefCallTimeout
+      iModCallTimeout = 30
       SetSliderOptionValueST(iModCallTimeout)
    EndEvent
 
@@ -2098,7 +2335,7 @@ State ST_MOD_NIPPLE
    EndEvent
 
    Event OnDefaultST()
-      bBlockNipple = _bDefBlockNipple
+      bBlockNipple = True
       SetToggleOptionValueST(bBlockNipple)
    EndEvent
 
@@ -2114,7 +2351,7 @@ State ST_MOD_VAGINA
    EndEvent
 
    Event OnDefaultST()
-      bBlockVagina = _bDefBlockVagina
+      bBlockVagina = True
       SetToggleOptionValueST(bBlockVagina)
    EndEvent
 
@@ -2130,7 +2367,7 @@ State ST_MOD_ARMOUR
    EndEvent
 
    Event OnDefaultST()
-      bBlockArmour = _bDefBlockArmour
+      bBlockArmour = True
       SetToggleOptionValueST(bBlockArmour)
    EndEvent
 
@@ -2146,7 +2383,7 @@ State ST_MOD_HOBBLE
    EndEvent
 
    Event OnDefaultST()
-      bBlockHobble = _bDefBlockHobble
+      bBlockHobble = True
       SetToggleOptionValueST(bBlockHobble)
    EndEvent
 
@@ -2162,7 +2399,7 @@ State ST_MOD_SHOES
    EndEvent
 
    Event OnDefaultST()
-      bBlockShoes = _bDefBlockShoes
+      bBlockShoes = True
       SetToggleOptionValueST(bBlockShoes)
    EndEvent
 
@@ -2178,7 +2415,7 @@ State ST_MOD_ARMS
    EndEvent
 
    Event OnDefaultST()
-      bBlockArms = _bDefBlockArms
+      bBlockArms = True
       SetToggleOptionValueST(bBlockArms)
    EndEvent
 
@@ -2195,7 +2432,7 @@ State ST_MOD_BLOCK_LEASH
    EndEvent
 
    Event OnDefaultST()
-      bBlockLeash = _bDefBlockLeash
+      bBlockLeash = True
       SetToggleOptionValueST(bBlockLeash)
    EndEvent
 
@@ -2291,7 +2528,7 @@ EndState
 State ST_CON_SECURE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iSettingsSecurity)
-      SetSliderDialogDefaultValue(_iDefVulNight)
+      SetSliderDialogDefaultValue(5)
       SetSliderDialogRange(1, 100)
       SetSliderDialogInterval(1)
    EndEvent
@@ -2302,7 +2539,7 @@ State ST_CON_SECURE
    EndEvent
 
    Event OnDefaultST()
-      iSettingsSecurity = _iDefVulNight
+      iSettingsSecurity = 5
       SetSliderOptionValueST(iSettingsSecurity)
    EndEvent
 
@@ -2350,10 +2587,12 @@ State ST_CON_SAVE_TYPE
 
       ; Only enable the save game key for the full control style.
       If (2 == iModSaveGameStyle)
+         SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_CON_NATIVE_SAVES")
          SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_CON_SAVE_KEY")
          SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_CON_SAVE_MIN_TIME")
          SetOptionFlagsST(OPTION_FLAG_NONE, a_stateName="ST_CON_CONSOLE_ACCESS")
       Else
+         SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_NATIVE_SAVES")
          SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_KEY")
          SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_MIN_TIME")
          SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_CONSOLE_ACCESS")
@@ -2364,7 +2603,7 @@ State ST_CON_SAVE_TYPE
    EndEvent
 
    Event OnDefaultST()
-      iModSaveGameStyle = _iDefSaveGameStyle
+      iModSaveGameStyle = 0
       SetTextOptionValueST(SaveGameStyleToString(iModSaveGameStyle))
 
       ; Reset the confirmation check box whenever the save game stlye changes.
@@ -2373,6 +2612,7 @@ State ST_CON_SAVE_TYPE
       SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_CONFIRM")
 
       ; Only enable the save game key for the full control style.
+      SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_NATIVE_SAVES")
       SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_KEY")
       SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_SAVE_MIN_TIME")
       SetOptionFlagsST(OPTION_FLAG_DISABLED, a_stateName="ST_CON_CONSOLE_ACCESS")
@@ -2398,7 +2638,7 @@ State ST_CON_SAVE_CONFIRM
    EndEvent
 
    Event OnDefaultST()
-      bSaveGameConfirm = _bDefSaveGameConfirm
+      bSaveGameConfirm = False
       SetToggleOptionValueST(bSaveGameConfirm)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2411,23 +2651,44 @@ State ST_CON_SAVE_CONFIRM
    EndEvent
 EndState
 
-State ST_CON_SAVE_KEY
-   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
-      ; Handle key registration here.  Events should be sent to all scripts in the same quest.
-      If (iModSaveKey && (iModSaveKey != iModHelpKey) && (iModSaveKey != iModAttentionKey))
-         UnregisterForKey(iModSaveKey)
-      EndIf
+State ST_CON_NATIVE_SAVES
+   Event OnSelectST()
+      bConNativeSaves = !bConNativeSaves
+      SetToggleOptionValueST(bConNativeSaves)
 
-      iModSaveKey = iKeyCode
-      RegisterForKey(iModSaveKey)
-      SetKeyMapOptionValueST(iModSaveKey)
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("SaveControl")
    EndEvent
 
    Event OnDefaultST()
-      If (iModSaveKey && (iModSaveKey != iModHelpKey) && (iModSaveKey != iModAttentionKey))
-         UnregisterForKey(iModSaveKey)
+      bConNativeSaves = False
+      SetToggleOptionValueST(bConNativeSaves)
+
+      ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
+      SendSettingChangedEvent("SaveControl")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("QuickSave and AutoSave games should use the same name as the games normal QuickSave and AutoSave1.\n" +\
+                  "If disabled DFW saves will prefix the saved game names with Dfw to not interfere with the retular saves.")
+   EndEvent
+EndState
+
+State ST_CON_SAVE_KEY
+   Event OnKeyMapChangeST(Int iKeyCode, String sConflictControl, String sConflictName)
+      If (iModSaveKey != iKeyCode)
+         Int iOldKey = iModSaveKey
+         iModSaveKey = 0x00
+         RegisterNewKey(iOldKey, iKeyCode)
+         iModSaveKey = iKeyCode
+         SetKeyMapOptionValueST(iModSaveKey)
       EndIf
+   EndEvent
+
+   Event OnDefaultST()
+      Int iOldKey = iModSaveKey
       iModSaveKey = 0x00
+      RegisterNewKey(iOldKey, iModSaveKey)
       SetKeyMapOptionValueST(iModSaveKey)
    EndEvent
 
@@ -2440,7 +2701,7 @@ EndState
 State ST_CON_SAVE_MIN_TIME
    Event OnSliderOpenST()
       SetSliderDialogStartValue(fModSaveMinTime)
-      SetSliderDialogDefaultValue(_fDefSaveMinTime)
+      SetSliderDialogDefaultValue(5.0)
       SetSliderDialogRange(0, 30)
       SetSliderDialogInterval(1)
    EndEvent
@@ -2451,7 +2712,7 @@ State ST_CON_SAVE_MIN_TIME
    EndEvent
 
    Event OnDefaultST()
-      fModSaveMinTime = _fDefSaveMinTime
+      fModSaveMinTime = 5.0
       SetSliderOptionValueST(fModSaveMinTime, "{0}min")
    EndEvent
 
@@ -2498,7 +2759,7 @@ EndState
 State ST_CON_RAPE_REDRESS
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModRapeRedressTimeout)
-      SetSliderDialogDefaultValue(_iDefRapeRedressTimeout)
+      SetSliderDialogDefaultValue(90)
       SetSliderDialogRange(0, 300)
       SetSliderDialogInterval(5)
    EndEvent
@@ -2509,7 +2770,7 @@ State ST_CON_RAPE_REDRESS
    EndEvent
 
    Event OnDefaultST()
-      iModRapeRedressTimeout = _iDefRapeRedressTimeout
+      iModRapeRedressTimeout = 90
       SetSliderOptionValueST(iModRapeRedressTimeout)
    EndEvent
 
@@ -2523,7 +2784,7 @@ EndState
 State ST_CON_NAKED_REDRESS
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModNakedRedressTimeout)
-      SetSliderDialogDefaultValue(_iDefNakedRedressTimeout)
+      SetSliderDialogDefaultValue(20)
       SetSliderDialogRange(0, 300)
       SetSliderDialogInterval(5)
    EndEvent
@@ -2534,7 +2795,7 @@ State ST_CON_NAKED_REDRESS
    EndEvent
 
    Event OnDefaultST()
-      iModNakedRedressTimeout = _iDefNakedRedressTimeout
+      iModNakedRedressTimeout = 20
       SetSliderOptionValueST(iModNakedRedressTimeout)
    EndEvent
 
@@ -2552,7 +2813,7 @@ State ST_CON_LOAD_BLOCK
    EndEvent
 
    Event OnDefaultST()
-      bModBlockOnGameLoad = _bDefBlockOnGameLoad
+      bModBlockOnGameLoad = False
       SetToggleOptionValueST(bModBlockOnGameLoad)
    EndEvent
 
@@ -2574,7 +2835,7 @@ State ST_COMP_DD_FIX
    EndEvent
 
    Event OnDefaultST()
-      bSettingsDetectUnequip = _bDefSetDeviousFix
+      bSettingsDetectUnequip = False
       SetToggleOptionValueST(bSettingsDetectUnequip)
    EndEvent
 
@@ -2586,10 +2847,108 @@ State ST_COMP_DD_FIX
    EndEvent
 EndState
 
+State ST_MOD_MULTI_POLE_ANIM
+   Event OnMenuOpenST()
+      ; Create a new array to hold all of the options.
+      String[] aszOptions = New String[19]
+      aszOptions[0]  = GetMultiAnimationName(-7)
+      aszOptions[1]  = GetMultiAnimationName(-6)
+      aszOptions[2]  = GetMultiAnimationName(-5)
+      aszOptions[3]  = GetMultiAnimationName(-4)
+      aszOptions[4]  = GetMultiAnimationName(-3)
+      aszOptions[5]  = GetMultiAnimationName(-2)
+      aszOptions[6]  = GetMultiAnimationName(-1)
+      aszOptions[7]  = GetMultiAnimationName(0)
+      aszOptions[8]  = GetMultiAnimationName(1)
+      aszOptions[9]  = GetMultiAnimationName(2)
+      aszOptions[10] = GetMultiAnimationName(3)
+      aszOptions[11] = GetMultiAnimationName(4)
+      aszOptions[12] = GetMultiAnimationName(5)
+      aszOptions[13] = GetMultiAnimationName(6)
+      aszOptions[14] = GetMultiAnimationName(7)
+      aszOptions[15] = GetMultiAnimationName(8)
+      aszOptions[16] = GetMultiAnimationName(9)
+      aszOptions[17] = GetMultiAnimationName(10)
+      aszOptions[18] = GetMultiAnimationName(11)
+
+      ; Display the options
+      SetMenuDialogStartIndex(iModMultiPoleAnimation + 7)
+      ; Index 0 = value -7 = Recommended
+      SetMenuDialogDefaultIndex(0)
+      SetMenuDialogOptions(aszOptions)
+   EndEvent
+
+   Event OnMenuAcceptST(Int iChosenIndex)
+      ; -7: Recommended  -6: Cycle Real  -5: Cycle Alt     -4: Cycle Both
+      ; -3: Random Real  -2: Random Alt  -1: Random Both  0-x: Indexable Animations
+      iModMultiPoleAnimation = iChosenIndex - 7
+
+      SetMenuOptionValueST(GetMultiAnimationName(iModMultiPoleAnimation))
+
+      ; Send a setting changed event to the main script in case it needs to be applied immediately.
+      SendSettingChangedEvent("ModMulti")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Chose a default animation to play when sitting on Multi-Restraint poles.\n" +\
+                  "Real poses look more real and are affixed to the pole.  Chains in the Alt poses go off into nowhere.\n" +\
+                  "Recommended is a random pose chosen from all Real poses except Suspended.")
+   EndEvent
+EndState
+
+State ST_MOD_MULTI_WALL_ANIM
+   Event OnMenuOpenST()
+      ; Create a new array to hold all of the options.
+      String[] aszOptions = New String[19]
+      aszOptions[0]  = GetMultiAnimationName(-7)
+      aszOptions[1]  = GetMultiAnimationName(-6)
+      aszOptions[2]  = GetMultiAnimationName(-5)
+      aszOptions[3]  = GetMultiAnimationName(-4)
+      aszOptions[4]  = GetMultiAnimationName(-3)
+      aszOptions[5]  = GetMultiAnimationName(-2)
+      aszOptions[6]  = GetMultiAnimationName(-1)
+      aszOptions[7]  = GetMultiAnimationName(0)
+      aszOptions[8]  = GetMultiAnimationName(1)
+      aszOptions[9]  = GetMultiAnimationName(2)
+      aszOptions[10] = GetMultiAnimationName(3)
+      aszOptions[11] = GetMultiAnimationName(4)
+      aszOptions[12] = GetMultiAnimationName(5)
+      aszOptions[13] = GetMultiAnimationName(6)
+      aszOptions[14] = GetMultiAnimationName(7)
+      aszOptions[15] = GetMultiAnimationName(8)
+      aszOptions[16] = GetMultiAnimationName(9)
+      aszOptions[17] = GetMultiAnimationName(10)
+      aszOptions[18] = GetMultiAnimationName(11)
+
+      ; Display the options
+      SetMenuDialogStartIndex(iModMultiWallAnimation + 7)
+      ; Index 0 = value -7 = Recommended
+      SetMenuDialogDefaultIndex(0)
+      SetMenuDialogOptions(aszOptions)
+   EndEvent
+
+   Event OnMenuAcceptST(Int iChosenIndex)
+      ; -7: Recommended  -6: Cycle Real  -5: Cycle Alt     -4: Cycle Both
+      ; -3: Random Real  -2: Random Alt  -1: Random Both  0-x: Indexable Animations
+      iModMultiWallAnimation = iChosenIndex - 7
+
+      SetMenuOptionValueST(GetMultiAnimationName(iModMultiWallAnimation))
+
+      ; Send a setting changed event to the main script in case it needs to be applied immediately.
+      SendSettingChangedEvent("ModMulti")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Chose a default animation to play when sitting on Multi-Restraint walls.\n" +\
+                  "Real poses look more real and are affixed to the wall.  Chains in the Alt poses go off into nowhere.\n" +\
+                  "Recommended is a random pose chosen from all Real poses except Suspended.")
+   EndEvent
+EndState
+
 State ST_COMP_SLA_THRESHOLD
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModSlaThreshold)
-      SetSliderDialogDefaultValue(_iDefSlaThreshold)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 25)
       SetSliderDialogInterval(1)
    EndEvent
@@ -2600,7 +2959,7 @@ State ST_COMP_SLA_THRESHOLD
    EndEvent
 
    Event OnDefaultST()
-      iModSlaThreshold = _iDefSlaThreshold
+      iModSlaThreshold = 3
       SetSliderOptionValueST(iModSlaThreshold)
    EndEvent
 
@@ -2614,7 +2973,7 @@ EndState
 State ST_COMP_SLA_MIN
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModSlaAdjustedMin)
-      SetSliderDialogDefaultValue(_iDefSlaAdjustedMin)
+      SetSliderDialogDefaultValue(5)
       SetSliderDialogRange(0, 90)
       SetSliderDialogInterval(1)
    EndEvent
@@ -2625,7 +2984,7 @@ State ST_COMP_SLA_MIN
    EndEvent
 
    Event OnDefaultST()
-      iModSlaAdjustedMin = _iDefSlaAdjustedMin
+      iModSlaAdjustedMin = 5
       SetSliderOptionValueST(iModSlaAdjustedMin)
    EndEvent
 
@@ -2638,7 +2997,7 @@ EndState
 State ST_COMP_SLA_MAX
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iModSlaAdjustedMax)
-      SetSliderDialogDefaultValue(_iDefSlaAdjustedMax)
+      SetSliderDialogDefaultValue(50)
       SetSliderDialogRange(0, 90)
       SetSliderDialogInterval(1)
    EndEvent
@@ -2649,7 +3008,7 @@ State ST_COMP_SLA_MAX
    EndEvent
 
    Event OnDefaultST()
-      iModSlaAdjustedMax = _iDefSlaAdjustedMax
+      iModSlaAdjustedMax = 50
       SetSliderOptionValueST(iModSlaAdjustedMax)
    EndEvent
 
@@ -2964,7 +3323,7 @@ EndState
 State ST_DBG_LEVEL
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevel)
-      SetSliderDialogDefaultValue(_iDefLogLevel)
+      SetSliderDialogDefaultValue(5)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -2978,7 +3337,7 @@ State ST_DBG_LEVEL
    EndEvent
 
    Event OnDefaultST()
-      iLogLevel = _iDefLogLevel
+      iLogLevel = 5
       SetSliderOptionValueST(iLogLevel)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -2995,7 +3354,7 @@ EndState
 State ST_DBG_GENERAL
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenGeneral)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenGeneral)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3009,7 +3368,7 @@ State ST_DBG_GENERAL
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenGeneral = _iDefLogLevelScreenGeneral
+      iLogLevelScreenGeneral = 3
       SetSliderOptionValueST(iLogLevelScreenGeneral)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3026,7 +3385,7 @@ EndState
 State ST_DBG_DEBUG
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenDebug)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenDebug)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3040,7 +3399,7 @@ State ST_DBG_DEBUG
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenDebug = _iDefLogLevelScreenDebug
+      iLogLevelScreenDebug = 3
       SetSliderOptionValueST(iLogLevelScreenDebug)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3057,7 +3416,7 @@ EndState
 State ST_DBG_STATUS
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenStatus)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenStatus)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3071,7 +3430,7 @@ State ST_DBG_STATUS
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenStatus = _iDefLogLevelScreenStatus
+      iLogLevelScreenStatus = 3
       SetSliderOptionValueST(iLogLevelScreenStatus)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3088,7 +3447,7 @@ EndState
 State ST_DBG_MASTER
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenMaster)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenMaster)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3102,7 +3461,7 @@ State ST_DBG_MASTER
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenMaster = _iDefLogLevelScreenMaster
+      iLogLevelScreenMaster = 3
       SetSliderOptionValueST(iLogLevelScreenMaster)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3119,7 +3478,7 @@ EndState
 State ST_DBG_NEARBY
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenNearby)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenNearby)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3133,7 +3492,7 @@ State ST_DBG_NEARBY
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenNearby = _iDefLogLevelScreenNearby
+      iLogLevelScreenNearby = 3
       SetSliderOptionValueST(iLogLevelScreenNearby)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3150,7 +3509,7 @@ EndState
 State ST_DBG_LEASH
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenLeash)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenLeash)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3164,7 +3523,7 @@ State ST_DBG_LEASH
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenLeash = _iDefLogLevelScreenLeash
+      iLogLevelScreenLeash = 3
       SetSliderOptionValueST(iLogLevelScreenLeash)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3181,7 +3540,7 @@ EndState
 State ST_DBG_EQUIP
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenEquip)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenEquip)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3195,7 +3554,7 @@ State ST_DBG_EQUIP
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenEquip = _iDefLogLevelScreenEquip
+      iLogLevelScreenEquip = 3
       SetSliderOptionValueST(iLogLevelScreenEquip)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3212,7 +3571,7 @@ EndState
 State ST_DBG_AROUSAL
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenArousal)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenArousal)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3226,7 +3585,7 @@ State ST_DBG_AROUSAL
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenArousal = _iDefLogLevelScreenArousal
+      iLogLevelScreenArousal = 3
       SetSliderOptionValueST(iLogLevelScreenArousal)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3243,7 +3602,7 @@ EndState
 State ST_DBG_INTERACTION
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenInteraction)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenInteraction)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3257,7 +3616,7 @@ State ST_DBG_INTERACTION
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenInteraction = _iDefLogLevelScreenInteraction
+      iLogLevelScreenInteraction = 3
       SetSliderOptionValueST(iLogLevelScreenInteraction)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3274,7 +3633,7 @@ EndState
 State ST_DBG_LOCATION
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenLocation)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenLocation)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3288,7 +3647,7 @@ State ST_DBG_LOCATION
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenLocation = _iDefLogLevelScreenLocation
+      iLogLevelScreenLocation = 3
       SetSliderOptionValueST(iLogLevelScreenLocation)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3305,7 +3664,7 @@ EndState
 State ST_DBG_REDRESS
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenRedress)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenRedress)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3319,7 +3678,7 @@ State ST_DBG_REDRESS
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenRedress = _iDefLogLevelScreenRedress
+      iLogLevelScreenRedress = 3
       SetSliderOptionValueST(iLogLevelScreenRedress)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3336,7 +3695,7 @@ EndState
 State ST_DBG_SAVE
    Event OnSliderOpenST()
       SetSliderDialogStartValue(iLogLevelScreenSave)
-      SetSliderDialogDefaultValue(_iDefLogLevelScreenSave)
+      SetSliderDialogDefaultValue(3)
       SetSliderDialogRange(0, 5)
       SetSliderDialogInterval(1)
    EndEvent
@@ -3350,7 +3709,7 @@ State ST_DBG_SAVE
    EndEvent
 
    Event OnDefaultST()
-      iLogLevelScreenSave = _iDefLogLevelScreenSave
+      iLogLevelScreenSave = 3
       SetSliderOptionValueST(iLogLevelScreenSave)
 
       ; This setting is mirrored by the main script.  Send an event to indicate it must be updated.
@@ -3413,8 +3772,8 @@ EndState
 
 State ST_DBG_YANK_LEASH
    Event OnSelectST()
-      _qFramework.YankLeash(0, _qFramework.LS_DRAG, bInterruptLeashTarget=True)
       SetTextOptionValueST("Done")
+      _qFramework.YankLeash(0, _qFramework.LS_DRAG, bInterruptLeashTarget=True)
    EndEvent
 
    Event OnDefaultST()
@@ -3591,6 +3950,29 @@ State ST_DBG_REM_FACTION
    EndEvent
 EndState
 
+State ST_DBG_MCM_UPGRADE
+   Event OnSelectST()
+      Int iLatestVersion = GetVersion()
+      If (CurrentVersion >= iLatestVersion)
+         SetTextOptionValueST("Not Needed")
+         Return
+      EndIf
+      SetTextOptionValueST("Upgraded " + CurrentVersion + " to " + iLatestVersion)
+      UpdateScript()
+      CurrentVersion = iLatestVersion
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Upgrade Now")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("The MCM script upgrade system does not always check for script upgrades when the game is loaded.\n" +\
+                  "If you suspect some new options are not at their default values try using this debug option.\n" +\
+                  "It should be safe to perform this upgrade.  If no upgrade is needed nothing will change.")
+   EndEvent
+EndState
+
 State ST_DBG_MOD_EVENTS
    Event OnSelectST()
       _qFramework.ReRegisterModEvents()
@@ -3607,6 +3989,41 @@ State ST_DBG_MOD_EVENTS
                   "This can be used to remedy this situation or if mod events are not being received for any reason.")
    EndEvent
 EndState
+
+State ST_DBG_CLEAR_HOVER
+   Event OnSelectST()
+      _qFramework.ClearHovering()
+      SetTextOptionValueST("Done")
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Clear Now")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("Actors using the Hover At packages of this mod do not time out naturally.\n" +\
+                  "If you notice an actor hovering around the player or another object with no scene running\n" +\
+                  "clearing them manually may help.  It shouldn't hurt if no scenes are in progress.")
+   EndEvent
+EndState
+
+State ST_DBG_CLEAR_MOVEMENT
+   Event OnSelectST()
+      _qFramework.ClearAllMovement()
+      SetTextOptionValueST("Done")
+   EndEvent
+
+   Event OnDefaultST()
+      SetTextOptionValueST("Clear Now")
+   EndEvent
+
+   Event OnHighlightST()
+      SetInfoText("WARNING: Using this during a scene has a good chance to break the scene.\n" +\
+                  "Only use this if you are certain no scenes are running or a scene is not progressing.\n" +\
+                  "This clears all movement for scenes.  Intended to fix movement data leftover from a completed scene.")
+   EndEvent
+EndState
+
 
 State ST_SAFEWORD_FURNITURE
    Event OnSelectST()
